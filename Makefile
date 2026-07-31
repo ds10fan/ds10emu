@@ -6,7 +6,7 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -297,3 +297,37 @@ test-2d: out/test_2d
 out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_2d.c src/gfx/nds2d.c
+
+# ---------------------------------------------------------------------------
+# Browser build
+# ---------------------------------------------------------------------------
+
+# Needs the Emscripten SDK; source its emsdk_env.sh, or point EMCC at emcc.
+EMCC ?= emcc
+WEB_SRC = src/web/main.c src/app/ui.c src/gfx/nds2d.c src/gfx/nitro.c
+WEB_FLAGS = -O2 -std=c99 -Wall \
+            --preload-file data/nitrofs@/data/nitrofs \
+            -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8"]' \
+            -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
+
+web: web/build/ds10.js
+web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \
+                   web/index.html web/app.js
+	@mkdir -p web/build
+	$(EMCC) $(WEB_FLAGS) -o web/build/ds10.js $(WEB_SRC)
+	@cp web/index.html web/app.js web/build/
+
+# Serve it. The page is static, so anything that serves files will do.
+serve: web
+	@echo "http://0.0.0.0:$(PORT)/"
+	@cd web/build && $(PY) -m http.server $(PORT) --bind 0.0.0.0
+PORT ?= 8537
+
+# Render a page natively, as a check that the browser build is not the odd one
+# out. ds10view writes PPMs; the wasm build produces the same pixels.
+ds10view: out/ds10view
+out/ds10view: src/app/ds10view.c $(WEB_SRC:src/web/main.c=) src/app/ui.c \
+              src/gfx/nds2d.c src/gfx/nitro.c
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/gfx/nds2d.c \
+	    src/gfx/nitro.c
