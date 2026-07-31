@@ -185,7 +185,30 @@ Remaining:
 Exit: `make recon` reproduces every recon artifact from the ROM; Ghidra database
 with correctly-based blocks, analyzed.
 
-### P1 — Stand up the oracle (was: locate the audio path)
+### P1 — Stand up the oracle — **DONE**
+
+`tools/oracle.py` renders real DS-10 audio by executing the original ARM9 code.
+Exit criteria met: deterministic across runs, pitch accurate to measurement
+resolution, `0x02075410` writes exactly 64 contiguous halfwords per frame. See
+recon.md §11 for the object graph, the allocator problem, and the measured VCO
+waveform enum.
+
+```sh
+python3 tools/oracle.py probe            # construct, render, trace writes
+python3 tools/oracle.py wav out/a.wav 0 60 64
+python3 tools/oracle.py waves            # characterise vco1 = 0..3
+```
+
+The `Oracle` class is the tier-1 API: `load_patch`, `note_on`, `note_off`,
+`render(frames)`.
+
+Follow-up left open (not blocking): reproduce the real machine wiring at
+`0x02032398` instead of setting `+0x04/+0x10/+0x1C` by hand. Verified that the
+hand-set fields taken from thement's dump do not affect output — zeroing them
+yields identical samples — so they are outputs, not inputs, at this level.
+
+<details>
+<summary>Original P1 plan, kept for reference</summary>
 
 The original blocking question — ARM9 or ARM7 — **is answered: ARM9**, at 32768 Hz
 in 64-sample frames, six voices (recon §5). So P1 is no longer discovery; it is
@@ -207,6 +230,8 @@ getting the harness to actually drive the published entry points.
 Exit: `tools/emu.py` renders a frame for a named factory patch and a given note,
 deterministically, and the output is non-silent and stable across runs. **That
 artifact is the oracle every later phase depends on.**
+
+</details>
 
 ### P2 — Data formats
 

@@ -631,6 +631,92 @@ Event opcodes (low byte of the first word):
 mixer: cc 06 / vv 07 = set volume on channel;  cc 06 / pp 0A = set pan
 ```
 
+---
+
+## 11. Synth object graph and the working oracle — our own work
+
+`tools/oracle.py` renders real DS-10 audio by executing the original ARM9 code.
+Everything in this section was derived here, not from prior art.
+
+### The synth is a C++ object with a heap-allocated sub-object graph
+
+```
+0x02075FF8  Synth::create()      alloc(0x54) then ctor; returns object in r0
+0x02074360  Synth::Synth()       stores method table, builds the sub-objects
+```
+
+The object is **0x54 bytes**. The constructor allocates and constructs eight
+sub-objects, which pins down the graph and the sizes that thement's offset list
+only named:
+
+| off | size | ctor | ctor args | role |
+|---|---|---|---|---|
+| +0x30 | 0x14 | `0x02075938` | — | ENV |
+| +0x34 | 0x34 | `0x02075A18` | — | LFO |
+| +0x38 | 0x14 | `0x02075C3C` | — | NOTECTRL |
+| +0x3C | 0x58 | `0x02071F48` | env, lfo, notectrl | PITCHCTRL |
+| +0x40 | 0xA0 | `0x02071D80` | pitchctrl | OSC |
+| +0x44 | 0x64 | `0x02075E2C` | env, lfo, osc | FILTER |
+| +0x48 | 0x40 | `0x02075C9C` | env, lfo | AMP |
+| +0x4C | 0x10 | `0x02075B14` | pitchctrl, osc, filter, amp | render chain |
+
+The constructor does **not** set `+0x04` (event queue), `+0x08` (event count),
+`+0x10` (frame size) or `+0x1C`. Those are wired by the machine-setup code at
+`0x02032398`, which creates all six voices into a context object. `+0x1C` is a
+pointer **to** the output buffer pointer — render does
+`ldr r1,[this,#0x1C] ; ldr r1,[r1]`.
+
+### Allocator, and why a static image faults
+
+`0x0202927C` / `0x020292A0` (new) and `0x020292C4` / `0x020292E8` (delete) are
+thunks of identical shape that tail-call the real allocator:
+
+```
+ldr r1,[HEAP_GLOBAL] ; ldr r1,[r1,#20] ; mov r0,#0 ; bx <real>
+```
+
+with `HEAP_GLOBAL = 0x021238C8`, `alloc = 0x020186B0`, `free = 0x020187B8`. The
+heap global is in bss, so in a static image it reads NULL and the thunk faults
+reading `[0x14]`. The harness therefore stubs **both** the global and the real
+allocator. Size arrives in `r2`, not `r0`, and the original rounds up to 64
+bytes (`add r1, r7, #63`) — which is why the game's objects sit 0x40/0x80 apart.
+
+### Oracle results — verified
+
+- **Deterministic**: identical samples across runs. Required for tier 1.
+- **Pitch correct**: with INIT (octave 0), the measured period tracks
+  `440 * 2^((note-69)/12)` at 32768 Hz to within measurement resolution
+  (0.11–0.20%, which is one sample of zero-crossing quantisation):
+
+  | note | expected period | measured |
+  |---|---|---|
+  | 48 | 250.50 | 250.00 |
+  | 60 | 125.25 | 125.00 |
+  | 67 | 83.59 | 83.50 |
+  | 72 | 62.62 | 62.55 |
+
+- **`0x02075410` writes exactly 64 contiguous halfwords** to the output buffer,
+  confirming both thement's label for it and the 64-sample frame.
+- The **hardware divider is genuinely used** — 26 writes to `0x040002xx` per
+  frame. Without the `DIVCNT` model the output would be silently wrong.
+
+### VCO waveform enum — measured, not assumed
+
+Sweeping knob 6 with INIT and balance forced to VCO1, over one full period:
+
+| value | rising | falling | flat | jumps | distinct slopes | waveform |
+|---|---|---|---|---|---|---|
+| 0 | 63 | 62 | 0 | 1 | 2 (+430/-490) | **triangle** |
+| 1 | 3 | 122 | 0 | 3 | 1 (-230) | **sawtooth** |
+| 2 | 2 | 4 | 119 | 3 | 1 (0) | **square** |
+| 3 | 61 | 64 | 0 | 116 | 9 | **noise** |
+
+So `0=triangle, 1=saw, 2=square, 3=noise`. Note this is a *different* enum from
+the modulation-source list for knobs 26–30 (`1=sine, 2=saw, 3=square, 4=S&H,
+5=EG, 6=VCO2`) — do not conflate them.
+
+---
+
 Behavioural notes that matter for a bit-exact reimplementation:
 
 - **Envelopes are computed once per frame, not per sample.**
