@@ -1,35 +1,55 @@
 # ds10
 
-Reverse engineering KORG DS-10 PLUS (Nintendo DS) with the goal of a native C
-reimplementation: the synthesizer engine first, an SDL 1.2 GUI second.
+Reverse engineering KORG DS-10 PLUS (Nintendo DS) into a C reimplementation:
+the synthesizer engine, and the interface, running in a browser.
 
 Multiplayer (DS Wireless Play / WiFi) is out of scope.
 
 ## Status
 
-The audio engine is reimplemented in C and renders songs. `out/songplay` reads a
-`.dat` song and writes a WAV using nothing but the reimplementation.
+**Audio.** Reimplemented and verified sample-exact against the original ARM9
+code running under Unicorn. `out/songplay` renders a `.dat` song to a WAV using
+nothing but the reimplementation: the oscillator, filter, envelope, LFO,
+portamento and amp; the 31-knob patch format; the drum voice and the one-second
+buffer a drum patch is rendered into; the mixer's 25 knobs and the effect's
+eight; the sequencer's transport, gating, note emission and event routing; the
+song file format; automation lanes.
+
+**Graphics.** The DS 2D hardware is modelled in C and is pixel-exact against
+melonDS over 29 screens. The interface's pages are drawn from the game's own
+asset files; six of them reproduce the real thing exactly.
+
+**Browser.** `make serve` builds the whole thing to WebAssembly and serves it.
+Both screens render, the navigation map switches pages, the keyboard plays
+through the decompiled synth engine at the right pitch, and the synth edit
+page's knobs turn.
+
+What is *not* done: the per-screen widget constructors, so a page draws but
+does not animate — the sprite layer is a captured frame per page rather than
+generated. The 3D caption layer is not implemented. Most screens have no
+behaviour wired. See [`TODO.md`](TODO.md) §6.
 
 - [`recon.md`](recon.md) — what the ROM actually contains: container layout, the
-  ARM9/ARM7 memory map, NitroFS inventory, the song and patch formats, and the
-  engine's addresses and structures.
+  ARM9/ARM7 memory map, NitroFS inventory, the song and patch formats, the
+  engine's addresses and structures, and (§16) the graphics path.
 - [`PLAN.md`](PLAN.md) — phased plan, and the four-tier verification strategy the
   project is built around.
-- [`TODO.md`](TODO.md) — what is left, starting with the gap in the test suite
-  that four separate bugs have already slipped through.
+- [`TODO.md`](TODO.md) — what is left, starting with the gap in the audio test
+  suite that four separate bugs have already slipped through.
 
-The engine runs on the **ARM9** at **32768 Hz** in **64-sample frames**: six
-voices (2 synth + 4 drum) plus mixer and effect. Decompiled and verified
-sample-exact against the original: the oscillator, filter, envelope, LFO,
-portamento and amp; the 31-knob patch format; the drum voice and the one-second
-buffer a drum patch is rendered into; the mixer's 25 knobs and the effect's eight;
-the sequencer's transport, gating, note emission and event routing; the song file
-format; and automation lanes.
+### Verification
 
-`make test` runs seventeen differential suites, every one of them comparing
-against the original ARM9 code executing under Unicorn. Read `TODO.md` §1 before
-trusting that number — the suites are strong on DSP and blind on the wiring
-around it.
+Every claim above is a test, not an impression.
+
+| target | what it compares | scale |
+|---|---|---|
+| `make test` | the audio engine against the original under Unicorn | 17 suites |
+| `make test-obj` | the sprite widget's OAM against the game's own setter | 171 checks |
+| `make test-2d` | the 2D hardware against melonDS, pixel for pixel | 72 frames |
+| `make test-page` | each page rebuilt from assets, against melonDS | 14 screens |
+
+Read `TODO.md` §1 before trusting the audio number — those suites are strong on
+DSP and blind on the wiring around it, which is where all four known bugs were.
 
 ### Prior art
 
@@ -42,25 +62,29 @@ theirs as a cross-check. See `recon.md` §0 and `PLAN.md` §1.
 
 ## Requirements
 
-The ROM is **not** included and nothing derived from it is committed. Supply your
-own dump:
+`data/` holds the ROM-derived inputs the engine and the browser build need, so
+neither requires a ROM. Regenerating the test vectors does; supply your own
+dump:
 
 ```
 ds10plus.nds     sha1 85064992fe671f6e34ffeb01570c9cce56a6a245
 ```
 
-Tooling: `python3` with `unicorn`, `arm-none-eabi-objdump`, and
-`libsdl1.2-dev` for the eventual application. Ghidra is used for the
-disassembly work.
+Tooling: `python3` with `unicorn` and `pillow`, `arm-none-eabi-objdump`, and
+Ghidra for the disassembly work. The browser build needs the Emscripten SDK.
+`make test-2d` needs a melonDS core built without the Qt frontend; `make ndsref`
+prints the exact commands if it is missing.
 
 ## Usage
 
 ```sh
+make serve                  # build for the browser and serve it on :8537
+make test                   # the audio engine, against the original
+make test-2d                # the 2D hardware, against melonDS
+make songplay               # out/songplay song.dat -o out.wav
+
 make recon                  # extract everything from the ROM into out/
-python3 tools/ndsx.py fs     # list the NitroFS contents
-python3 tools/ndsx.py autoload
-python3 tools/emu.py smoke   # verify the memory map by booting both CPUs
-python3 tools/probe.py tables
+make sweep                  # walk the whole interface, snapshotting each screen
 ```
 
 `DS10_ROM` overrides the ROM path (default `ds10plus.nds`).
@@ -70,12 +94,22 @@ python3 tools/probe.py tables
 | file | what |
 |------|------|
 | `tools/ndsx.py` | NDS header, NitroFS walk, BLZ decode, extraction, autoload memory map, patch dump, register classification |
-| `tools/emu.py` | per-CPU Unicorn image and function-call harness — the oracle the verification strategy depends on |
+| `tools/emu.py` | per-CPU Unicorn image and function-call harness — the oracle the audio verification depends on |
+| `tools/oracle.py` | renders real DS-10 audio by executing the original ARM9 code, and writes the test vectors |
+| `tools/ndsref/` | headless melonDS: dumps the whole 2D state and the framebuffers it produced |
+| `tools/snap.py` | reads those dumps; `tools/sweep.py` drives the interface to produce them |
+| `tools/nitro.py` | the NITRO asset containers, and a background composed the way the hardware would |
+| `tools/widgets.py` | recovers sprite widgets from a captured frame by rebuilding their OAM |
 | `tools/probe.py` | branch-target validation, lookup-table detection, xrefs, multiply density |
 
 ## Layout
 
 ```
-tools/    analysis and extraction scripts
-out/      everything extracted from the ROM (gitignored)
+src/core/  the audio engine
+src/gfx/   the DS 2D hardware, and the asset containers
+src/app/   the interface, and the native tools built on it
+src/web/   the browser build's entry points
+web/       the page that hosts it
+data/      ROM-derived inputs, committed
+out/       everything extracted or built (gitignored)
 ```
