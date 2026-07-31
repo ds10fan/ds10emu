@@ -390,6 +390,17 @@ int ds10_web_song(const char *name)
         }
     }
     seq_playing = 1;
+
+    /* The map's bottom bar shows what was just loaded. */
+    {
+        char nm[8];
+        int k;
+
+        for (k = 0; k < 6; k++) nm[k] = (char)song.name[k];
+        nm[6] = 0;
+        for (k = 5; k >= 0 && (nm[k] == ' ' || nm[k] == 0); k--) nm[k] = 0;
+        ds10_ui_map_labels(ui, nm, (int)song.swing, (int)song.tempo);
+    }
     return 0;
 }
 

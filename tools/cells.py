@@ -25,10 +25,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import nitro
 import snap
 
-# Two draw calls, two banks. 0x02022c38 adds CHARACTER_c's base of 0x200 to
-# every tile; 0x02022d38 is the same code with no base, for the sheet at
-# tile 0 - which is DS10FONT.
-TILE_BASES = (0x200, 0x000)
+# The sheets, by the tile each is loaded at. 0x02022c38 adds CHARACTER_c's
+# 0x200 to every tile; 0x02022d38 is the same code with no base, for the sheet
+# at tile 0. The third is not a third sheet: the top screen's CHARACTER_S is
+# loaded twice, at tile 0 and again at 0x100, and its text sprites use the
+# second copy.
+TILE_BASES = (0x200, 0x100, 0x000)
 
 
 def load_bank(path):

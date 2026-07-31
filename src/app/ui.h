@@ -41,6 +41,16 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Redraw the navigation map's bottom bar: the session name, the swing and the
+ * tempo, at the positions the game puts them. */
+void ds10_ui_map_labels(ds10_ui *u, const char *name, int swing, int bpm);
+
+/* Draw a string as one 8x8 sprite per character, into `engine`'s OAM starting
+ * at `slot`. Returns the slot after the last one used. Uppercase, digits and
+ * a few symbols only - that is all the sheet has. */
+int ds10_ui_text(ds10_ui *u, int engine, int slot, int x, int y,
+                 const char *s, int palette, int priority);
+
 /* Hit-test the drum selector's four panels. Returns 0..3, or -1.
  * Decompiled from 0x020572b0. */
 int ds10_ui_drum_hit(int x, int y);

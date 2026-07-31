@@ -21,7 +21,7 @@ Format, little-endian:
         per record, in the order the game drew them:
             u8 kind
             kind 0: u8 banklen, bank, u16 cell, u8 prio, u8 flags,
-                    u8 affine, u8 base, i32 x, i32 y, i32 mtx[4]
+                    u8 affine, u8 pad, u16 base, i32 x, i32 y, i32 mtx[4]
             kind 1: u8[6] one OAM entry that no cell explained
     flags: bit 0 the cell was rotated, bit 1 double-size
 
@@ -38,7 +38,7 @@ import cells as cellmod
 import nitro
 import snap
 
-VERSION = 3
+VERSION = 4
 
 
 def page_index(assetdir):
@@ -111,7 +111,7 @@ def build(half, banks):
         pos = cellmod.solve_pos(cell, mtx if rot else None, affine, dbl, base,
                                 oam, slot)
         rec.append((0, (name, idx, prio, (1 if rot else 0) | (dbl << 1),
-                        affine, 1 if base else 0, pos[0], pos[1], mtx)))
+                        affine, base, pos[0], pos[1], mtx)))
         slot += n
     return rec
 
@@ -151,7 +151,8 @@ def main():
                 bank, cell, prio, flags, affine, base, x, y, mtx = body
                 f.write(struct.pack("<B", len(bank)))
                 f.write(bank.encode("latin1"))
-                f.write(struct.pack("<HBBBB", cell, prio, flags, affine, base))
+                f.write(struct.pack("<HBBBBH", cell, prio, flags, affine, 0,
+                                    base))
                 f.write(struct.pack("<2i", x, y))
                 f.write(struct.pack("<4i", *mtx))
 

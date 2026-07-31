@@ -48,7 +48,8 @@
 typedef struct {
     char bank[24];
     uint16_t cell;
-    uint8_t prio, flags, affine, base;
+    uint8_t prio, flags, affine;
+    uint16_t base;      /* the tile the sheet is loaded at */
     int32_t x, y;
     int32_t mtx[4];
 } page_item;
@@ -466,7 +467,7 @@ static void load_pages(ds10_ui *u)
               ((uint32_t)hdr[6] << 16) | ((uint32_t)hdr[7] << 24);
     count = (uint32_t)hdr[8] | ((uint32_t)hdr[9] << 8) |
             ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
-    if (version != 3 || count == 0 || count > 512) {
+    if (version != 4 || count == 0 || count > 512) {
         fclose(f);
         return;
     }
@@ -500,7 +501,8 @@ static void load_pages(ds10_ui *u)
             it->prio = (uint8_t)rd8(f);
             it->flags = (uint8_t)rd8(f);
             it->affine = (uint8_t)rd8(f);
-            it->base = (uint8_t)rd8(f);
+            (void)rd8(f);
+            it->base = (uint16_t)rd16f(f);
             it->x = rd32f(f);
             it->y = rd32f(f);
             for (j = 0; j < 4; j++) it->mtx[j] = rd32f(f);
@@ -595,9 +597,10 @@ static void draw_page(ds10_ui *u, const char *name, int engine)
         for (k = 0; k < n; k++) {
             uint8_t *e = oam + (slot + k) * 8;
             int a2 = e[4] | (e[5] << 8);
-            /* base 1 means the CHARACTER_c sheet, whose tiles the draw call
-             * offsets by 0x200; base 0 is the sheet at tile 0. */
-            int base = it->base ? 0x200 : 0;
+            /* The tile the sheet is loaded at: 0x200 for CHARACTER_c, 0
+             * for the sheet at tile 0, and 0x100 for the top screen's second
+             * copy of CHARACTER_S. */
+            int base = it->base;
 
             a2 = (a2 & ~0x3FF) | (((a2 & 0x3FF) + base) & 0x3FF);
             a2 = (a2 & ~0x0C00) | (it->prio << 10);
@@ -935,6 +938,102 @@ static const struct { int x, y, w, h; } DRUM_PANEL[4] = {
     {  7,  25, 117, 76}, {132,  25, 117, 76},
     {  7, 110, 117, 76}, {132, 110, 117, 76},
 };
+
+/* The interface's text is one 8x8 sprite per character out of the character
+ * sheet, not a font rasterised into VRAM. The sheet's first glyphs are, in
+ * 32-byte tiles:
+ *
+ *   0x00..0x09  the digits
+ *   0x0a, 0x0b  plus and minus
+ *   0x11..0x2a  A to Z
+ *   0x2b        hash
+ *
+ * The pen advances by the glyph's ink width plus one, which reproduces the
+ * spacing of every caption checked against a captured frame.
+ *
+ * Engine B addresses sprite tiles in 32-byte units - DISPCNT bits 20-21 are 0
+ * there and 1 on engine A - so a tile index is a glyph index directly.
+ */
+static int glyph_tile(int c)
+{
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c == '+') return 0x0A;
+    if (c == '-') return 0x0B;
+    if (c >= 'A' && c <= 'Z') return 0x11 + (c - 'A');
+    if (c >= 'a' && c <= 'z') return 0x11 + (c - 'a');
+    if (c == '#') return 0x2B;
+    return -1;
+}
+
+/* How wide a glyph's ink is, read out of the sheet in VRAM. */
+static int glyph_width(const ds10_ui *u, int engine, int tile)
+{
+    const uint8_t *vram = engine ? u->gpu.vram.i : u->gpu.vram.e;
+    size_t len = engine ? sizeof u->gpu.vram.i : sizeof u->gpu.vram.e;
+    size_t off = (size_t)tile * 32;
+    int x, y, lo = 8, hi = -1;
+
+    if (off + 32 > len) return 4;
+    for (y = 0; y < 8; y++)
+        for (x = 0; x < 8; x++) {
+            uint8_t b = vram[off + y * 4 + x / 2];
+            int v = (x & 1) ? (b >> 4) : (b & 0x0F);
+
+            if (!v) continue;
+            if (x < lo) lo = x;
+            if (x > hi) hi = x;
+        }
+    return hi < 0 ? 2 : hi - lo + 1;
+}
+
+int ds10_ui_text(ds10_ui *u, int engine, int slot, int x, int y,
+                 const char *s, int palette, int priority)
+{
+    uint8_t *oam = u->gpu.oam + (engine ? 0x400 : 0);
+
+    for (; *s && slot < 128; s++) {
+        int tile = glyph_tile((unsigned char)*s);
+        uint8_t *e;
+
+        if (tile < 0) {           /* a space, or something not in the sheet */
+            x += 4;
+            continue;
+        }
+        e = oam + slot * 8;
+        e[0] = (uint8_t)y;
+        e[1] = 0;                 /* 8x8, normal, 16 colour */
+        e[2] = (uint8_t)(x & 0xFF);
+        e[3] = (uint8_t)((x >> 8) & 1);
+        e[4] = (uint8_t)tile;
+        e[5] = (uint8_t)(((tile >> 8) & 3) | (priority << 2) |
+                         (palette << 4));
+        x += glyph_width(u, engine, tile) + 1;
+        slot++;
+    }
+    return slot;
+}
+
+/* 90_MAP's bottom bar. The slots and positions are the ones a captured frame
+ * has: the session name from slot 0 at x 27, the swing value at 117 and the
+ * tempo at 176, all on the baseline y = 177 in palette 9. */
+void ds10_ui_map_labels(ds10_ui *u, const char *name, int swing, int bpm)
+{
+    char num[8];
+    int slot;
+
+    slot = ds10_ui_text(u, 1, 0, 27, 177, name, 9, 2);
+    while (slot < 9) {          /* park whatever the name did not need */
+        uint8_t *e = u->gpu.oam + 0x400 + slot * 8;
+
+        e[0] = 192;
+        e[1] = e[2] = e[3] = e[4] = e[5] = 0;
+        slot++;
+    }
+    snprintf(num, sizeof num, "%d", swing);
+    slot = ds10_ui_text(u, 1, 9, 117, 177, num, 9, 0);
+    snprintf(num, sizeof num, "%d", bpm);
+    ds10_ui_text(u, 1, slot, 176, 177, num, 9, 0);
+}
 
 int ds10_ui_drum_hit(int x, int y)
 {

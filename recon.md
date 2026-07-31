@@ -1765,21 +1765,37 @@ A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
 
 ### Text
 
-The interface's captions are not in any tile sheet. The top screen's sprite
-VRAM holds about 125 KB of which only CHARACTER_S's 13 KB is a file; read the
-rest as 4-bit tiles and it is digits and letters. The glyphs are rasterised
-into VRAM at runtime from the eight NFTR fonts in `/data`.
+The interface's text is **one 8x8 sprite per character**, straight out of the
+character sheet. The sheet's first glyphs, in 32-byte tiles:
 
-`src/gfx/nftr.c` reads them - FINF, CGLP, CWDH and CMAP - and `make fonttest`
-renders a string as ASCII art to check it. All eight are 1 bit per pixel with
-a ten-pixel line, in a 10 by 10 cell of thirteen bytes, rows packed end to end
-with no padding between them.
+```
+0x00..0x09  the digits
+0x0a 0x0b   plus and minus
+0x11..0x2a  A to Z
+0x2b        hash
+```
 
-What is *not* established is how a rasterised glyph is packed into sprite
-tiles. Matching a rendered glyph against the captured VRAM as 8x8 tiles gets
-nowhere useful, which is unsurprising for a ten-pixel cell: it spans two tiles
-vertically. Finding the game's glyph cache is what settles it, and until then
-the map's captions stay as captured OAM.
+The pen advances by the glyph's ink width plus one. Drawing "RESIN#" at (27,177)
+that way reproduces the captured OAM exactly - six sprites at x 27, 31, 35, 39,
+41 and 46 with tiles 0x022, 0x015, 0x023, 0x019, 0x01e and 0x02b, palette 9,
+priority 2 - every field.
+
+Engine B addresses sprite tiles in **32-byte units**, not 64: DISPCNT bits
+20-21 are 0 there and 1 on engine A. Getting that wrong is what made the text
+look like it came from somewhere else.
+
+Two wrong turns worth recording, because both looked convincing:
+
+- The top screen's sprite VRAM holds far more than the one file loaded into
+  it, and reading the surplus as tiles shows digits and letters. That looked
+  like glyphs rasterised at runtime from the eight NFTR fonts in `/data`. It is
+  not: the surplus is a second copy of CHARACTER_S, and **no NFTR filename
+  appears anywhere in the ARM9**. The fonts are unused by this game.
+  `src/gfx/nftr.c` reads them correctly and is kept, but nothing needs it.
+- Matching a sprite's tile against the sheets at bases 0x200 and 0 leaves the
+  map's captions unexplained, and the implied bases come out scattered. That is
+  the signature of comparing against *empty* tiles, which match anything - not
+  of a missing sheet.
 
 ### Status
 
@@ -1800,5 +1816,12 @@ constructor and its per-frame update. Until that is read, a page shows the
 state it was captured in.
 
 `01_UNMAIN_MENU` and `90_MAP` come out mostly as unattributed OAM rather than
-cells, and the four advertisement screens have no sprite record at all. They
-are probably drawing from a sheet at a tile base the matcher does not try.
+cells, because most of what they draw is text - one sprite per character, not
+a cell. The renderer for that is now in `src/app/ui.c` and the map's bottom bar
+is generated from the loaded song rather than replayed. Attributing the rest to
+text rather than to cells is what would empty the raw list.
+
+The four advertisement screens have no sprite record at all, and their own
+NCLR goes into extended palette slot 0 at entry 1, overlapping the shared
+palette already there at entry 4. Loading both makes them worse, so the game
+replaces rather than adds; how has not been worked out.
