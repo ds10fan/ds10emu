@@ -173,6 +173,10 @@ int ds10_web_page(const char *bottom, const char *top)
     return 0;
 }
 
+/* Which of the keyboard page's top-bar buttons a touch is on, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_key_button(int x, int y) { return ds10_ui_key_button(x, y); }
+
 /* Which mixer control a touch is on, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_mixer_hit(int x, int y) { return ds10_ui_mixer_hit(x, y); }

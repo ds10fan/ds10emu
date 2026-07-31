@@ -1693,6 +1693,26 @@ Those knob ids are the ones the **audio** work arrived at independently: the
 sequencer's per-channel volume is knob `channel + 17` and its pan `channel + 9`
 (section 15). Two halves of the ROM, read years-of-effort apart, agreeing.
 
+### Screen constructors, by address
+
+Every screen that places widgets is one of these. `0x0202e750` (button),
+`0x0203a530` (slider), `0x020479d4` (rotary) and `0x0202ee0c` are the widget
+constructors, so their callers enumerate the screens:
+
+```
+0x0202e01c  0x02039e68  0x02047384  0x02049150  0x0204bff8  0x0204e140
+0x02050108  0x020572b0  0x020594d4  0x0205e1e4  0x02062914  0x02065b04
+```
+
+Read so far:
+
+| address | screen | geometry |
+|---|---|---|
+| `0x02065b04` | 30_MIXER | tables above |
+| `0x0204bff8` | 81_KEY | OCT- at (4,2), OCT+ at (0x23,2), both 0x1c x 0xe; synth selector at (0x42,4), 0x46 x 0xc |
+| `0x02049150` | 71_KAOSS | two knob assignments, three buttons at x = 4 + 21*i, y = 2 |
+| `0x02050108` | 60_SYN_SEQ_* | six page variants; two 16-step runs at x = 0x16 and 0x4a, y = 3 |
+
 ### Status
 
 Reproduced from the asset files alone, and pixel-exact against melonDS for the

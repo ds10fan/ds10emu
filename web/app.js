@@ -183,6 +183,14 @@ function onDown(which, ev) {
   }
   if (page.startsWith("81_KEY")) {
     startAudio();
+    const b = api.keyButton(x, y);
+    if (b === 0 || b === 1) {
+      octave += b ? 1 : -1;
+      if (octave < -3) octave = -3;
+      if (octave > 3) octave = 3;
+      status.textContent = "octave " + (octave > 0 ? "+" : "") + octave;
+      return;
+    }
     const note = api.keyHit(x, y, octave);
     if (note >= 0) {
       noteOff();
@@ -206,6 +214,8 @@ Module.onRuntimeInitialized = () => {
     mapHit: Module.cwrap("ds10_web_map_hit", "string", ["number", "number"]),
     keyHit: Module.cwrap("ds10_web_key_hit", "number",
                          ["number", "number", "number"]),
+    keyButton: Module.cwrap("ds10_web_key_button", "number",
+                            ["number", "number"]),
     audioInit: Module.cwrap("ds10_web_audio_init", "number", []),
     audioRender: Module.cwrap("ds10_web_audio", "number", ["number"]),
     audioBuf: Module.cwrap("ds10_web_audio_buf", "number", []),

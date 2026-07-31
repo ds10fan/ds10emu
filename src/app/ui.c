@@ -848,6 +848,25 @@ static const struct { int x0, x1, semi; } BLACK_KEY[10] = {
     {212, 222, 20}, {232, 242, 22},
 };
 
+/* 81_KEY's top bar, from 0x0204bff8: OCT- at (4,2) and OCT+ at (0x23,2), both
+ * 0x1c by 0xe, and the synth selector at (0x42,4), 0x46 by 0xc. */
+static const struct { int x, y, w, h, id; } KEY_BUTTON[] = {
+    {0x04, 2, 0x1C, 0x0E, 0},
+    {0x23, 2, 0x1C, 0x0E, 1},
+    {0x42, 4, 0x46, 0x0C, 2},
+};
+
+int ds10_ui_key_button(int x, int y)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof KEY_BUTTON / sizeof KEY_BUTTON[0]; i++)
+        if (x >= KEY_BUTTON[i].x && x < KEY_BUTTON[i].x + KEY_BUTTON[i].w &&
+            y >= KEY_BUTTON[i].y && y < KEY_BUTTON[i].y + KEY_BUTTON[i].h)
+            return KEY_BUTTON[i].id;
+    return -1;
+}
+
 int ds10_ui_key_hit(int x, int y, int octave)
 {
     int i;

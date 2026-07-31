@@ -41,6 +41,10 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Hit-test the keyboard page's top bar. Returns 0 for OCT-, 1 for OCT+,
+ * 2 for the synth selector, or -1. Decompiled from 0x0204bff8. */
+int ds10_ui_key_button(int x, int y);
+
 /* Hit-test a touch on the mixer page. Returns a mixer knob id - 9..14 are the
  * pans, 17..22 the volumes - or -1. Decompiled from 0x02065b04. */
 int ds10_ui_mixer_hit(int x, int y);
