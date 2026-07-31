@@ -449,6 +449,74 @@ def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
     print(f"{path}: {len(cases)} frame transitions")
 
 
+# --- drum voice capture -----------------------------------------------------
+DRUM_NEW = 0x02076014
+DRUM_RENDER = 0x020722B8
+SAMPLE_LEN = 0x8000        # what the engine pre-renders a drum patch into
+
+
+def capture_drum(speed, stage, vol, length, frames=6, seed=7):
+    """Drive the real drum voice over a known sample buffer."""
+    o = Oracle()
+    dr = o.call(DRUM_NEW)
+    vb = o.u32(dr + 0x30)
+    samp = o.call(NEW_THUNK, length * 2 + 4)
+    outb = o.call(NEW_THUNK, FRAME * 2)
+    slot = o.call(NEW_THUNK, 4)
+    o.w32(slot, outb)
+
+    rng = _lcg(seed)
+    wave = [next(rng) >> 1 for _ in range(length + 1)]
+    o.uc.mem_write(samp, struct.pack(f"<{length + 1}h", *wave))
+
+    o.uc.mem_write(dr + 0x08, b"\0")
+    o.w32(dr + 0x10, FRAME)
+    o.w32(dr + 0x1C, slot)
+    o.w32(dr + 0x34, speed)
+    o.w32(dr + 0x38, 0)
+    o.w32(dr + 0x40, length)
+    o.w32(dr + 0x44, samp)
+    o.uc.mem_write(vb + 0x10, bytes([stage]))
+    o.w32(vb + 0x14, vol)
+
+    state = [_s32(o.u32(vb + 0x14)), o.uc.mem_read(vb + 0x10, 1)[0],
+             _s32(o.u32(dr + 0x34)), _s32(o.u32(dr + 0x38)),
+             _s32(o.u32(dr + 0x40))]
+    outs = []
+    for _ in range(frames):
+        o.call(DRUM_RENDER, dr)
+        outs.append(list(struct.unpack(f"<{FRAME}h",
+                                       o.uc.mem_read(outb, FRAME * 2))))
+    return state, wave, outs
+
+
+def cmd_drum_vectors(path="tests/vectors/drum.bin"):
+    """Sweep playback rate, envelope stage and starting level."""
+    cases = []
+    # 0x8000 is unity rate; the trigger formula is 0x8000 * 2^((note-60)/12).
+    for speed in (0x800, 0x4000, 0x8000, 0xC000, 0x10000, 0x40000):
+        for stage in (0, 1, 2):
+            cases.append(capture_drum(speed, stage, 0x400000, 4096,
+                                      seed=speed + stage))
+    # Run past the end of the buffer so the one-shot clamp engages.
+    cases.append(capture_drum(0x80000, 0, 0x800000, 512, frames=12, seed=99))
+    # Envelope from zero, and from the ceiling.
+    for vol in (0, 0x00B33333):
+        cases.append(capture_drum(0x8000, 0, vol, 2048, frames=10,
+                                  seed=vol + 1))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"DRM1" + struct.pack("<I", len(cases)))
+        for state, wave, outs in cases:
+            f.write(struct.pack("<5i", *state))
+            f.write(struct.pack("<II", len(wave), len(outs)))
+            f.write(struct.pack(f"<{len(wave)}h", *wave))
+            for o_ in outs:
+                f.write(struct.pack(f"<{FRAME}h", *o_))
+    tot = sum(len(c[2]) for c in cases) * FRAME
+    print(f"{path}: {len(cases)} cases, {tot} samples")
+
+
 # --- mixer + effect DSP capture ---------------------------------------------
 MIXER_RENDER = 0x02072E8C
 
@@ -1310,7 +1378,8 @@ def main():
             "voice-vectors": cmd_voice_vectors,
             "patch-vectors": cmd_patch_vectors,
             "fx-vectors": cmd_fx_vectors,
-            "mixer-vectors": cmd_mixer_vectors}
+            "mixer-vectors": cmd_mixer_vectors,
+            "drum-vectors": cmd_drum_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
