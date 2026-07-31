@@ -1,0 +1,14 @@
+# Nothing derived from the ROM is committed.
+out/
+assets/
+*.nds
+*.bin
+*.asm
+*.wav
+
+# Build output
+build/
+*.o
+*.a
+
+__pycache__/
