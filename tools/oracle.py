@@ -449,6 +449,156 @@ def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
     print(f"{path}: {len(cases)} frame transitions")
 
 
+# --- mixer + effect DSP capture ---------------------------------------------
+MIXER_RENDER = 0x02072E8C
+
+# ds10_mixer compare order.
+MX_FIELDS = ([(0x30, 4)] + [(0x38 + 4 * c, 4) for c in range(6)] +
+             [(0x50 + 4 * c, 4) for c in range(6)] +
+             [(0x68 + 4 * c, 4) for c in range(6)] +
+             [(0x84, 4), (0x88, 2)])
+# ds10_fx compare order (scalars only; the two ring buffers start zeroed on
+# both sides and stay in lockstep).
+FXS_FIELDS = ([(o, 2) for o in (0x0C, 0x0E, 0x10, 0x12, 0x14, 0x16, 0x18,
+                                0x1A, 0x1C)] +
+              [(o, 4) for o in (0x28, 0x2C, 0x30, 0x34, 0x38, 0x3C, 0x40,
+                                0x44, 0x48, 0x4C, 0x50, 0x54, 0x58,
+                                0x5C, 0x60, 0x64, 0x68, 0x6C, 0x70,
+                                0x74, 0x78, 0x7C, 0x80, 0x84, 0x88,
+                                0x8C, 0x90, 0x94, 0x98, 0x9C, 0xA0)])
+
+
+def _lcg(seed):
+    x = seed & 0xFFFFFFFF
+    while True:
+        x = (x * 1103515245 + 12345) & 0xFFFFFFFF
+        yield ((x >> 16) & 0xFFFF) - 0x8000
+
+
+def capture_mixer(setup, frames=8, seed=1):
+    """Drive the real mixer with known voice buffers and capture stereo out.
+
+    `setup` is a list of (kind, a, b): ("fx", param, value),
+    ("pan", ch, v), ("vol", ch, v), ("route", v, _), ("mute", v, _),
+    ("tempo", v, _).
+    """
+    o = Oracle()
+    mx = o.call(MIXER_NEW)
+    fx = o.u32(mx + FX_PTR)
+
+    # Six voice buffers, an array of pointers at 8-byte stride, and the output
+    # pointer pair the mixer writes through.
+    bufs = [o.call(NEW_THUNK, FRAME * 2) for _ in range(6)]
+    arr = o.call(NEW_THUNK, 6 * 8)
+    for i, b in enumerate(bufs):
+        o.w32(arr + 8 * i, b)
+    outl = o.call(NEW_THUNK, FRAME * 2)
+    outr = o.call(NEW_THUNK, FRAME * 2)
+    pair = o.call(NEW_THUNK, 8)
+    o.w32(pair, outl)
+    o.w32(pair + 4, outr)
+    o.w32(mx + 0x10, FRAME)
+    o.w32(mx + 0x18, arr)
+    o.w32(mx + 0x1C, pair)
+    o.uc.mem_write(mx + 0x08, b"\0")
+
+    for kind, a, b in setup:
+        if kind == "fx":
+            o.call(FX_SET, fx, a, b)
+        elif kind == "pan":
+            o.w32(mx + 0x38 + 4 * a, b)
+        elif kind == "vol":
+            o.w32(mx + 0x50 + 4 * a, b)
+        elif kind == "route":
+            o.w32(mx + 0x84, a)
+        elif kind == "mute":
+            o.w32(mx + 0x88, a)
+        elif kind == "tempo":
+            o.w32(fx + 0xA0, a)
+
+    def snap(base, fields, size):
+        raw = bytes(o.uc.mem_read(base, size))
+        return [_rdf(raw, off, sz) for off, sz in fields]
+
+    mstate = snap(mx, MX_FIELDS, 0x8C)
+    fstate = snap(fx, FXS_FIELDS, 0xA8)
+
+    rng = _lcg(seed)
+    steps = []
+    for _ in range(frames):
+        ins = []
+        for bi in bufs:
+            vals = [next(rng) >> 2 for _ in range(FRAME)]
+            o.uc.mem_write(bi, struct.pack(f"<{FRAME}h", *vals))
+            ins.append(vals)
+        o.call(MIXER_RENDER, mx)
+        l = list(struct.unpack(f"<{FRAME}h", o.uc.mem_read(outl, FRAME * 2)))
+        r = list(struct.unpack(f"<{FRAME}h", o.uc.mem_read(outr, FRAME * 2)))
+        steps.append((ins, l, r))
+    return mstate, fstate, steps
+
+
+def cmd_mixer_vectors(path="tests/vectors/mixer.bin"):
+    """Sweep effect type, routing, pan/vol, mute and tempo sync."""
+    cases = []
+    base = [("vol", c, 0x6000) for c in range(6)] + \
+           [("pan", c, 0x4000) for c in range(6)]
+    for ftype in (0, 1, 2):
+        for route in range(6):
+            setup = base + [("fx", 1, ftype), ("fx", 2, 60), ("fx", 5, 90),
+                            ("fx", 7, 40), ("fx", 8, 70), ("route", route, 0)]
+            cases.append(capture_mixer(setup, seed=1 + ftype * 8 + route))
+    # Pan and volume extremes.
+    for pan in (0, 0x2000, 0x7FFF):
+        for vol in (0, 0x3000, 0x7FFF):
+            setup = [("vol", c, vol) for c in range(6)] + \
+                    [("pan", c, pan) for c in range(6)] + \
+                    [("fx", 1, 0), ("fx", 8, 40), ("route", 0, 0)]
+            cases.append(capture_mixer(setup, seed=100 + pan + vol))
+    # Mute ramp, both directions.
+    for mute in (0, 1):
+        cases.append(capture_mixer(base + [("mute", mute, 0)], frames=12,
+                                   seed=200 + mute))
+    # Tempo-synced delay - the divider path, end to end through the DSP.
+    for tempo in (60, 120, 400):
+        setup = base + [("tempo", tempo, 0), ("fx", 1, 0), ("fx", 6, 1),
+                        ("fx", 2, 40), ("fx", 7, 50), ("fx", 8, 90),
+                        ("route", 4, 0)]
+        cases.append(capture_mixer(setup, frames=12, seed=300 + tempo))
+    # Heavy feedback, to make the ring buffer and its ramp matter.
+    for fb in (0, 30, 63):
+        setup = base + [("fx", 1, 0), ("fx", 2, 12), ("fx", 7, fb),
+                        ("fx", 8, 127), ("route", 4, 0)]
+        cases.append(capture_mixer(setup, frames=16, seed=400 + fb))
+
+    b = open("out/arm9.bin", "rb").read()
+    bb = 0x02004000
+    s16 = lambda a, n: [struct.unpack_from("<h", b, a - bb + 2 * i)[0]
+                        for i in range(n)]
+    u32t = lambda a, n: [_s32(struct.unpack_from("<I", b, a - bb + 4 * i)[0])
+                         for i in range(n)]
+    nm, nf = len(MX_FIELDS), len(FXS_FIELDS)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"MIX1" + struct.pack("<III", len(cases), nm, nf))
+        f.write(struct.pack("<3i", *u32t(0x0207EF38, 3)))
+        f.write(struct.pack("<128h", *s16(0x0207EF44, 128)))
+        f.write(struct.pack("<128h", *s16(0x0207F044, 128)))
+        f.write(struct.pack("<12i", *u32t(0x0207F144, 12)))
+        f.write(struct.pack("<128i", *u32t(0x0207FFC4, 128)))
+        for mstate, fstate, steps in cases:
+            f.write(struct.pack(f"<{nm}i", *mstate))
+            f.write(struct.pack(f"<{nf}i", *fstate))
+            f.write(struct.pack("<i", len(steps)))
+            for ins, l, r in steps:
+                for ch in ins:
+                    f.write(struct.pack(f"<{FRAME}h", *ch))
+                f.write(struct.pack(f"<{FRAME}h", *l))
+                f.write(struct.pack(f"<{FRAME}h", *r))
+    tot = sum(len(c[2]) for c in cases) * FRAME
+    print(f"{path}: {len(cases)} cases, {tot} stereo samples")
+
+
 # --- effect parameter mapping capture --------------------------------------
 MIXER_NEW = 0x02076030     # alloc(0x8C) + ctor; the fx processor is at +0x80
 FX_SET = 0x020726D4        # (fx, param, value)
@@ -1142,7 +1292,8 @@ def main():
             "vcfupd-vectors": cmd_vcfupd_vectors,
             "voice-vectors": cmd_voice_vectors,
             "patch-vectors": cmd_patch_vectors,
-            "fx-vectors": cmd_fx_vectors}
+            "fx-vectors": cmd_fx_vectors,
+            "mixer-vectors": cmd_mixer_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
