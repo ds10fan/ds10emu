@@ -712,8 +712,13 @@ P_FIELDS = [
 ]
 
 
-def capture_patch(knob_sets):
-    """For each knob vector: load it through the original and read back state."""
+def capture_patch(knob_sets, bpm=None):
+    """For each knob vector: load it through the original and read back state.
+
+    `bpm` overrides the LFO tempo at +0x2C. The constructor leaves it at 120, so
+    the BPM-synced rate branch is exercised by default - but only at one tempo,
+    hence the override.
+    """
     cases = []
     for knobs in knob_sets:
         o = Oracle()
@@ -721,13 +726,15 @@ def capture_patch(knob_sets):
                 (("lfo", 0x34), ("env", 0x30), ("nc", 0x38), ("pc", 0x3C),
                  ("vco", 0x40), ("vcf", 0x44), ("amp", 0x48))}
         base["envp"] = o.u32(base["env"])
-        bpm = _s32(o.u32(base["lfo"] + 0x2C))
+        if bpm is not None:
+            o.w32(base["lfo"] + 0x2C, bpm)
+        cur_bpm = _s32(o.u32(base["lfo"] + 0x2C))
         o.load_patch(knobs)
         out = []
         for key, off, size in P_FIELDS:
             raw = bytes(o.uc.mem_read(base[key] + off, 4))
             out.append(_rdf(raw, 0, size))
-        cases.append((list(knobs), bpm, out))
+        cases.append((list(knobs), cur_bpm, out))
     return cases
 
 
@@ -750,6 +757,16 @@ def cmd_patch_vectors(path="tests/vectors/patch.bin"):
             p[k] = val
             sets.append(p)
     cases = capture_patch(sets)
+
+    # The BPM-synced LFO rate branch depends on the tempo, so sweep it too.
+    # 3000 pushes the result past 2^31, which is a distinct arithmetic path.
+    for bpm in (0, 1, 60, 240, 3000):
+        tset = []
+        for freq in range(0, 128, 3):
+            p = list(init)
+            p[24], p[25] = freq, 1
+            tset.append(p)
+        cases += capture_patch(tset, bpm=bpm)
 
     b = open("out/arm9.bin", "rb").read()
     bb = 0x02004000
