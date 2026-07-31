@@ -6,7 +6,7 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -281,3 +281,19 @@ out/ndsref: tools/ndsref/main.cpp tools/ndsref/platform.cpp
 	  echo "  cmake --build $(MELON_BUILD)"; exit 1; }
 	$(CXX) -std=c++17 -O2 $(MELON_DEFS) -o $@ $^ \
 	  -I$(MELONDS)/src -I$(MELON_BUILD) $(MELON_LIBS)
+
+# The 2D hardware model, against melonDS. `make sweep` walks the whole
+# interface and snapshots each screen; test-2d renders every snapshot and
+# compares pixel for pixel.
+sweep: out/ndsref
+	@rm -rf out/sweep
+	@$(PY) tools/sweep.py out/sweep
+
+test-2d: out/test_2d
+	@test -n "$$(ls out/sweep/*.snap 2>/dev/null)" || { \
+	  echo "no snapshots: run 'make sweep' first"; exit 1; }
+	@./out/test_2d out/sweep/*.snap
+
+out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_2d.c src/gfx/nds2d.c

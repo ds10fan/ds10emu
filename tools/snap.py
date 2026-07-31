@@ -20,6 +20,10 @@ FB = W * H * 4
 VRAM = [("A", 128), ("B", 128), ("C", 128), ("D", 128), ("E", 64),
         ("F", 16), ("G", 16), ("H", 32), ("I", 16)]
 
+FLAT = [("ABG", 512), ("BBG", 128), ("AOBJ", 256), ("BOBJ", 128),
+        ("ABGExtPal", 32), ("BBGExtPal", 32),
+        ("AOBJExtPal", 8), ("BOBJExtPal", 8)]
+
 ENGINE = [
     ("dispcnt", "<I", 1), ("bgcnt", "<H", 4), ("bgx", "<H", 4),
     ("bgy", "<H", 4), ("bgxref", "<i", 2), ("bgyref", "<i", 2),
@@ -55,6 +59,16 @@ class Snap:
         for name, kb in VRAM:
             self.vram[name] = blob[o:o + kb * 1024]
             o += kb * 1024
+        # The nine banks composited down per the VRAMCNT mapping, which is what
+        # the renderer actually reads.
+        self.flat = {}
+        for name, kb in FLAT:
+            self.flat[name] = blob[o:o + kb * 1024]
+            o += kb * 1024
+        # The 3D engine's output plane, which the compositor treats as BG0 when
+        # DISPCNT bit 3 is set. Alpha 0 means the pixel is transparent.
+        self.plane3d = blob[o:o + FB]
+        o += FB
         self.top = blob[o:o + FB]
         o += FB
         self.bot = blob[o:o + FB]

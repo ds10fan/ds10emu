@@ -38,6 +38,7 @@
 #include "SPU.h"
 #include "Platform.h"
 #include "Args.h"
+#include "GPU_Soft.h"
 
 using namespace melonDS;
 
@@ -45,8 +46,18 @@ namespace melonDS::Platform {
 void SaveWritten(const u8 *, u32) {}
 }
 
+/* The 3D engine's output is an input to the 2D compositor - DS-10 runs BG0 as
+ * the 3D layer - so a snapshot has to carry it. melonDS keeps the 3D renderer
+ * protected inside Renderer; a subclass is the sanctioned way to reach it, and
+ * avoids patching melonDS. */
+class RefRenderer : public SoftRenderer {
+public:
+    using SoftRenderer::SoftRenderer;
+    u32 *Line3D(int y) { return Rend3D->GetLine(y); }
+};
+
 #define SNAP_MAGIC "NDS2"
-#define SNAP_VERSION 1
+#define SNAP_VERSION 3
 
 struct Cmd {
     int frame;
@@ -122,7 +133,8 @@ static void dump_engine(FILE *f, GPU2D &g)
     fputc(0, f);
 }
 
-static void snapshot(NDS &nds, const std::string &dir, int frame)
+static void snapshot(NDS &nds, RefRenderer &rend, const std::string &dir,
+                     int frame)
 {
     char path[512];
     FILE *f;
@@ -157,6 +169,25 @@ static void snapshot(NDS &nds, const std::string &dir, int frame)
     fwrite(nds.GPU.VRAM_G, 1, sizeof nds.GPU.VRAM_G, f);
     fwrite(nds.GPU.VRAM_H, 1, sizeof nds.GPU.VRAM_H, f);
     fwrite(nds.GPU.VRAM_I, 1, sizeof nds.GPU.VRAM_I, f);
+
+    /* melonDS renders out of "flat" buffers: the nine banks composited down
+     * into one linear image per region, per the VRAMCNT mapping. Dumping those
+     * as well splits the problem in two - our bank mapper can be checked
+     * against these, and our renderer can be checked while fed these. */
+    fwrite(nds.GPU.VRAMFlat_ABG, 1, sizeof nds.GPU.VRAMFlat_ABG, f);
+    fwrite(nds.GPU.VRAMFlat_BBG, 1, sizeof nds.GPU.VRAMFlat_BBG, f);
+    fwrite(nds.GPU.VRAMFlat_AOBJ, 1, sizeof nds.GPU.VRAMFlat_AOBJ, f);
+    fwrite(nds.GPU.VRAMFlat_BOBJ, 1, sizeof nds.GPU.VRAMFlat_BOBJ, f);
+    fwrite(nds.GPU.VRAMFlat_ABGExtPal, 1, sizeof nds.GPU.VRAMFlat_ABGExtPal, f);
+    fwrite(nds.GPU.VRAMFlat_BBGExtPal, 1, sizeof nds.GPU.VRAMFlat_BBGExtPal, f);
+    fwrite(nds.GPU.VRAMFlat_AOBJExtPal, 1,
+           sizeof nds.GPU.VRAMFlat_AOBJExtPal, f);
+    fwrite(nds.GPU.VRAMFlat_BOBJExtPal, 1,
+           sizeof nds.GPU.VRAMFlat_BOBJExtPal, f);
+
+    /* The 3D plane, as the compositor saw it: 0 alpha means transparent. */
+    for (int y = 0; y < 192; y++)
+        fwrite(rend.Line3D(y), 4, 256, f);
 
     nds.GPU.GetFramebuffers(&top, &bot);
     fwrite(top, 1, 256 * 192 * 4, f);
@@ -243,6 +274,9 @@ int main(int argc, char **argv)
         return 2;
     }
     nds.SetNDSCart(std::move(cart));
+    auto rendp = std::make_unique<RefRenderer>(nds);
+    RefRenderer *rend = rendp.get();
+    nds.GPU.SetRenderer(std::move(rendp));
     nds.Reset();
     /* No BIOS or firmware images here, so the ROM is direct-booted: the
      * loader's job is done for it and execution starts at the ARM9 entry. */
@@ -275,7 +309,7 @@ int main(int argc, char **argv)
         nds.RunFrame();
 
         if (forced || (every && frame >= begin && (frame - begin) % every == 0)) {
-            snapshot(nds, dir, frame);
+            snapshot(nds, *rend, dir, frame);
             shots++;
         }
     }
