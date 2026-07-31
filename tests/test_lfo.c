@@ -14,10 +14,10 @@
 #include "../src/core/lfo.h"
 
 #define MAGIC "LFO1"
-#define NFIELDS 8
+#define NFIELDS 9
 
 static const char *FIELD[NFIELDS] = {
-    "out[sh]", "out[saw]", "out[tri]", "out[ramp]",
+    "out[sh]", "out[saw]", "out[tri]", "out[square]", "out[none]",
     "phase_down", "inc", "phase_up", "lfsr"
 };
 

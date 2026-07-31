@@ -365,10 +365,118 @@ def capture_vco(params, note, frames=4):
     return cases
 
 
+NC_PTR = 0x38              # synth + 0x38  NOTECTRL
+PC_PTR = 0x3C              # synth + 0x3C  PITCHCTRL
+DEPTH_TABLE = 0x0207EB38
+PITCH_TABLE = 0x0207E950
+
+# NOTECTRL: target, current, rate, dir(byte)
+NC_FIELDS = [(0x00, 4), (0x04, 4), (0x0C, 4), (0x10, 1)]
+# PITCHCTRL fields the preamble reads/writes, in ds10_pitchctrl order.
+PC_FIELDS = [(0x20, 4), (0x24, 4), (0x28, 4), (0x2C, 4), (0x30, 4),
+             (0x34, 2), (0x38, 4), (0x3C, 4),
+             (0x40, 2), (0x44, 2), (0x48, 2),
+             (0x4C, 4), (0x50, 4), (0x54, 4)]
+
+
+def _rdf(raw, off, size):
+    if size == 1:
+        return raw[off]
+    if size == 2:
+        return struct.unpack_from("<h", raw, off)[0]
+    return _s32(struct.unpack_from("<I", raw, off)[0])
+
+
+def capture_pitch(params, note, frames):
+    """NOTECTRL + PITCHCTRL transitions, plus the ENV/LFO values they read."""
+    o = Oracle()
+    nc = o.u32(o.syn + NC_PTR)
+    pc = o.u32(o.syn + PC_PTR)
+    env = o.u32(o.syn + ENV_PTR)
+    lfo = o.u32(o.syn + LFO_PTR)
+    o.load_patch(params)
+
+    def snap():
+        nraw = bytes(o.uc.mem_read(nc, 0x14))
+        praw = bytes(o.uc.mem_read(pc, 0x58))
+        eraw = bytes(o.uc.mem_read(env, 0x14))
+        lraw = bytes(o.uc.mem_read(lfo, 0x34))
+        return (
+            [_rdf(nraw, off, sz) for off, sz in NC_FIELDS],
+            [_rdf(praw, off, sz) for off, sz in PC_FIELDS],
+            [_s32(struct.unpack_from("<I", eraw, 8 + 4 * i)[0]) for i in range(3)],
+            [_s32(struct.unpack_from("<I", lraw, 4 * i)[0]) for i in range(5)],
+        )
+
+    o.note_on(note)
+    o.call(RENDER, o.syn)              # event frame, not measured
+    cases = []
+    for _ in range(frames):
+        before = snap()
+        o.call(RENDER, o.syn)
+        after = snap()
+        # Preamble order is LFO, ENV, NOTECTRL, PITCHCTRL - so by the time the
+        # pitch block runs, ENV and LFO have already advanced this frame. Their
+        # post-call values are what it actually read; the pre-call ones are a
+        # frame stale.
+        cases.append(((before[0], before[1], after[2], after[3]),
+                      after[0][1], after[1][6], after[1][7]))
+    return cases
+
+
+def cmd_pitch_vectors(path="tests/vectors/pitch.bin"):
+    """Sweep octave, portamento, detune, EG/LFO routing and factory patches."""
+    _n, init = factory_patch(0)
+    cases = []
+    for octave in (-2, -1, 0, 1, 2):
+        for porta in (0, 30, 90, 127):
+            p = list(init)
+            p[0], p[2] = octave, porta
+            cases += capture_pitch(p, 60, 20)
+    for vco2p in (-63, -20, 0, 20, 63):
+        for egint in (-63, 0, 63):
+            p = list(init)
+            p[8], p[1] = vco2p, egint
+            cases += capture_pitch(p, 60, 12)
+    for src in range(7):
+        for depth in (-63, 0, 63):
+            p = list(init)
+            p[26], p[3] = src, depth
+            p[27], p[4] = src, depth
+            cases += capture_pitch(p, 60, 12)
+    for note in (24, 48, 60, 84, 108):
+        cases += capture_pitch(list(init), note, 12)
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        cases += capture_pitch(p, 60, 12)
+
+    b = open("out/arm9.bin", "rb").read()
+    base = 0x02004000
+    tbl = lambda a, n: [_s32(struct.unpack_from("<I", b, a - base + 4 * i)[0])
+                        for i in range(n)]
+    depth = tbl(DEPTH_TABLE, 128)
+    pitch = tbl(PITCH_TABLE, 130)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"PIT1" + struct.pack("<I", len(cases)))
+        f.write(struct.pack("<128i", *depth))
+        f.write(struct.pack("<130i", *pitch))
+        for (ncv, pcv, envv, lfov), want_cur, want_i1, want_i2 in cases:
+            f.write(struct.pack(f"<{len(NC_FIELDS)}i", *ncv))
+            f.write(struct.pack(f"<{len(PC_FIELDS)}i", *pcv))
+            f.write(struct.pack("<3i", *envv))
+            f.write(struct.pack("<5i", *lfov))
+            f.write(struct.pack("<3i", want_cur, want_i1, want_i2))
+    print(f"{path}: {len(cases)} frame transitions")
+
+
 LFO_PTR = 0x34             # synth + 0x34
+# Must match the ds10_lfo struct layout, including the never-written +0x10
+# slot the modulation routing uses to mean "no contribution".
 LFO_FIELDS = [("out0", 0x00), ("out1", 0x04), ("out2", 0x08), ("out3", 0x0C),
-              ("phase_down", 0x14), ("inc", 0x18), ("phase_up", 0x1C),
-              ("lfsr", 0x24)]
+              ("out4", 0x10), ("phase_down", 0x14), ("inc", 0x18),
+              ("phase_up", 0x1C), ("lfsr", 0x24)]
 
 
 def capture_lfo(params, note, frames):
@@ -588,7 +696,8 @@ def main():
             "waves": cmd_waves, "vectors": cmd_vectors,
             "vco-vectors": cmd_vco_vectors,
             "env-vectors": cmd_env_vectors,
-            "lfo-vectors": cmd_lfo_vectors}
+            "lfo-vectors": cmd_lfo_vectors,
+            "pitch-vectors": cmd_pitch_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1

@@ -42,5 +42,8 @@ void ds10_lfo_step(ds10_lfo *l)
     /* Fold to a triangle: 2*|saw| + 1 - 0x01000000, i.e. 2*|saw| - 0x00FFFFFF.
      * The original really does add 1 before subtracting the whole unit. */
     l->out[DS10_LFO_TRIANGLE] = ds10_shl(folded, 1) + 1 - LFO_ONE;
-    l->out[DS10_LFO_RAMP] = (ramp + LFO_ONE) >> 1;
+    /* Both accumulators share one increment and run opposite ways, so this sum
+     * is near-constant except at the wraps - which is what makes it a square
+     * rather than the ramp its arithmetic suggests. */
+    l->out[DS10_LFO_SQUARE] = (ramp + LFO_ONE) >> 1;
 }
