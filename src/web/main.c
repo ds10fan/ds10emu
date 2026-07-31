@@ -587,6 +587,16 @@ int ds10_web_factory_patch(int n)
     return 0;
 }
 
+/* A touch on the drum grid: returns step | (drum << 8), or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_drumseq_hit(int x, int y)
+{
+    int step, row;
+
+    if (ds10_ui_drumseq_hit(x, y, &step, &row) < 0) return -1;
+    return step | (row << 8);
+}
+
 /* A touch on the KAOSS pad: returns vx | (vy << 8), or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_kaoss_hit(int x, int y)

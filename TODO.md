@@ -141,8 +141,13 @@ Remaining, roughly in order:
   too - the first dispatches on a sub-mode, one handler per page variant; the
   second commits a drum choice and re-renders the drum buffers.
 
-  Eight left, located and sized in the same table. Five of those inline their
-  redraw and the rest delegate to named passes.
+  62_DRUM_SEQ's (`0x0205a384`) and the settings screen's (`0x0203ac3c`) are
+  read as well - the first is the sequencer's shape with four rows, the second
+  is a one-shot setup rather than a loop.
+
+  Six left, located and sized in the same table: 52_FX, 61_SYN_EDIT, 81_KEY,
+  71_KAOSS, 70_PATCH and 90_MAP. All six inline their redraw, and all are
+  around 1.3 to 2.2 KB.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered

@@ -211,6 +211,20 @@ function onDown(which, ev) {
     ev.target.setPointerCapture(ev.pointerId);
     return;
   }
+  if (page === "62_DRUM_SEQ_GATE") {
+    startAudio();
+    const h = api.drumseqHit(x, y);
+    if (h < 0) return;
+    const step = h & 0xFF, drum = h >> 8;
+    /* Drum tracks are 2..5; they play their buffer at the root note. */
+    const t = 2 + drum;
+    const cur = api.seqNote(t, step);
+    api.seqStep(t, step, cur >= 0 ? -1 : 60);
+    if (!playing) { playing = true; api.seqPlay(1); }
+    status.textContent = "DRUM" + (drum + 1) + "  step " + (step + 1)
+      + (cur >= 0 ? "  cleared" : "  on");
+    return;
+  }
   if (page === "60_SYN_SEQ_PIANO") {
     startAudio();
     const h = api.seqHit(x, y);
@@ -316,6 +330,8 @@ Module.onRuntimeInitialized = () => {
     fxHit: Module.cwrap("ds10_web_fx_hit", "number",
                         ["number", "number", "number"]),
     seqHit: Module.cwrap("ds10_web_seq_hit", "number", ["number", "number"]),
+    drumseqHit: Module.cwrap("ds10_web_drumseq_hit", "number",
+                             ["number", "number"]),
     kaossHit: Module.cwrap("ds10_web_kaoss_hit", "number",
                            ["number", "number"]),
     patchHit: Module.cwrap("ds10_web_patch_hit", "number",

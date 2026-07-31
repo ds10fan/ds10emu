@@ -1182,6 +1182,24 @@ int ds10_ui_kaoss_hit(int x, int y, int *vx, int *vy)
     return 0;
 }
 
+/* 62_DRUM_SEQ's grid, from its update at 0x0205a384:
+ *
+ *     FUN_0205fdc4(scroller, 0x2d, 0x23, 0xd0, 0x34, 0x10, 4)
+ *
+ * the same origin and cell as the synth sequencer's, four rows instead of
+ * twelve - one per drum. */
+#define DSEQ_ROWS 4
+
+int ds10_ui_drumseq_hit(int x, int y, int *step, int *row)
+{
+    int c = (x - SEQ_X0) / SEQ_CELL, r = (y - SEQ_Y0) / SEQ_CELL;
+
+    if (x < SEQ_X0 || y < SEQ_Y0 || c >= SEQ_COLS || r >= DSEQ_ROWS) return -1;
+    *step = c;
+    *row = r;
+    return 0;
+}
+
 int ds10_ui_seq_hit(int x, int y, int *step, int *row)
 {
     int c = (x - SEQ_X0) / SEQ_CELL, r = (y - SEQ_Y0) / SEQ_CELL;

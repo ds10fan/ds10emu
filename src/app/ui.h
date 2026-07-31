@@ -73,6 +73,10 @@ int ds10_ui_patch_hit(int x, int y);
  * hit. Decompiled from 0x02049150. */
 int ds10_ui_kaoss_hit(int x, int y, int *vx, int *vy);
 
+/* Hit-test the drum sequencer's grid on 62_DRUM_SEQ_GATE: sixteen steps by
+ * four drums. Decompiled from 0x0205a384. */
+int ds10_ui_drumseq_hit(int x, int y, int *step, int *row);
+
 /* Hit-test the step grid on 60_SYN_SEQ_PIANO. Writes the step and the row
  * (0 at the top of the twelve visible), returns 0 on a hit. */
 int ds10_ui_seq_hit(int x, int y, int *step, int *row);

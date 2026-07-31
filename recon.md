@@ -1860,6 +1860,15 @@ when the document's `+0x2ec` reaches 2 a drum has been picked, so it sets the
 current drum, reloads the patches, re-renders each drum's buffer
 (`0x0206dfcc` per drum, then `0x0206ec10`) and rebuilds the screen.
 
+`0x0205a384` is 62_DRUM_SEQ's, and it is the sequencer's shape again: a
+sub-mode dispatch in the running state, and a grid placed by
+`FUN_0205fdc4(scroller, 0x2d, 0x23, 0xd0, 0x34, 0x10, 4)` - the same origin
+and cell as the synth sequencer's, four rows instead of twelve, one per drum.
+Its settle state is where it registers the four drum rows' widgets by name.
+
+`0x0203ac3c` is the settings screen's, and it is not a per-frame loop at all -
+it configures the document, chooses a pattern and calls the constructor once.
+
 ### The mixer's redraw passes
 
 The two passes state 2 ends with, on the mixer:
