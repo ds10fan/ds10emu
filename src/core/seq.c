@@ -58,3 +58,73 @@ void ds10_seq_tick(ds10_seq *s)
         s->subtick--;
     } while (s->accum > s->period);
 }
+
+/* --- note and gate handling (0x0206E9D8 and 0x0206EABC) ------------------- */
+
+void ds10_seq_step_track(ds10_seq_track *t, int note, int gate, int subticks)
+{
+    int8_t count = 0;
+
+    if (note < 0) {
+        /* No note on this step. A tie that was running has to be released now;
+         * anything else has already been released by its own gate. */
+        t->gate_left = 0;
+        if (t->gate_mode == (int8_t)DS10_GATE_TIE) {
+            t->pending = DS10_NOTE_OFF;
+            t->sounding = 0;
+        } else {
+            t->pending = DS10_NOTE_NONE;
+        }
+        t->note = (int8_t)note;
+        return;
+    }
+
+    if (gate == DS10_GATE_RETRIG) {
+        t->pending = DS10_NOTE_RETRIG;
+    } else if (gate == DS10_GATE_TIE) {
+        t->pending = DS10_NOTE_ON;
+    } else {
+        if (gate == DS10_GATE_OVER)
+            count = (int8_t)(subticks + 1);
+        else if (gate == DS10_GATE_FULL)
+            count = (int8_t)(subticks - 1);
+        else
+            count = (int8_t)((subticks * gate) / 4);
+
+        if (t->gate_left == 0) {
+            /* Nothing sounding means a plain note-on; something still sounding
+             * needs a retrigger so the envelope restarts. */
+            t->pending = t->sounding == 0 ? DS10_NOTE_ON : DS10_NOTE_RETRIG;
+        } else if (t->note == (int8_t)note) {
+            /* Same note still inside its gate - leave it alone. This is what
+             * makes repeated identical steps sustain rather than stutter. */
+            t->pending = DS10_NOTE_NONE;
+        } else {
+            t->pending = DS10_NOTE_ON;
+        }
+    }
+    t->sounding = 1;
+    t->gate_mode = (int8_t)gate;
+    t->gate_left = count;
+    t->note = (int8_t)note;
+}
+
+int ds10_seq_gate(ds10_seq_track *t)
+{
+    int ev = t->pending;
+
+    /* Retrigger and tie modes never auto-release. */
+    if (t->gate_mode == (int8_t)DS10_GATE_RETRIG ||
+        t->gate_mode == (int8_t)DS10_GATE_TIE)
+        return ev;
+
+    if (t->sounding == 1) {
+        if (t->gate_left == 0) {
+            t->sounding = 0;
+            ev = DS10_NOTE_OFF;
+        } else {
+            t->gate_left--;
+        }
+    }
+    return ev;
+}

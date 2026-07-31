@@ -18,7 +18,7 @@
 
 #include "../src/core/seq.h"
 
-#define MAGIC "SEQ1"
+#define MAGIC "SEQ2"
 #define NF 19
 
 static FILE *g;
@@ -90,7 +90,7 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "tests/vectors/seq.bin";
     char magic[4];
-    uint32_t ntempo, nswing, nf, i, k;
+    uint32_t ntempo, nswing, nf, nnotes, i, k;
     unsigned long bad = 0, total = 0;
     int32_t nruns;
 
@@ -107,9 +107,70 @@ int main(int argc, char **argv)
     ntempo = rd32();
     nswing = rd32();
     nf = rd32();
+    nnotes = rd32();
     if (nf != NF) {
         fprintf(stderr, "vector file has %u fields, expected %d\n", nf, NF);
         return 2;
+    }
+
+    /* Note and gate handling: the step trigger, then one sub-tick of the gate
+     * countdown, comparing all five track bytes after each plus the event code
+     * the countdown returns. */
+    for (i = 0; i < nnotes; i++) {
+        ds10_seq_track t;
+        int32_t before[5], note, gate, sub, wstep[5], wgate[5], wr;
+        int32_t got[5];
+        int r;
+
+        for (k = 0; k < 5; k++)
+            before[k] = (int32_t)rd32();
+        note = (int32_t)rd32();
+        gate = (int32_t)rd32();
+        sub = (int32_t)rd32();
+        for (k = 0; k < 5; k++)
+            wstep[k] = (int32_t)rd32();
+        for (k = 0; k < 5; k++)
+            wgate[k] = (int32_t)rd32();
+        wr = (int32_t)rd32();
+
+        t.sounding = (uint8_t)before[0];
+        t.pending = (int8_t)before[1];
+        t.gate_left = (int8_t)before[2];
+        t.gate_mode = (int8_t)before[3];
+        t.note = (int8_t)before[4];
+
+        ds10_seq_step_track(&t, note, gate, sub);
+        got[0] = t.sounding; got[1] = t.pending; got[2] = t.gate_left;
+        got[3] = t.gate_mode; got[4] = t.note;
+        total++;
+        for (k = 0; k < 5; k++) {
+            if (got[k] != wstep[k]) {
+                if (bad < 10)
+                    fprintf(stderr, "note case %u (note=%d gate=%d sub=%d) "
+                            "after step: field %u got %d want %d\n",
+                            i, note, gate, sub, k, got[k], wstep[k]);
+                bad++;
+            }
+        }
+
+        r = ds10_seq_gate(&t);
+        got[0] = t.sounding; got[1] = t.pending; got[2] = t.gate_left;
+        got[3] = t.gate_mode; got[4] = t.note;
+        total++;
+        if (r != wr) {
+            if (bad < 10)
+                fprintf(stderr, "note case %u: gate event got %d want %d\n",
+                        i, r, wr);
+            bad++;
+        }
+        for (k = 0; k < 5; k++) {
+            if (got[k] != wgate[k]) {
+                if (bad < 10)
+                    fprintf(stderr, "note case %u after gate: field %u "
+                            "got %d want %d\n", i, k, got[k], wgate[k]);
+                bad++;
+            }
+        }
     }
 
     for (i = 0; i < ntempo; i++) {
@@ -180,7 +241,7 @@ int main(int argc, char **argv)
     }
     fclose(g);
 
-    printf("%s: %lu checks (tempo, swing, %d tick runs), %lu mismatches\n",
-           bad ? "FAIL" : "PASS", total, nruns, bad);
+    printf("%s: %lu checks (tempo, swing, notes/gates, %d tick runs), "
+           "%lu mismatches\n", bad ? "FAIL" : "PASS", total, nruns, bad);
     return bad ? 1 : 0;
 }

@@ -48,6 +48,38 @@ typedef struct {
     int32_t ntracks;     /* +0x54 */
 } ds10_seq;
 
+/* Per-track note/gate state, the first six bytes of the 36-byte track block.
+ * Gate values are special-cased: 0xFF is a tie (sounds until the next note,
+ * never auto-released), 6 retriggers, 5 and 4 are one sub-tick over and under a
+ * full step, and anything else is gate*subticks/4. */
+#define DS10_GATE_TIE 0xFF
+#define DS10_GATE_RETRIG 6
+#define DS10_GATE_OVER 5
+#define DS10_GATE_FULL 4
+
+/* What the gate countdown wants emitted this sub-tick. */
+enum ds10_note_ev {
+    DS10_NOTE_NONE = 0,
+    DS10_NOTE_OFF = 1,
+    DS10_NOTE_ON = 2,
+    DS10_NOTE_RETRIG = 3,
+};
+
+typedef struct {
+    uint8_t sounding;   /* +0 */
+    int8_t pending;     /* +1 enum ds10_note_ev, consumed each sub-tick */
+    int8_t gate_left;   /* +2 countdown in sub-ticks */
+    int8_t gate_mode;   /* +4 the raw gate value */
+    int8_t note;        /* +5 */
+} ds10_seq_track;
+
+/* Apply one step's (note, gate) to a track. `subticks` is the current step's
+ * sub-tick count, which is where swing feeds into gate length. */
+void ds10_seq_step_track(ds10_seq_track *t, int note, int gate, int subticks);
+
+/* Advance the gate countdown one sub-tick; returns what to emit. */
+int ds10_seq_gate(ds10_seq_track *t);
+
 void ds10_seq_set_tempo(ds10_seq *s, int tempo);
 void ds10_seq_set_swing(ds10_seq *s, int swing);
 void ds10_seq_tick(ds10_seq *s);

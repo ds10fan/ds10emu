@@ -983,9 +983,43 @@ handler directly through vtable slot `+0x18`, which for a synth is the same
 `0x02075648` the patch loader uses. Track mode `+0x20` selects between held and
 interpolated, and `+0x22` selects between play, record and overdub.
 
+### Note and gate logic, `0x0206E9D8` and `0x0206EABC`
+
+The step trigger and the per-sub-tick countdown, both verified bit-exact.
+Track state is the first six bytes of the block: sounding flag, pending event,
+gate countdown, gate mode, note.
+
+Gate values are special-cased rather than being a plain length:
+
+| gate | meaning |
+|---|---|
+| `0xFF` | tie - sounds until the next note, never auto-released |
+| `6` | retrigger |
+| `5` | one sub-tick longer than a full step (bleeds into the next) |
+| `4` | one sub-tick shorter than a full step |
+| other | `gate * subticks / 4` |
+
+Because the count is in sub-ticks and the sub-tick count per step comes from
+swing, **gate length is swing-dependent** - the same gate value is a different
+absolute duration on swung even and odd steps.
+
+Two behaviours worth naming:
+
+- A step whose note equals the note still inside its gate emits nothing, so
+  repeated identical steps sustain rather than stutter.
+- A step that lands while something is still sounding emits a retrigger (3)
+  rather than a note-on, so the envelope restarts. A note-on only happens from
+  silence.
+- A no-note step releases a running tie but does nothing otherwise, since an
+  ordinary note has already been released by its own gate.
+
 ### Status
 
-Verified bit-exact: transport, tempo mapping, swing mapping, accumulator, step
-advance and bar counting (8401 checks). Decompiled and documented above but not
-yet implemented: note/gate emission, the automation lanes, the song-player
-callback protocol and the song file format.
+Verified bit-exact (`src/core/seq.c`, 15457 checks, `make test-seq`):
+transport, tempo mapping, swing mapping, accumulator, step advance, bar
+counting, the step trigger and the gate countdown.
+
+Decompiled and documented above but not implemented: the event target/payload
+encoding in `0x0206E8C8` (straightforward, but verifying it needs a router and
+fake machines), the automation lanes, the song-player callback protocol, and the
+song file format. The unresolved automation-lane stride is noted above.

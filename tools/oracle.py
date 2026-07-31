@@ -513,6 +513,51 @@ def capture_seq_ticks(tempo, swing, ticks=400):
 
 
 DS10_SEQ_TEMPO_NUM = 60000000
+SEQ_STEP_TRACK = 0x0206E9D8   # (track, note, gate, subticks)
+SEQ_GATE = 0x0206EABC         # (track) -> event code
+TRK_FIELDS = [0, 1, 2, 4, 5]
+
+
+def capture_seq_notes():
+    """Sweep the note/gate logic and the per-sub-tick gate countdown.
+
+    Both take just a track pointer, so this needs no router or machines.
+    """
+    o = Oracle()
+    trk = o.call(NEW_THUNK, 0x24)
+    cases = []
+
+    def state():
+        raw = bytes(o.uc.mem_read(trk, 8))
+        return [raw[i] - 256 if raw[i] > 127 else raw[i] for i in TRK_FIELDS]
+
+    # (note, gate) across the special values and a spread of ordinary ones,
+    # from a variety of prior track states.
+    inits = [[0, 0, 0, 0, 0], [1, 0, 0, 4, 60], [1, 0, 5, 4, 60],
+             [1, 2, 3, 0xFF - 256, 60], [0, 1, 0, 6, 48],
+             [1, 0, 0, 8, 72], [1, 3, 2, 12, 36]]
+    gates = [0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 15, 0xFF]
+    notes = [-1, 0, 36, 48, 60, 72, 96]
+    subs = [0, 1, 6, 12, 13, 24]
+    for init in inits:
+        for note in notes:
+            for gate in gates:
+                for sub in subs:
+                    o.uc.mem_write(trk, bytes([init[0], init[1] & 0xFF,
+                                               init[2] & 0xFF, 0,
+                                               init[3] & 0xFF,
+                                               init[4] & 0xFF, 0, 0]))
+                    before = state()
+                    o.call(SEQ_STEP_TRACK, trk, note, gate, sub)
+                    after_step = state()
+                    r = o.call(SEQ_GATE, trk)
+                    r = r - 256 if r > 127 else r
+                    cases.append((before, note, gate, sub, after_step,
+                                  state(), r))
+    return cases
+
+
+
 
 
 def cmd_seq_vectors(path="tests/vectors/seq.bin"):
@@ -521,10 +566,18 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
     for t in (60, 120, 180, 240):
         for w in (0, 25, 50, 75, 100):
             runs.append((t, w, capture_seq_ticks(t, w)))
+    notes = capture_seq_notes()
     nf = len(SEQ_FIELDS)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
-        f.write(b"SEQ1" + struct.pack("<III", len(tempo), len(swing), nf))
+        f.write(b"SEQ2" + struct.pack("<IIII", len(tempo), len(swing), nf,
+                                      len(notes)))
+        for before, note, gate, sub, after_step, after_gate, r in notes:
+            f.write(struct.pack("<5i", *before))
+            f.write(struct.pack("<3i", note, gate, sub))
+            f.write(struct.pack("<5i", *after_step))
+            f.write(struct.pack("<5i", *after_gate))
+            f.write(struct.pack("<i", r))
         for t, v in tempo:
             f.write(struct.pack("<ii", t, v))
         for w, a, b in swing:
@@ -536,7 +589,7 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
                 f.write(struct.pack(f"<{nf}i", *before))
                 f.write(struct.pack(f"<{nf}i", *after))
     print(f"{path}: {len(tempo)} tempos, {len(swing)} swings, "
-          f"{len(runs)} runs x {len(runs[0][2])} ticks")
+          f"{len(runs)} runs x {len(runs[0][2])} ticks, {len(notes)} note cases")
 
 
 # --- synth event handling capture -------------------------------------------
