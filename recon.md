@@ -849,8 +849,29 @@ they share the delay's code path entirely.
 
 ### Status
 
-Structure and data flow: **decoded**. Not yet done: the 14 strategy mapping
-functions, and a C implementation with a differential test. The DSP is
+Structure and data flow: **decoded**. Parameter mappings: **implemented and
+bit-exact** (`src/core/fx.c`, 489 parameter sets x 17 fields, 0 mismatches).
+Not yet done: the DSP itself (`ds10_fx_update` / `ds10_fx_step` are written but
+untested, since testing them needs a mixer harness).
+
+Mapping facts worth recording:
+
+- Only the delay derives its time from the knob. Chorus is a fixed 228.5-sample
+  delay, flanger a fixed 4.63-sample one; all their movement comes from LFO
+  modulation of the read offset. That is the entire difference between the three
+  effects.
+- Delay time free-running is `knob^2 * 0x103BA`, so knob 1 is 2 samples and knob
+  127 is 32727 - just under a second, and just inside the 65536-sample buffer.
+- The tempo-sync divisor is the **tempo** at `+0xA0`, not the sync flag. The
+  dispatcher passes `fx->tempo` when sync is on and literal `0` when off, so
+  sync enabled with no tempo event yet still takes the free-running path.
+- Dry/wet uses the same quadratic curve as the oscillator balance law, minus its
+  0x4444 gain.
+- Chorus has feedback disabled twice over: its mapping returns 0 *and* the
+  type setter clears the DSP's enable flag at `+0x1C`.
+- Flanger feedback is negative, from a table indexed from its centre
+  (`0x0207EFC2` = index 63 of the table at `0x0207EF44`) so the knob can be
+  bipolar. The DSP is
 straightforward now that the shape is known; the mappings are the remaining
 work, and they are all small.
 

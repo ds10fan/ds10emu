@@ -449,6 +449,98 @@ def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
     print(f"{path}: {len(cases)} frame transitions")
 
 
+# --- effect parameter mapping capture --------------------------------------
+MIXER_NEW = 0x02076030     # alloc(0x8C) + ctor; the fx processor is at +0x80
+FX_SET = 0x020726D4        # (fx, param, value)
+FX_PTR = 0x80
+
+# Fields the parameter mappings write, in ds10_fx compare order.
+FX_FIELDS = [(0x0C, 2), (0x0E, 2), (0x10, 2), (0x12, 2), (0x14, 2),
+             (0x16, 2), (0x18, 2), (0x1A, 2), (0x1C, 2),
+             (0x44, 4), (0x48, 4), (0x4C, 4), (0x50, 4),
+             (0x8C, 4), (0x90, 4), (0x98, 4), (0x9C, 4)]
+
+
+def capture_fx_params():
+    """Set each effect parameter through the original and read the state back.
+
+    A type change reapplies all six other parameters through the new mapping,
+    so the sequence matters and each type gets its own sweep.
+    """
+    cases = []
+    seqs = []
+    for ftype in (0, 1, 2):
+        # (param, value) ranges per the knob ranges in recon.md
+        seq = [(1, ftype)]
+        for v in range(0, 128, 7):
+            seq.append((2, v))
+        for v in range(-63, 64, 9):
+            seq.append((3, v))
+        for v in range(0, 128, 11):
+            seq.append((4, v))
+        for v in range(0, 128, 9):
+            seq.append((5, v))
+        for v in range(-63, 64, 7):
+            seq.append((7, v))
+        for v in range(0, 128, 5):
+            seq.append((8, v))
+        seqs.append(seq)
+    # Delay with tempo sync. The divisor is the tempo at +0xA0, which a fresh
+    # mixer leaves at zero, so the tempo has to be poked in or the synced path
+    # never runs and the hardware-divider code goes untested.
+    tempos = [0] * len(seqs)
+    for tempo in (1, 60, 120, 200, 1000, 70000):
+        seqs.append([(1, 0), (6, 1)] + [(2, v) for v in range(0, 128, 5)])
+        tempos.append(tempo)
+
+    for seq, tempo0 in zip(seqs, tempos):
+        o = Oracle()
+        mx = o.call(MIXER_NEW)
+        fx = o.u32(mx + FX_PTR)
+        if tempo0:
+            o.w32(fx + 0xA0, tempo0)
+
+        def snap():
+            raw = bytes(o.uc.mem_read(fx, 0xA8))
+            return [_rdf(raw, off, sz) for off, sz in FX_FIELDS]
+
+        init = snap()
+        tempo = _s32(o.u32(fx + 0xA0))
+        steps = []
+        for param, value in seq:
+            o.call(FX_SET, fx, param, value)
+            steps.append((param, value, snap()))
+        cases.append((init, tempo, steps))
+    return cases
+
+
+def cmd_fx_vectors(path="tests/vectors/fx.bin"):
+    cases = capture_fx_params()
+    b = open("out/arm9.bin", "rb").read()
+    bb = 0x02004000
+    s16 = lambda a, n: [struct.unpack_from("<h", b, a - bb + 2 * i)[0]
+                        for i in range(n)]
+    u32t = lambda a, n: [_s32(struct.unpack_from("<I", b, a - bb + 4 * i)[0])
+                         for i in range(n)]
+    nf = len(FX_FIELDS)
+    nsteps = sum(len(c[2]) for c in cases)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"FXP1" + struct.pack("<III", len(cases), nf, nsteps))
+        f.write(struct.pack("<3i", *u32t(0x0207EF38, 3)))     # lfo phase off
+        f.write(struct.pack("<128h", *s16(0x0207EF44, 128)))  # flanger fb
+        f.write(struct.pack("<128h", *s16(0x0207F044, 128)))  # depth
+        f.write(struct.pack("<12i", *u32t(0x0207F144, 12)))   # delay divisions
+        f.write(struct.pack("<128i", *u32t(0x0207FFC4, 128))) # lfo rate
+        for init, tempo, steps in cases:
+            f.write(struct.pack(f"<{nf}i", *init))
+            f.write(struct.pack("<ii", tempo, len(steps)))
+            for param, value, st in steps:
+                f.write(struct.pack("<ii", param, value))
+                f.write(struct.pack(f"<{nf}i", *st))
+    print(f"{path}: {len(cases)} sequences, {nsteps} parameter sets")
+
+
 # --- patch loading capture --------------------------------------------------
 # (object key, offset, size) for every field the 31 knobs write, in the order
 # tests/test_patch.c reads them.
@@ -1049,7 +1141,8 @@ def main():
             "amp-vectors": cmd_amp_vectors,
             "vcfupd-vectors": cmd_vcfupd_vectors,
             "voice-vectors": cmd_voice_vectors,
-            "patch-vectors": cmd_patch_vectors}
+            "patch-vectors": cmd_patch_vectors,
+            "fx-vectors": cmd_fx_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
