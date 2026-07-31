@@ -7,18 +7,29 @@ Multiplayer (DS Wireless Play / WiFi) is out of scope.
 
 ## Status
 
-Reconnaissance done, implementation not started.
+The audio engine is reimplemented in C and renders songs. `out/songplay` reads a
+`.dat` song and writes a WAV using nothing but the reimplementation.
 
 - [`recon.md`](recon.md) — what the ROM actually contains: container layout, the
-  ARM9/ARM7 memory map, NitroFS inventory, the decoded patch format, and the
-  synth engine's addresses and structures.
+  ARM9/ARM7 memory map, NitroFS inventory, the song and patch formats, and the
+  engine's addresses and structures.
 - [`PLAN.md`](PLAN.md) — phased plan, and the four-tier verification strategy the
   project is built around.
+- [`TODO.md`](TODO.md) — what is left, starting with the gap in the test suite
+  that four separate bugs have already slipped through.
 
-Established: the synth runs on the **ARM9** at **32768 Hz** in **64-sample
-frames**, six voices (2 synth + 4 drum) plus mixer and effects. Patch parameters
-are fully decoded (31 knobs at patch offset `0x20`). Still unreversed: the
-effects block and the mixer.
+The engine runs on the **ARM9** at **32768 Hz** in **64-sample frames**: six
+voices (2 synth + 4 drum) plus mixer and effect. Decompiled and verified
+sample-exact against the original: the oscillator, filter, envelope, LFO,
+portamento and amp; the 31-knob patch format; the drum voice and the one-second
+buffer a drum patch is rendered into; the mixer's 25 knobs and the effect's eight;
+the sequencer's transport, gating, note emission and event routing; the song file
+format; and automation lanes.
+
+`make test` runs seventeen differential suites, every one of them comparing
+against the original ARM9 code executing under Unicorn. Read `TODO.md` §1 before
+trusting that number — the suites are strong on DSP and blind on the wiring
+around it.
 
 ### Prior art
 
