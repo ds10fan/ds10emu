@@ -37,6 +37,7 @@ REG = {f"r{i}": getattr(__import__("unicorn.arm_const", fromlist=["x"]),
 # reads the register after the producing instruction has already run.
 VCF_IN = (0x02075254, "r2")    # filter input  = (vco1*vol1 + vco2*vol2) >> 15
 VCF_OUT = (0x02075334, "r5")   # filter output = selected node, already >> 9
+VCO2_OUT = (0x0207534C, "r9")  # VCO2 output, still live at the AMP block
 LOOP_HEAD = 0x02074F98
 
 # --- ARM9 code addresses -----------------------------------------------------
@@ -363,6 +364,84 @@ def capture_vco(params, note, frames=4):
             continue
         cases.append((snap["state"], list(o.probed["mix"])))
     return cases
+
+
+AMP_PTR = 0x48             # synth + 0x48
+# ds10_amp field order.
+AMP_FIELDS = [0x0C, 0x20, 0x2C, 0x30, 0x34, 0x38, 0x3C]
+
+
+def capture_amp(params, note, frames=4):
+    """Filter output + VCO2 output + AMP state per frame, and the samples out.
+
+    The expected output is the voice's own render buffer, so this closes the
+    per-sample chain: oscillator -> filter -> amp -> buffer.
+    """
+    o = Oracle()
+    aobj = o.u32(o.syn + AMP_PTR)
+    o.add_probe("in", *VCF_OUT)
+    o.add_probe("vco2", *VCO2_OUT)
+
+    snap = {"armed": False, "state": None}
+
+    def on_loop_head(u, _a, _s, _x):
+        if snap["armed"]:
+            raw = bytes(u.mem_read(aobj, 0x40))
+            snap["state"] = [_s32(struct.unpack_from("<I", raw, off)[0])
+                             for off in AMP_FIELDS]
+            snap["armed"] = False
+    o.uc.hook_add(UC_HOOK_CODE, on_loop_head, begin=LOOP_HEAD, end=LOOP_HEAD)
+
+    o.load_patch(params)
+    o.note_on(note)
+
+    cases = []
+    for _ in range(frames):
+        o.probed["in"].clear()
+        o.probed["vco2"].clear()
+        snap["armed"] = True
+        snap["state"] = None
+        o.call(RENDER, o.syn)
+        if snap["state"] is None:
+            continue
+        out = list(struct.unpack(f"<{FRAME}h",
+                                o.uc.mem_read(OUTBUF, FRAME * 2)))
+        cases.append((snap["state"], list(o.probed["in"]),
+                      list(o.probed["vco2"]), out))
+    return cases
+
+
+def cmd_amp_vectors(path="tests/vectors/amp.bin"):
+    """Sweep drive, level, the distortion switch and the factory patches."""
+    _n, init = factory_patch(0)
+    cases = []
+    for drive in (0, 20, 60, 100, 127):
+        for level in (0, 40, 80, 127):
+            p = list(init)
+            p[18], p[19] = drive, level
+            cases += capture_amp(p, 60)
+    for w2 in range(4):
+        for drive in (0, 90, 127):
+            p = list(init)
+            p[7], p[18] = w2, drive
+            cases += capture_amp(p, 60)
+    for note in (36, 60, 84):
+        cases += capture_amp(list(init), note)
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        cases += capture_amp(p, 60)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"AMP1" + struct.pack("<I", len(cases)))
+        for state, ins, vco2, out in cases:
+            f.write(struct.pack(f"<{len(AMP_FIELDS)}i", *state))
+            f.write(struct.pack("<I", len(ins)))
+            f.write(struct.pack(f"<{len(ins)}i", *ins))
+            f.write(struct.pack(f"<{len(vco2)}i", *vco2))
+            f.write(struct.pack(f"<{len(out)}h", *out[:len(ins)]))
+    total = sum(len(c[1]) for c in cases)
+    print(f"{path}: {len(cases)} frames, {total} samples")
 
 
 NC_PTR = 0x38              # synth + 0x38  NOTECTRL
@@ -697,7 +776,8 @@ def main():
             "vco-vectors": cmd_vco_vectors,
             "env-vectors": cmd_env_vectors,
             "lfo-vectors": cmd_lfo_vectors,
-            "pitch-vectors": cmd_pitch_vectors}
+            "pitch-vectors": cmd_pitch_vectors,
+            "amp-vectors": cmd_amp_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1

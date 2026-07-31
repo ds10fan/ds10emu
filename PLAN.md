@@ -262,13 +262,22 @@ Bit-exact against the oracle, zero mismatches, under `make test`:
 | ENV (`+0x30`) | `src/core/env.c` | 2976 frame transitions | **done** |
 | LFO (`+0x34`) | `src/core/lfo.c` | 1136 frame transitions | **done** |
 | NOTECTRL / PITCHCTRL (`+0x38`, `+0x3C`) | `src/core/pitch.c` | 1180 frame transitions | **done** |
-| AMP + drive (`+0x48`) | | | next |
+| AMP + drive (`+0x48`) | `src/core/amp.c` | 15104 samples / 236 frames | **done** |
 | render chain (`+0x4C`) | | | |
+| per-frame coefficient preamble (filter cutoff, amp drive/level) | | | next |
 | cutoff/pitch modulation matrix | | | |
 
-Both landed bit-exact on the first attempt, which says the oracle-first
-approach is working: the expensive part is reading the arithmetic correctly, and
-the test tells you immediately whether you did.
+The **per-sample chain is complete**: oscillator -> filter -> amp -> output
+buffer, all bit-exact. What remains for a full voice is the per-frame preamble
+that computes the coefficients those stages consume (filter cutoff mapping, amp
+drive and level), plus the render chain object. Once those land, a whole frame
+can be rendered in C from a patch and a note and compared end-to-end, replacing
+the per-stage vector formats.
+
+Six stages, six first-attempt passes. The only failures so far have been in the
+test harness, not the C: event dispatch running inside render, preamble ordering
+within the frame, and selector indices reaching one past a shape array. The
+arithmetic has read correctly every time.
 
 
 
