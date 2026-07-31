@@ -1869,6 +1869,15 @@ Its settle state is where it registers the four drum rows' widgets by name.
 `0x0203ac3c` is the settings screen's, and it is not a per-frame loop at all -
 it configures the document, chooses a pattern and calls the constructor once.
 
+`0x02063fd0` is 90_MAP's, and it is the same kind of thing but bigger: it
+lazily allocates the app's shared singletons on first use - the document
+(`DAT_020644ec`), the song and pattern store (`DAT_0206450c`, a single
+allocation of about 575 KB, which is where the `+0x8cd9c` deck flag the other
+screens read lives) and a third object at `DAT_02064534` - wires them into the
+screen and calls the constructor.
+
+So two of the eleven "updates" are one-shot setup rather than a loop.
+
 ### The mixer's redraw passes
 
 The two passes state 2 ends with, on the mixer:

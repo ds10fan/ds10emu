@@ -145,9 +145,12 @@ Remaining, roughly in order:
   read as well - the first is the sequencer's shape with four rows, the second
   is a one-shot setup rather than a loop.
 
-  Six left, located and sized in the same table: 52_FX, 61_SYN_EDIT, 81_KEY,
-  71_KAOSS, 70_PATCH and 90_MAP. All six inline their redraw, and all are
-  around 1.3 to 2.2 KB.
+  90_MAP's (`0x02063fd0`) is read as well, and like the settings screen's it is
+  one-shot setup rather than a loop - it allocates the app's shared singletons
+  on first use.
+
+  Five left: 52_FX, 61_SYN_EDIT, 81_KEY, 71_KAOSS and 70_PATCH. All five inline
+  their redraw and all are around 2 KB.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered
