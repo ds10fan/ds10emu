@@ -179,22 +179,30 @@ static int load_page(ds10_ui *u, const char *name, int engine)
     return 0;
 }
 
-/* 61_SYN_EDIT's knobs. Five columns at x = 22, 75, 124, 174, 225 and four
- * rows at y = 39, 80, 121, 162, confirmed by looking for the light knob cap
- * against the dark panel in the rendered page - which is pixel-exact against
- * the hardware. Which knob is at which position is read off the caption
- * printed under it. The four positions not listed carry switches rather than
- * knobs (VCO SYNC, VCA EG, filter TYPE) and are not wired.
+/* 61_SYN_EDIT, from its constructor at 0x02047384 and the tables at
+ * 0x020851d4 and 0x02085180. Sixteen rotary knobs, each with a 40 by 40 hit
+ * box centred on the point, and three sliders.
  *
- * The names are the game's own, from the table at 0x020852dc. */
-#define KNOB_R 12
+ * This replaces a layout measured off the rendered page. The sixteen knob ids
+ * were right - they were read off the caption printed under each one - but
+ * every position was out by (5,7), because the bright cap a blob detector
+ * finds is not centred on the knob.
+ */
+#define KNOB_R 20
 
 static const struct { int x, y, id; } SYN_KNOB[] = {
-    { 22,  39,  0}, { 22,  80,  2}, { 22, 121,  1}, { 22, 162, 19},
-    { 75,  39,  6}, { 75,  80,  9},                 { 75, 162, 18},
-    {124,  39,  7}, {124,  80,  8},
-    {174,  39, 11}, {174,  80, 12}, {174, 121, 14},
-    {225,  39, 20}, {225,  80, 21}, {225, 121, 22}, {225, 162, 23},
+    { 27,  46,  0}, { 27,  87,  2}, { 27, 128,  1}, { 27, 169, 19},
+    { 80,  46,  6}, { 80,  87,  9}, { 80, 169, 18},
+    {127,  46,  7}, {127,  87,  8},
+    {179,  46, 11}, {179,  87, 12}, {179, 128, 14},
+    {230,  46, 20}, {230,  87, 21}, {230, 128, 22}, {230, 169, 23},
+};
+
+/* The three switches, which are sliders rather than knobs. */
+static const struct { int x, y, w, h, id; } SYN_SLIDER[] = {
+    {117, 111, 0x13, 0x1A, 10},  /* VCO SYNC */
+    {117, 155, 0x13, 0x1A, 16},  /* VCA EG */
+    {170, 155, 0x13, 0x1A, 13},  /* FILTER TYPE */
 };
 
 static const char *const KNOB_NAME[31] = {
@@ -335,11 +343,14 @@ int ds10_ui_knob_hit(int x, int y)
 {
     size_t i;
 
-    for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
-        int dx = x - SYN_KNOB[i].x, dy = y - SYN_KNOB[i].y;
-
-        if (dx * dx + dy * dy <= KNOB_R * KNOB_R) return SYN_KNOB[i].id;
-    }
+    for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++)
+        if (x >= SYN_KNOB[i].x - KNOB_R && x < SYN_KNOB[i].x + KNOB_R &&
+            y >= SYN_KNOB[i].y - KNOB_R && y < SYN_KNOB[i].y + KNOB_R)
+            return SYN_KNOB[i].id;
+    for (i = 0; i < sizeof SYN_SLIDER / sizeof SYN_SLIDER[0]; i++)
+        if (x >= SYN_SLIDER[i].x && x < SYN_SLIDER[i].x + SYN_SLIDER[i].w &&
+            y >= SYN_SLIDER[i].y && y < SYN_SLIDER[i].y + SYN_SLIDER[i].h)
+            return SYN_SLIDER[i].id;
     return -1;
 }
 
@@ -901,27 +912,35 @@ static const int FX_KNOB_X[4] = {64, 118, 172, 226};
 #define KAOSS_W 256
 #define KAOSS_H 172
 
-/* 70_PATCH is the modulation patch bay, not a patch browser: one row of five
- * depth knobs at y = 123, x = 65 + 43*i, found the same way as the synth edit
- * page's - the light cap against the dark panel. Their captions read PITCH IN,
- * VCO1 PITCH IN, VCO2 PITCH IN, CUTOFF IN and VCA IN, which are knobs 26 to
- * 30. The MG FREQ knob at the left is not wired: its cap does not separate
- * from the panel cleanly enough to place it by measurement.
+/* 70_PATCH is the modulation patch bay, and this is read out of its
+ * constructor (0x0204e140) and the table at 0x02085918 rather than measured -
+ * which matters, because measuring it got both the row and the knobs wrong.
+ * Six rotary knobs at y = 93, x = 23 + 43*i, each with a 40 by 40 hit box:
+ *
+ *   MG FREQ 24, PITCH IN INT 3, VCO1 P.IN INT 4, VCO2 P.IN INT 5,
+ *   CUTOFF IN INT 15, VCA IN INT 17
+ *
+ * plus a slider at (11,38) for MG BPM, knob 25. The knobs numbered 26..30 are
+ * the source selectors - the jack sockets along the bottom - not these.
  */
 static const struct { int x, y, id; } PATCH_KNOB[] = {
-    { 65, 123, 26}, {108, 123, 27}, {151, 123, 28},
-    {194, 123, 29}, {237, 123, 30},
+    { 23, 93, 24}, { 66, 93,  3}, {109, 93,  4},
+    {152, 93,  5}, {195, 93, 15}, {238, 93, 17},
 };
+#define PATCH_KNOB_R 20
 
 int ds10_ui_patch_hit(int x, int y)
 {
     size_t i;
 
-    for (i = 0; i < sizeof PATCH_KNOB / sizeof PATCH_KNOB[0]; i++) {
-        int dx = x - PATCH_KNOB[i].x, dy = y - PATCH_KNOB[i].y;
-
-        if (dx * dx + dy * dy <= KNOB_R * KNOB_R) return PATCH_KNOB[i].id;
-    }
+    for (i = 0; i < sizeof PATCH_KNOB / sizeof PATCH_KNOB[0]; i++)
+        if (x >= PATCH_KNOB[i].x - PATCH_KNOB_R &&
+            x < PATCH_KNOB[i].x + PATCH_KNOB_R &&
+            y >= PATCH_KNOB[i].y - PATCH_KNOB_R &&
+            y < PATCH_KNOB[i].y + PATCH_KNOB_R)
+            return PATCH_KNOB[i].id;
+    /* The MG BPM slider. */
+    if (x >= 11 && x < 11 + 0x13 && y >= 38 && y < 38 + 0x1A) return 25;
     return -1;
 }
 

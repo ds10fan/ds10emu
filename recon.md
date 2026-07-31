@@ -1711,9 +1711,13 @@ Read so far:
 | `0x02065b04` | 30_MIXER | tables above |
 | `0x0204bff8` | 81_KEY | OCT- at (4,2), OCT+ at (0x23,2), both 0x1c x 0xe; synth selector at (0x42,4), 0x46 x 0xc |
 | `0x020594d4` | 62_DRUM_SEQ_GATE | four drum rows at y = 0x21 + 13*i, name at x = 3 and solo at x = 0x16, both 19 x 13; a 64-entry grid state, four drums by sixteen steps |
+| `0x02047384` | 61_SYN_EDIT | sixteen knobs (0x020851d4) and three switches (0x02085180), each knob a 40 x 40 box |
+| `0x0204e140` | 70_PATCH | six knobs at y = 93, x = 23 + 43*i (0x02085918); MG BPM slider at (11,38) |
 | `0x02049150` | 71_KAOSS | two knob assignments, three buttons at x = 4 + 21*i, y = 2 |
 | `0x02050108` | 60_SYN_SEQ_* | six page variants; two 16-step runs at x = 0x16 and 0x4a, y = 3 |
 | `0x020594d4` | 62_DRUM_SEQ_GATE | four drum rows at y = 0x21 + 13*i, name at x = 3 and solo at x = 0x16, both 19 x 13; a 64-entry grid state, four drums by sixteen steps |
+| `0x02047384` | 61_SYN_EDIT | sixteen knobs (0x020851d4) and three switches (0x02085180), each knob a 40 x 40 box |
+| `0x0204e140` | 70_PATCH | six knobs at y = 93, x = 23 + 43*i (0x02085918); MG BPM slider at (11,38) |
 | `0x02049150` | 71_KAOSS | pad at (0,20), 256 x 172; three buttons at x = 4 + 21*i, y = 2 |
 | `0x02062914` | 31_SONG | fifteen buttons from a 0x44-stride table, four more from a second |
 | `0x0205e1e4` | 52_FX | thirteen knobs sharing four positions at y = 161, x = 64/118/172/226; slider at (8,146); nine route buttons 66 x 14 |
@@ -1735,9 +1739,20 @@ the rendered page - and the constructor agrees: it holds `0x9c` = 156 = twelve
 rows of 13 for the visible height and `0x138` = 312 = twenty-four rows for the
 whole note range, which is what the scrollbar down the left is for.
 
-70_PATCH is the modulation patch bay rather than a patch browser: five depth
-knobs at y = 123, x = 65 + 43*i, captioned PITCH IN, VCO1 PITCH IN, VCO2 PITCH
-IN, CUTOFF IN and VCA IN - knobs 26 to 30.
+70_PATCH is the modulation patch bay rather than a patch browser. Its six
+knobs are MG FREQ (24), PITCH IN INT (3), VCO1 P.IN INT (4), VCO2 P.IN INT (5),
+CUTOFF IN INT (15) and VCA IN INT (17) - the *intensity* knobs. The ones
+numbered 26..30 are the source selectors, the jack sockets along the bottom.
+
+Two corrections that measurement had got wrong and the constructors fixed:
+
+- the patch bay's knobs are at y = 93, not the y = 123 a blob detector found,
+  and they are the intensity knobs rather than the source selectors;
+- 61_SYN_EDIT's sixteen knobs are all out by (5,7) from where their bright cap
+  sits, because the cap is not centred on the knob. The sixteen knob *ids*,
+  read off the caption printed under each one, were all correct.
+
+Which is the argument for reading the table rather than the screen.
 
 A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
 `ds10synthNN.dat`, which is the 31 bytes that fill the file to its end.
