@@ -260,8 +260,8 @@ Bit-exact against the oracle, zero mismatches, under `make test`:
 | VCF | `src/core/vcf.c` | 19968 samples / 312 frames | **done** |
 | VCO ×2 + xmod + sync + mix | `src/core/vco.c` | 15616 samples / 244 frames | **done** |
 | ENV (`+0x30`) | `src/core/env.c` | 2976 frame transitions | **done** |
-| LFO (`+0x34`) | | | next |
-| NOTECTRL / PITCHCTRL (`+0x38`, `+0x3C`) | | | |
+| LFO (`+0x34`) | `src/core/lfo.c` | 1136 frame transitions | **done** |
+| NOTECTRL / PITCHCTRL (`+0x38`, `+0x3C`) | | | next |
 | AMP + drive (`+0x48`) | | | |
 | render chain (`+0x4C`) | | | |
 | cutoff/pitch modulation matrix | | | |

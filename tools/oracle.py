@@ -365,6 +365,55 @@ def capture_vco(params, note, frames=4):
     return cases
 
 
+LFO_PTR = 0x34             # synth + 0x34
+LFO_FIELDS = [("out0", 0x00), ("out1", 0x04), ("out2", 0x08), ("out3", 0x0C),
+              ("phase_down", 0x14), ("inc", 0x18), ("phase_up", 0x1C),
+              ("lfsr", 0x24)]
+
+
+def capture_lfo(params, note, frames):
+    """LFO state transitions, one per frame. Same event-frame caveat as ENV."""
+    o = Oracle()
+    lobj = o.u32(o.syn + LFO_PTR)
+    o.load_patch(params)
+
+    def state():
+        raw = bytes(o.uc.mem_read(lobj, 0x34))
+        return [_s32(struct.unpack_from("<I", raw, off)[0])
+                for _n, off in LFO_FIELDS]
+
+    o.note_on(note)
+    o.call(RENDER, o.syn)              # event frame, not measured
+    cases = []
+    for _ in range(frames):
+        before = state()
+        o.call(RENDER, o.syn)
+        cases.append((before, state()))
+    return cases
+
+
+def cmd_lfo_vectors(path="tests/vectors/lfo.bin"):
+    """Sweep LFO rate and BPM sync across notes and the factory patches."""
+    _n, init = factory_patch(0)
+    cases = []
+    for freq in (0, 8, 24, 48, 72, 100, 127):
+        for bpm in (0, 1):
+            p = list(init)
+            p[24], p[25] = freq, bpm
+            cases += capture_lfo(p, 60, 40)
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        cases += capture_lfo(p, 60, 24)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"LFO1" + struct.pack("<I", len(cases)))
+        for before, after in cases:
+            f.write(struct.pack(f"<{len(LFO_FIELDS)}i", *before))
+            f.write(struct.pack(f"<{len(LFO_FIELDS)}i", *after))
+    print(f"{path}: {len(cases)} frame transitions")
+
+
 ENV_PTR = 0x30             # synth + 0x30
 
 
@@ -538,7 +587,8 @@ def main():
     cmds = {"probe": cmd_probe, "render": cmd_render, "wav": cmd_wav,
             "waves": cmd_waves, "vectors": cmd_vectors,
             "vco-vectors": cmd_vco_vectors,
-            "env-vectors": cmd_env_vectors}
+            "env-vectors": cmd_env_vectors,
+            "lfo-vectors": cmd_lfo_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1

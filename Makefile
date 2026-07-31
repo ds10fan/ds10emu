@@ -6,10 +6,10 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: recon extract oracle ghidra-image test test-vcf test-vco test-env clean
+.PHONY: recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-vcf test-vco test-env
+test: test-vcf test-vco test-env test-lfo
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -32,6 +32,13 @@ out/test_env: tests/test_env.c src/core/env.c src/core/env.h $(CORE_HDRS)
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_env.c src/core/env.c
 
+test-lfo: out/test_lfo tests/vectors/lfo.bin
+	@./out/test_lfo
+
+out/test_lfo: tests/test_lfo.c src/core/lfo.c src/core/lfo.h $(CORE_HDRS)
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_lfo.c src/core/lfo.c
+
 # Vectors are ROM-derived and never committed; regenerate them locally.
 tests/vectors/vcf.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py vectors
@@ -41,6 +48,9 @@ tests/vectors/vco.bin: extract tools/oracle.py tools/emu.py
 
 tests/vectors/env.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py env-vectors
+
+tests/vectors/lfo.bin: extract tools/oracle.py tools/emu.py
+	@$(PY) tools/oracle.py lfo-vectors
 
 # Reproduce every artifact recon.md refers to, from the ROM alone.
 recon: extract
