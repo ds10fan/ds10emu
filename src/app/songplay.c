@@ -75,6 +75,8 @@ typedef struct {
     ds10_rt_pattern *rt;        /* one per song pattern */
     int last;                   /* pattern installed most recently, -1 = none */
     int done;
+    const uint16_t *chain;      /* the arrangement to walk */
+    int nbars;
     /* What a pattern change has to re-initialise. */
     ds10_voice *voice;
     ds10_mixer *mix;
@@ -156,16 +158,16 @@ static void player_handle(ds10_song_player *p, ds10_seq *s)
     if (p->msg != DS10_MSG_BAR)
         return;
     bar = s->bar;
-    if (bar < 0 || bar >= DS10_SONG_CHAIN) {
+    if (bar < 0 || bar >= sp->nbars) {
         sp->done = 1;
         return;
     }
-    if (sp->song->chain[bar] == DS10_SONG_NO_PATTERN ||
-        sp->song->chain[bar] >= DS10_SONG_PATTERNS) {
+    if (sp->chain[bar] == DS10_SONG_NO_PATTERN ||
+        sp->chain[bar] >= DS10_SONG_PATTERNS) {
         sp->done = 1;
         return;
     }
-    p->answer = &sp->rt[sp->song->chain[bar]];
+    p->answer = &sp->rt[sp->chain[bar]];
 }
 
 static void put16(FILE *f, unsigned v)
@@ -206,14 +208,17 @@ static void usage(void)
             "  -b  bars to render (default: the whole chain)\n"
             "  -p  loop one pattern instead of following the chain\n"
             "  -c  channel bitmask, bit 0..5 = syn1 syn2 drum1..4"
-            " (default 0x3f)\n");
+            " (default 0x3f)\n"
+            "  -a  if the arrangement is shorter than N bars, ignore it and\n"
+            "      sweep all 16 patterns in order, twice\n");
     exit(2);
 }
 
 int main(int argc, char **argv)
 {
     const char *out = "song.wav", *tbl = "out/tables.bin", *in = NULL;
-    int bars = 0, only = -1, i, chmask = 0x3F;
+    int bars = 0, only = -1, i, chmask = 0x3F, automin = 0;
+    static uint16_t fill[2 * DS10_SONG_PATTERNS];
     ds10_table_set ts;
     ds10_pitch_tables pt;
     ds10_vcf_tables ft;
@@ -254,6 +259,8 @@ int main(int argc, char **argv)
             only = atoi(argv[++i]);
         else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc)
             chmask = (int)strtol(argv[++i], 0, 0);
+        else if (strcmp(argv[i], "-a") == 0 && i + 1 < argc)
+            automin = atoi(argv[++i]);
         else if (argv[i][0] == '-')
             usage();
         else
@@ -290,6 +297,7 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    memset(&sp, 0, sizeof sp);
     for (i = 0; i < DS10_SONG_PATTERNS; i++)
         build_pattern(&rt[i], &song.pattern[i]);
 
@@ -311,16 +319,27 @@ int main(int argc, char **argv)
         ds10_drum_set_sample(&drum[i], drumbuf[i], DRUM_LEN, DRUM_ROOT);
     }
 
+    /* An unarranged song is a scratchpad of patterns with no chain worth
+     * playing, so walk all sixteen twice instead. */
+    sp.chain = song.chain;
+    sp.nbars = ds10_song_bars(&song);
+    if (automin > 0 && sp.nbars < automin) {
+        for (i = 0; i < 2 * DS10_SONG_PATTERNS; i++)
+            fill[i] = (uint16_t)(i % DS10_SONG_PATTERNS);
+        sp.chain = fill;
+        sp.nbars = 2 * DS10_SONG_PATTERNS;
+        printf("%s: %d-bar arrangement, sweeping all 16 patterns twice\n",
+               in, ds10_song_bars(&song));
+    }
     if (bars <= 0)
-        bars = only >= 0 ? 8 : ds10_song_bars(&song);
+        bars = only >= 0 ? 8 : sp.nbars;
     if (bars <= 0) {
         fprintf(stderr, "%s: empty chain, nothing to play\n", in);
         return 2;
     }
 
-    printf("%s: \"%.6s\"  version %u  %u BPM  swing %u%%  %d of %d bars\n",
-           in, song.name, song.version, song.tempo, song.swing, bars,
-           ds10_song_bars(&song));
+    printf("%s: \"%.6s\"  version %u  %u BPM  swing %u%%  %d bars\n",
+           in, song.name, song.version, song.tempo, song.swing, bars);
 
     /* Sequencer. The transport's own start latch does the rest. */
     memset(&seq, 0, sizeof seq);
@@ -343,7 +362,6 @@ int main(int argc, char **argv)
     for (i = 0; i < NSYN; i++)
         ds10_voice_state_load(&voice[i], ts.voice_init);
 
-    memset(&sp, 0, sizeof sp);
     sp.base.handle = player_handle;
     sp.song = &song;
     sp.rt = rt;

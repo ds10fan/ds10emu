@@ -14,3 +14,8 @@ build/
 *.a
 
 __pycache__/
+
+# Save files the user supplies, and anything extracted from them.
+songs/
+*.SAV
+*.sav
