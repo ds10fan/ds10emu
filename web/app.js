@@ -35,6 +35,7 @@ let octave = 0;
 let held = null;       /* the note currently sounding, if any */
 let drag = null;       /* {id, value, y} while a knob is being turned */
 let playing = false;
+let kaoss = false;
 
 function fill(select, names, initial) {
   for (const n of names) {
@@ -121,6 +122,16 @@ function setKnob(id, value) {
 }
 
 function onMove(ev) {
+  if (kaoss) {
+    const [x, y] = screenPos(ev);
+    const h = api.kaossHit(x, y);
+    if (h >= 0) {
+      api.knobSet(11, h & 0xFF);
+      api.knobSet(12, h >> 8);
+      status.textContent = "KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8);
+    }
+    return;
+  }
   if (!drag) return;
   const r = ev.target.getBoundingClientRect();
   const y = (ev.clientY - r.top) * 192 / r.height;
@@ -155,6 +166,31 @@ function onDown(which, ev) {
       document.getElementById("pick-bottom").value = next;
       show();
     }
+    return;
+  }
+  if (page === "70_PATCH") {
+    startAudio();
+    const id = api.patchHit(x, y);
+    if (id >= 0) {
+      const r = ev.target.getBoundingClientRect();
+      drag = {id: id, start: api.knobMin(id) + api.knobRange(id) / 2,
+              y: (ev.clientY - r.top) * 192 / r.height};
+      setKnob(id, drag.start);
+      ev.target.setPointerCapture(ev.pointerId);
+    }
+    return;
+  }
+  if (page === "71_KAOSS") {
+    startAudio();
+    const h = api.kaossHit(x, y);
+    if (h < 0) return;
+    /* The real pad's two axes are a per-song assignment that is not read yet;
+     * cutoff and peak are the usual pair and make the pad audible. */
+    kaoss = true;
+    api.knobSet(11, h & 0xFF);
+    api.knobSet(12, h >> 8);
+    status.textContent = "KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8);
+    ev.target.setPointerCapture(ev.pointerId);
     return;
   }
   if (page === "60_SYN_SEQ_PIANO") {
@@ -261,6 +297,12 @@ Module.onRuntimeInitialized = () => {
     fxHit: Module.cwrap("ds10_web_fx_hit", "number",
                         ["number", "number", "number"]),
     seqHit: Module.cwrap("ds10_web_seq_hit", "number", ["number", "number"]),
+    kaossHit: Module.cwrap("ds10_web_kaoss_hit", "number",
+                           ["number", "number"]),
+    patchHit: Module.cwrap("ds10_web_patch_hit", "number",
+                           ["number", "number"]),
+    factoryPatch: Module.cwrap("ds10_web_factory_patch", "number",
+                               ["number"]),
     seqStep: Module.cwrap("ds10_web_seq_step", null,
                           ["number", "number", "number"]),
     seqNote: Module.cwrap("ds10_web_seq_note", "number",
@@ -279,14 +321,24 @@ Module.onRuntimeInitialized = () => {
   for (const which of ["top", "bottom"]) {
     canvases[which].addEventListener("pointerdown", (e) => onDown(which, e));
     canvases[which].addEventListener("pointermove", onMove);
-    canvases[which].addEventListener("pointerup", () => { noteOff(); drag = null; });
-    canvases[which].addEventListener("pointerleave", () => { noteOff(); drag = null; });
+    canvases[which].addEventListener("pointerup",
+      () => { noteOff(); drag = null; kaoss = false; });
+    canvases[which].addEventListener("pointerleave",
+      () => { noteOff(); drag = null; kaoss = false; });
   }
   /* Space starts and stops the sequencer; z and x shift the keyboard by an
    * octave, as the OCT buttons do. */
   document.addEventListener("keydown", (e) => {
     if (e.key === "z") { octave--; status.textContent = "octave " + octave; }
     if (e.key === "x") { octave++; status.textContent = "octave " + octave; }
+    if (e.key >= "1" && e.key <= "9") {
+      startAudio();
+      const n = e.key.charCodeAt(0) - 49;
+      if (api.factoryPatch(n) === 0) {
+        status.textContent = "factory patch " + n;
+        draw();
+      }
+    }
     if (e.key === " ") {
       e.preventDefault();
       startAudio();

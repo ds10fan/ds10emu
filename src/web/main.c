@@ -302,6 +302,47 @@ int ds10_web_page(const char *bottom, const char *top)
     return 0;
 }
 
+/* Which synth knob a touch on the patch bay drives, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_patch_hit(int x, int y) { return ds10_ui_patch_hit(x, y); }
+
+/* Load one of the twenty-four factory patches into both voices. Their 31
+ * knobs sit at offset 0x20 of a 63-byte ds10synthNN.dat. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_factory_patch(int n)
+{
+    char path[256];
+    FILE *f;
+    uint8_t blob[64];
+    int i;
+
+    if (!audio_ready || n < 0 || n > 23) return -1;
+    snprintf(path, sizeof path, "/data/nitrofs/demo/ds10synth%02d.dat", n);
+    f = fopen(path, "rb");
+    if (!f) {
+        snprintf(last_error, sizeof last_error, "cannot open %s", path);
+        return -1;
+    }
+    if (fread(blob, 1, sizeof blob, f) < 0x3F) {
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    for (i = 0; i < NSYN; i++)
+        ds10_patch_load(&voice[i], (const int8_t *)(blob + 0x20), &tables.t);
+    return 0;
+}
+
+/* A touch on the KAOSS pad: returns vx | (vy << 8), or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_kaoss_hit(int x, int y)
+{
+    int vx, vy;
+
+    if (ds10_ui_kaoss_hit(x, y, &vx, &vy) < 0) return -1;
+    return vx | (vy << 8);
+}
+
 /* A touch on the step grid: returns step | (row << 8), or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_seq_hit(int x, int y)

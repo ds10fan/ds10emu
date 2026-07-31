@@ -1712,6 +1712,7 @@ Read so far:
 | `0x0204bff8` | 81_KEY | OCT- at (4,2), OCT+ at (0x23,2), both 0x1c x 0xe; synth selector at (0x42,4), 0x46 x 0xc |
 | `0x02049150` | 71_KAOSS | two knob assignments, three buttons at x = 4 + 21*i, y = 2 |
 | `0x02050108` | 60_SYN_SEQ_* | six page variants; two 16-step runs at x = 0x16 and 0x4a, y = 3 |
+| `0x02049150` | 71_KAOSS | pad at (0,20), 256 x 172; three buttons at x = 4 + 21*i, y = 2 |
 | `0x02062914` | 31_SONG | fifteen buttons from a 0x44-stride table, four more from a second |
 | `0x0205e1e4` | 52_FX | thirteen knobs sharing four positions at y = 161, x = 64/118/172/226; slider at (8,146); nine route buttons 66 x 14 |
 
@@ -1731,6 +1732,13 @@ always   DRY/WET    8                 slider 6
 the rendered page - and the constructor agrees: it holds `0x9c` = 156 = twelve
 rows of 13 for the visible height and `0x138` = 312 = twenty-four rows for the
 whole note range, which is what the scrollbar down the left is for.
+
+70_PATCH is the modulation patch bay rather than a patch browser: five depth
+knobs at y = 123, x = 65 + 43*i, captioned PITCH IN, VCO1 PITCH IN, VCO2 PITCH
+IN, CUTOFF IN and VCA IN - knobs 26 to 30.
+
+A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
+`ds10synthNN.dat`, which is the 31 bytes that fill the file to its end.
 
 ### Status
 

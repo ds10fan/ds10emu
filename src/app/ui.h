@@ -41,6 +41,14 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Hit-test the modulation patch bay on 70_PATCH. Returns a synth knob id, or
+ * -1. */
+int ds10_ui_patch_hit(int x, int y);
+
+/* Hit-test the KAOSS pad. Writes the two axes as 0..127 and returns 0 on a
+ * hit. Decompiled from 0x02049150. */
+int ds10_ui_kaoss_hit(int x, int y, int *vx, int *vy);
+
 /* Hit-test the step grid on 60_SYN_SEQ_PIANO. Writes the step and the row
  * (0 at the top of the twelve visible), returns 0 on a hit. */
 int ds10_ui_seq_hit(int x, int y, int *step, int *row);

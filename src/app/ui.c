@@ -892,6 +892,49 @@ static const int FX_KNOB_X[4] = {64, 118, 172, 226};
 #define SEQ_COLS 16
 #define SEQ_ROWS 12
 
+/* 71_KAOSS, from 0x02049150: the pad is the whole width below the button bar,
+ * placed by FUN_02060330(pad, 0, 0x14, 0x100, 0xac) - x 0, y 20, 256 by 172.
+ * Which two knobs it drives is a per-document assignment the screen reads at
+ * construction; the axes here are just 0..127 and the caller decides. */
+#define KAOSS_X 0
+#define KAOSS_Y 20
+#define KAOSS_W 256
+#define KAOSS_H 172
+
+/* 70_PATCH is the modulation patch bay, not a patch browser: one row of five
+ * depth knobs at y = 123, x = 65 + 43*i, found the same way as the synth edit
+ * page's - the light cap against the dark panel. Their captions read PITCH IN,
+ * VCO1 PITCH IN, VCO2 PITCH IN, CUTOFF IN and VCA IN, which are knobs 26 to
+ * 30. The MG FREQ knob at the left is not wired: its cap does not separate
+ * from the panel cleanly enough to place it by measurement.
+ */
+static const struct { int x, y, id; } PATCH_KNOB[] = {
+    { 65, 123, 26}, {108, 123, 27}, {151, 123, 28},
+    {194, 123, 29}, {237, 123, 30},
+};
+
+int ds10_ui_patch_hit(int x, int y)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof PATCH_KNOB / sizeof PATCH_KNOB[0]; i++) {
+        int dx = x - PATCH_KNOB[i].x, dy = y - PATCH_KNOB[i].y;
+
+        if (dx * dx + dy * dy <= KNOB_R * KNOB_R) return PATCH_KNOB[i].id;
+    }
+    return -1;
+}
+
+int ds10_ui_kaoss_hit(int x, int y, int *vx, int *vy)
+{
+    if (x < KAOSS_X || x >= KAOSS_X + KAOSS_W) return -1;
+    if (y < KAOSS_Y || y >= KAOSS_Y + KAOSS_H) return -1;
+    *vx = (x - KAOSS_X) * 127 / (KAOSS_W - 1);
+    /* Up is more, as the pad is drawn. */
+    *vy = 127 - (y - KAOSS_Y) * 127 / (KAOSS_H - 1);
+    return 0;
+}
+
 int ds10_ui_seq_hit(int x, int y, int *step, int *row)
 {
     int c = (x - SEQ_X0) / SEQ_CELL, r = (y - SEQ_Y0) / SEQ_CELL;
