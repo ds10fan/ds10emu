@@ -22,6 +22,11 @@ typedef struct {
     const int32_t *voice_init;
     const int32_t *mixer_init;
     const int32_t *fx_init;
+    /* Per-knob minimum and range, from the synth's knob descriptors. An
+     * automation lane uses them as its offset and scale, so a recorded 0..127
+     * lane sweeps exactly that knob's range. */
+    const int32_t *knob_min;
+    const int32_t *knob_range;
     void *blob;          /* owns everything the views point at */
 } ds10_table_set;
 

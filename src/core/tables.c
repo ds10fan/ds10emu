@@ -107,7 +107,15 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
         }
         s->mixer_init = (const int32_t *)(blob + off);
         s->fx_init = (const int32_t *)(blob + off + (size_t)nm * 4);
+        off += (size_t)(nm + nf) * 4;
     }
+    /* Then 31 knob minimums and 31 knob ranges. */
+    if (off + 31 * 8 > (size_t)size) {
+        free(blob);
+        return -1;
+    }
+    s->knob_min = (const int32_t *)(blob + off);
+    s->knob_range = (const int32_t *)(blob + off + 31 * 4);
 
     s->blob = blob;
     s->t.env_rate = ptr[T_ENV_RATE];

@@ -1242,15 +1242,92 @@ decompiled. Both sides here render one second from a freshly constructed voice a
 note 60, so the buffer *content* is checked against the original but the driving
 conditions are inferred.
 
-Still approximated:
+### Mixer and effect
 
-- **Mixer and effect settings.** The mixer reports 25 knobs and a pattern has 98
-  bytes still unnamed at `+0x242`; until the knob map is established the mixer is
-  set flat and the effect bypassed.
-- **Per-step velocity and pan** do come from the song, but the original posts them
-  as mixer knobs 7 and 10 and that map is not established either, so they are
-  applied as a plain channel gain and position.
-- **The nine extra bytes per drum** at payload `+0x2BA8`.
+The mixer's knob dispatch, `0x020736C0`, is the whole of a song's mix:
+
+```
+0        route; also forces the effect fully dry when it is 5 (OFF)
+1..8     the effect, forwarded to the fx setter with the SAME parameter id
+9..14    pan, channels 0..5     value * 258              (linear)
+15, 16   forwarded to the effect as well
+17..22   volume, channels 0..5  value^2 * 0x10404 >> 15  (quadratic)
+23, 24   nothing at all
+```
+
+Knob 8 is dry/wet: the value is stored at mixer `+0x34` either way but only
+reaches the effect when the route is not OFF, so switching to OFF and back
+restores it. Values arrive **signed** - the pushers read them with `ldrsb` - so
+the effect's bipolar knobs see negatives.
+
+A pattern carries all 25 as bytes at payload `+0x242`, and `0x0206EC10` pushes
+them in on a pattern change. Route across the ROM's 272 patterns is only ever 0,
+1, 2 or 4; pans cluster around centre and volumes near full, which is what
+identified the block before the dispatch confirmed it.
+
+**Mixer events**, `0x020735D0`:
+
+```
+4        the payload word is the BPM; retunes a tempo-synced delay
+6        knob event: id 7 -> knob channel+17 (volume), id 10 -> channel+9 (pan)
+20, 21   mute off, mute on
+```
+
+Everything else is ignored, so the sequencer's bar and pattern-change broadcasts
+do not reach the mixer and the transport has to send opcode 4 itself.
+
+That knob-event mapping is also why the sequencer indexes its channel array with
+`17+track` and `9+track`: the array IS the mixer's knob array, so a step's
+velocity and pan scale that channel's own knob rather than replacing it.
+
+**Verified bit-exact end to end** (`make test-songrender`): the six channels
+through a real mixer driven by the pattern's own knobs, **9299968 samples over 19
+cases, 0 mismatches**. That covers song file to stereo - patches, sequencer, note
+emission, routing, two synth voices, four drum voices and their one-second
+buffers, the mixer and the effect.
+
+### Automation lanes - the remaining gap
+
+Partly decompiled. What is established:
+
+- A lane's **offset is the knob's minimum and its scale is the knob's range**
+  (`max - min + 1`). `0x0206F538` builds a RAM table from the synth's knob
+  descriptors at `0x0207F8E4` (38 bytes each, min at `+0x20`, max at `+0x22`) and
+  `0x0206DEE4` reads offset from `+1` and scale from `+3` of that table. All 31
+  agree with the ranges the patch work already had, so a recorded 0..127 lane
+  sweeps exactly one knob's range. `ds10_lane_map` is already verified against
+  this arithmetic.
+- The **runtime track block** (104 bytes at `pattern + 0x24 + track*0x68`) is now
+  fully accounted for:
+
+```
++0x00..0x3F  16 steps x 4 bytes  note, gate, velocity, pan
++0x40..0x5F  16 steps x 2 bytes  the two lanes' recorded values
++0x64        lane 0 knob id, 0xFF = lane off
++0x65        lane 1 knob id
++0x66        automation enable -> track state +0x20; 1 and 2 are two paths
+```
+
+- The **knob dispatch** at the tail of `0x0206E1EC` is
+  `machine->vtable[0x18](machine, lane->knob, lane->cur >> 8)` for each lane whose
+  knob is not `0xFF`, and the processor ends by bumping the automation sub-step.
+- In the file, a pattern's automation area is `+0x1C2 + track*64 + step*4` as
+  `raw[2], knob[2]`, and the 73 bytes at `+0x25B` hold 12-byte per-track records
+  from `+0x25C` whose bytes 2 and 3 are that track's two lane knob ids.
+
+What is **not** established: the processor's mode dispatch. It branches on track
+state `+0x20` (1 or 2) and `+0x21` (0..3), and only the `+0x21 == 0` per-step
+latch is read. 141 of the ROM's 272 patterns carry automation, so this is the one
+audible feature the render still omits.
+
+Also still open:
+
+- How the original drives the offline drum render (`0x0206EEA0` plays into a
+  recorder). Affects only the first samples of a buffer.
+- The nine extra bytes per drum at payload `+0x2BA8`, and the parts of a
+  pattern's 12-byte per-track records other than the knob ids.
+- The sequencer tick rate, still derived from the accumulator arithmetic rather
+  than observed.
 
 Still decompiled but not verified, and all of it on the path to replaying a song
 as audio rather than as events:

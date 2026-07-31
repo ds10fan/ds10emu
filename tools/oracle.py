@@ -1295,6 +1295,15 @@ TABLES = [
 ]
 
 
+# Per-knob minimum and range, read out of the synth's own knob descriptors at
+# 0x0207F8E4 (38 bytes each, min at +0x20 and max at +0x22). 0x0206F538 builds a
+# RAM table from them and 0x0206DEE4 uses it as an automation lane's offset and
+# scale, so a recorded 0..127 lane sweeps exactly one knob's range. All 31 agree
+# with the ranges the patch tests already used.
+KNOB_DESC = 0x0207F8E4
+KNOB_DESC_STRIDE = 38
+
+
 def cmd_tables(path="out/tables.bin"):
     b = open("out/arm9.bin", "rb").read()
     base = 0x02004000
@@ -1321,6 +1330,14 @@ def cmd_tables(path="out/tables.bin"):
         f.write(struct.pack("<2I", len(minit), len(finit)))
         f.write(struct.pack(f"<{len(minit)}i", *minit))
         f.write(struct.pack(f"<{len(finit)}i", *finit))
+        lo, hi = [], []
+        for k in range(31):
+            a = KNOB_DESC + k * KNOB_DESC_STRIDE - base
+            mn, mx = struct.unpack_from("<hh", b, a + 0x20)
+            lo.append(mn)
+            hi.append(mx - mn + 1)
+        f.write(struct.pack("<31i", *lo))
+        f.write(struct.pack("<31i", *hi))
     print(f"{path}: {len(TABLES)} tables, {len(init)} voice-init fields, "
           f"{len(minit)}+{len(finit)} mixer-init fields")
 
