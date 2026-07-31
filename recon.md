@@ -726,3 +726,133 @@ Behavioural notes that matter for a bit-exact reimplementation:
 - Their translator bugs are a free list of traps for our C code: ASR without sign
   extension, `SMULL` without sign extension on the second operand, and `STRH Rn,
   [Rm], #2` post- vs pre-increment.
+
+---
+
+## 12. Mixer and effects — our own work, and previously unreversed
+
+thement's log ends with "attempt to make effects work didn't work very well".
+This section is why: the effect's parameter mappings sit behind a vtable
+indirection, so reading the setters linearly gets you nowhere. Structure below
+is decompiled from `0x02072C88` (mixer ctor), `0x02072E8C` (mixer render),
+`0x0207251C` (effect ctor) and `0x020726D4` (effect parameter setter).
+
+### The machine factories
+
+All five "machines" are built the same way — `alloc(size)` then constructor:
+
+| factory | size | ctor | machine |
+|---|---|---|---|
+| `0x02075FF8` | 0x54 | `0x02074360` | synth voice |
+| `0x02076014` | 0x48 | `0x02072194` | drum voice |
+| `0x02076030` | 0x8C | `0x02072C88` | mixer |
+| `0x0207604C` | 0x40 | `0x02073890` | effect (parameter front end) |
+| `0x02076068` | 0xE0 | — | not yet identified |
+
+### Mixer object, 140 bytes
+
+```
++0x00  method table (0x02087C7C)
++0x08  pending event count          +0x10  sample count (short)
++0x18  -> voice buffer array, 6 entries at 8-byte stride
++0x1C  -> {int16_t *L, int16_t *R} output pointer pair
++0x30  master gain, ramped (0x7000 from the ctor)
++0x38 + 4*ch   pan    (6 channels)
++0x50 + 4*ch   volume (6 channels)
++0x68 + 4*ch   pan*volume >> 15, recomputed each frame
++0x80  -> effect processor (the 168-byte object below)
++0x84  effect routing, 0..5
++0x88  mute flag (short)            +0xC0  event queue
+```
+
+Channel order is `0 = syn1, 1 = syn2, 2..5 = drums`.
+
+**Panning is linear, not equal-power.** Per channel per sample, with
+`P = pan*volume>>15`:
+
+```
+right = in * P >> 15
+left  = in * (volume - P) >> 15
+```
+
+**Routing** (`+0x84`) selects what the effect sees; everything else is summed
+dry into the output. Confirms thement's list:
+`0 syn1, 1 syn2, 2 syn1+syn2, 3 drums, 4 all, 5 off`.
+
+**The master gain at `+0x30` is a click-free mute ramp**, and answers
+thement's "used by mixer, volume of sorts, (?)". Per sample:
+
+```
+gain = (gain * 0x7F35 >> 15) + (muted ? 0 : 0xCB)
+```
+
+`0x7F35` is `0x7FFF - 0xCA`, i.e. a one-pole smoother with coefficient
+0.99429. It decays toward zero when muted and rises when not, and scales the
+final output. The mute is therefore a ~200-sample fade, not a hard gate.
+
+### Effect processor, 168 bytes — one DSP, three strategies
+
+The design that defeated the earlier attempt: the constructor allocates **three
+4-byte strategy objects**, one per effect type, and the type field selects
+between them by indexing the object itself:
+
+```
++0x00  delay strategy    vtable 0x02087C54
++0x04  chorus strategy   vtable 0x02087C2C
++0x08  flanger strategy  vtable 0x02087C04
++0x0C  type (short), 0..2 -- also the index: *(void**)(fx + type*4)
+```
+
+The parameter setter `0x020726D4(fx, param, value)` stores the raw knob and then
+dispatches through the selected strategy's vtable:
+
+| param | stores | vtable slot | writes to | delay | chorus | flanger |
+|---|---|---|---|---|---|---|
+| 1 | `+0x0C` type | — | — | resets the DSP | | |
+| 2 | `+0x10` time | `+0x08` | `+0x50` | `0x02072ACC` | `0x02072AB8` | `0x02072A34` |
+| 3 | `+0x12` L/R ratio | `+0x0C` | `+0x98` | `0x02072C50` | `0x02072A9C` | `0x02072A20` |
+| 4 | `+0x14` LFO rate | `+0x10` | `+0x44` | `0x020728B0` (shared) | | |
+| 5 | `+0x16` depth | `+0x14` | `+0x48` | `0x02072C44` | `0x02072A68` | `0x020729EC` |
+| 6 | `+0x0E` delay sync | — | — | type 0 only | | |
+| 7 | `+0x18` feedback | `+0x1C` | `+0x4C` | `0x02072C20` | `0x02072A5C` | `0x020729D0` |
+| 8 | `+0x1A` dry/wet | `+0x18` | `+0x8C` | `0x020728C4` (shared) | | |
+
+LFO rate and dry/wet are shared across all three types; the other four differ.
+So **the three effects are one DSP with three parameter mappings** — 14 distinct
+small functions in total, all still to be transcribed.
+
+### The shared DSP
+
+Two **65536-sample** ring buffers (`0x20000` bytes each, allocated at `+0x20`
+and `+0x24`), a fractionally-interpolated read, feedback, and dry/wet:
+
+```
+w  = fx[0x94] & 0xFFFF                       /* write index */
+rL = (w - (fx[0x5C] >> 15)) & 0xFFFF         /* integer part of the delay */
+dL = bufL[rL] + ((fx[0x5C] & 0x7FFF) * (bufL[(rL-1) & 0xFFFF] - bufL[rL]) >> 15)
+bufL[w] = clamp16(inL + (dL * fx[0x74] >> 15))    /* input + feedback */
+outL = bypassL + ((inL * fx[0x8C] + dL * fx[0x90]) >> 15)   /* dry + wet */
+fx[0x94] = w + 1
+fx[0x5C] += fx[0x64]                         /* delay time ramps */
+fx[0x74] += fx[0x7C]                         /* feedback ramps  */
+```
+
+Right channel identical with `+0x68`/`+0x80`/`+0x24`. Both the delay time and
+the feedback are ramped per sample from per-frame targets, the same scheme the
+filter and amp use — so sweeping delay time does not zipper.
+
+Delay time is 15.15 fixed point: the integer part indexes the buffer and the low
+15 bits interpolate. The read offset target has a floor of `0x8000`, i.e. one
+sample minimum. Chorus and flanger get their movement by modulating that offset
+with a squared LFO contour (`+0x2C`/`+0x30` and `+0x38`/`+0x3C`), which is why
+they share the delay's code path entirely.
+
+### Status
+
+Structure and data flow: **decoded**. Not yet done: the 14 strategy mapping
+functions, and a C implementation with a differential test. The DSP is
+straightforward now that the shape is known; the mappings are the remaining
+work, and they are all small.
+
+A test will not need the 256 KB of delay memory in its vectors — zeroing both
+ring buffers on both sides and running N frames keeps them in lockstep.

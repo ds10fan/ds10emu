@@ -361,8 +361,8 @@ audio back.
 
 | risk | mitigation |
 |---|---|
+| ~~Effects and mixer are unreversed even in prior art~~ | **Structure now decoded** - recon.md 12. The effect is one delay DSP with three parameter-mapping strategies behind a vtable, which is why reading the setters linearly failed. 14 small mapping functions remain |
 | Engine not cleanly decomposable into per-stage functions | Block-level oracle works regardless; bisect by parameter sweep |
-| **Effects and mixer are unreversed even in prior art** | Highest-risk item. Oracle-driven probing: sweep one FX parameter, diff output. Fall back to comparing against `ds10-vst`, which runs the real code |
 | Harness produces garbage because the hardware divider is missing | Implement `DIVCNT` and the sqrt accelerator in P1, before trusting any output |
 | Original is C++ with virtual dispatch, hard to follow statically | Lean on the oracle: probe behaviour empirically instead of reading every branch |
 | The 16-byte patch header is a hash we cannot reproduce | Only blocks *writing* patches the original accepts; playback and Tier 1 unaffected |
