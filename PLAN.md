@@ -264,7 +264,9 @@ Bit-exact against the oracle, zero mismatches, under `make test`:
 | NOTECTRL / PITCHCTRL (`+0x38`, `+0x3C`) | `src/core/pitch.c` | 1180 frame transitions | **done** |
 | AMP + drive (`+0x48`) | `src/core/amp.c` | 15104 samples / 236 frames | **done** |
 | render chain (`+0x4C`) | | | |
-| per-frame coefficient preamble (filter cutoff, amp drive/level) | | | next |
+| per-frame filter cutoff mapping | `src/core/vcf.c` | 468 frame transitions | **done** |
+| per-frame amp drive/level mapping | | | next |
+| per-frame osc prep (pitch reciprocal via hardware divider, xmod coefs) | | | |
 | cutoff/pitch modulation matrix | | | |
 
 The **per-sample chain is complete**: oscillator -> filter -> amp -> output

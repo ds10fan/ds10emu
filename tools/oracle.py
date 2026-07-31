@@ -366,6 +366,89 @@ def capture_vco(params, note, frames=4):
     return cases
 
 
+# ds10_vcf field order: per-sample state then per-frame control.
+VCF_ALL = [0x24, 0x34, 0x38, 0x40, 0x50, 0x54, 0x5C, 0x60,
+           0x04, 0x08, 0x0C, 0x20, 0x1C, 0x28, 0x3C, 0x44, 0x48, 0x4C, 0x58]
+
+
+def capture_vcf_update(params, note, frames=6):
+    """FILTER control state before/after the per-frame cutoff mapping.
+
+    Preamble order is LFO, ENV, ..., FILTER, so the ENV/LFO values the filter
+    block reads are the post-call ones. OSC+0x4C is the oscillator feedback and
+    is written in the sample loop, so its pre-call value is what the preamble
+    sees.
+    """
+    o = Oracle()
+    fobj = o.u32(o.syn + FILTER_PTR)
+    oobj = o.u32(o.syn + OSC_PTR)
+    env = o.u32(o.syn + ENV_PTR)
+    lfo = o.u32(o.syn + LFO_PTR)
+    o.load_patch(params)
+
+    def snap():
+        fraw = bytes(o.uc.mem_read(fobj, 0x64))
+        eraw = bytes(o.uc.mem_read(env, 0x14))
+        lraw = bytes(o.uc.mem_read(lfo, 0x34))
+        return ([_s32(struct.unpack_from("<I", fraw, off)[0]) for off in VCF_ALL],
+                [_s32(struct.unpack_from("<I", eraw, 8 + 4 * i)[0]) for i in range(3)],
+                [_s32(struct.unpack_from("<I", lraw, 4 * i)[0]) for i in range(5)],
+                _s32(o.u32(oobj + 0x4C)))
+
+    o.note_on(note)
+    o.call(RENDER, o.syn)
+    cases = []
+    for _ in range(frames):
+        before = snap()
+        o.call(RENDER, o.syn)
+        after = snap()
+        cases.append(((before[0], after[1], after[2], before[3]), after[0]))
+    return cases
+
+
+def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
+    _n, init = factory_patch(0)
+    cases = []
+    for cutoff in (0, 24, 48, 72, 96, 127):
+        for peak in (0, 60, 100, 127):
+            p = list(init)
+            p[11], p[12] = cutoff, peak
+            cases += capture_vcf_update(p, 60)
+    for ftype in (0, 1, 2):
+        for egint in (-63, 0, 63):
+            p = list(init)
+            p[13], p[14] = ftype, egint
+            cases += capture_vcf_update(p, 60)
+    for src in range(7):
+        for depth in (-63, 0, 63):
+            p = list(init)
+            p[29], p[15] = src, depth
+            cases += capture_vcf_update(p, 60)
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        cases += capture_vcf_update(p, 60)
+
+    b = open("out/arm9.bin", "rb").read()
+    base = 0x02004000
+    s16 = lambda a, n: [struct.unpack_from("<h", b, a - base + 2 * i)[0]
+                        for i in range(n)]
+    u32t = lambda a, n: [_s32(struct.unpack_from("<I", b, a - base + 4 * i)[0])
+                         for i in range(n)]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"VCU1" + struct.pack("<I", len(cases)))
+        f.write(struct.pack("<128h", *s16(0x020803C4, 128)))
+        f.write(struct.pack("<128h", *s16(0x020804C4, 128)))
+        f.write(struct.pack("<152i", *u32t(0x020807C4, 152)))
+        for (fv, envv, lfov, prev2), want in cases:
+            f.write(struct.pack(f"<{len(VCF_ALL)}i", *fv))
+            f.write(struct.pack("<3i", *envv))
+            f.write(struct.pack("<5i", *lfov))
+            f.write(struct.pack("<i", prev2))
+            f.write(struct.pack(f"<{len(VCF_ALL)}i", *want))
+    print(f"{path}: {len(cases)} frame transitions")
+
+
 AMP_PTR = 0x48             # synth + 0x48
 # ds10_amp field order.
 AMP_FIELDS = [0x0C, 0x20, 0x2C, 0x30, 0x34, 0x38, 0x3C]
@@ -777,7 +860,8 @@ def main():
             "env-vectors": cmd_env_vectors,
             "lfo-vectors": cmd_lfo_vectors,
             "pitch-vectors": cmd_pitch_vectors,
-            "amp-vectors": cmd_amp_vectors}
+            "amp-vectors": cmd_amp_vectors,
+            "vcfupd-vectors": cmd_vcfupd_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
