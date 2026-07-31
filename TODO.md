@@ -99,14 +99,18 @@ Done:
 Remaining, roughly in order:
 
 - **The widget constructors.** `data/pages.bin` is still a captured frame of
-  sprites per page rather than generated ones, so a page draws but does not
-  animate. The OAM builder underneath is decompiled and verified; what is
-  missing is each screen's list of widgets. Scanning main RAM for the objects
-  finds them but not the ones that are live: the positions a widget holds are
-  in a parent's coordinate space, and the pass that copies a widget's private
-  buffer into the shadow OAM at runtime has not been read yet. That pass is the
-  next thing to find - `tools/widgets.py` already rebuilds any candidate and
-  checks it, so once the transform is known the layouts fall out.
+  sprites per page rather than generated ones, so most of a page draws but does
+  not animate. The exception is the synth edit page's sixteen knob pointers,
+  which are generated.
+
+  The OAM allocator is now decompiled (`recon.md` §16) and so is the OAM
+  builder, verified against the original. What is missing is each screen's list
+  of widgets. Two things are known about where not to look: scanning RAM for
+  `0x0202a820`-shaped objects finds candidates but no live ones, and every OAM
+  entry appears exactly once in RAM, in the shadow - so the screens are not
+  building sprites through that object and handing it over. Reading one screen
+  constructor end to end (`0x02050108` is the sequencer's, and legible) is
+  probably faster than more scanning.
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
   small textured-quad rasteriser, not a polygon pipeline.

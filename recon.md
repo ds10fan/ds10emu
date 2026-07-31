@@ -1625,6 +1625,33 @@ Twenty entries at `0x02085f80`, `{u32, u32 index, char name[32]}`, read by
 
 Pairs are the synth 1 and synth 2 variants of the same page.
 
+### The OAM allocator
+
+Sprites do not go straight to OAM. Each engine owns a 0x540-byte block at
+`0x0215F820` (engine B at +0x540):
+
+```
++0x000  0x100  slot ownership, one u16 per OAM entry, 0xFFFF when free
++0x100  0x400  the OAM shadow, DMA'd to the hardware
++0x500   0x40  affine slot ownership, one u16 per rot/scale parameter set
+```
+
+- `0x02068864(alloc, start, count, engine)` reserves a run of OAM slots, and
+  the matching affine slots, if every one of them is free. It stamps them with
+  an incrementing owner id.
+- `0x020689bc(alloc, src, n)` appends `n` entries into a reserved run. It
+  copies **three halfwords per entry from a source of stride eight** - the
+  fourth halfword of an OAM entry is the rotation parameter and belongs to
+  whoever owns the affine slot, not to the sprite. That is why searching RAM
+  for a widget's output byte for byte finds nothing.
+- `0x02068a88(alloc, mat)` takes a 2x2 matrix in 20.12 and writes it, shifted
+  down to 8.8, into the affine slot's four halfwords at `entry*0x20 + 6, 0xe,
+  0x16, 0x1e`.
+
+A knob pointer turns out to be one double-size rot/scale sprite with tile
+`0x21a` - sixteen of them on the synth edit page, each with its own affine
+index. Turning a knob is a matrix, not a different tile.
+
 ### Status
 
 Reproduced from the asset files alone, and pixel-exact against melonDS for the
@@ -1632,6 +1659,17 @@ same page (`make test-page`): `61_SYN_EDIT`, `70_PATCH`, `30_MIXER`, `81_KEY_i`,
 `60_SYN_SEQ_PIANO`, `01_UNMAIN_MENU`. `71_KAOSS` differs only by its moving
 cursor and `90_MAP` by the live values it displays.
 
-Not decompiled: the widget constructors that place the sprites. The OAM in
-`data/pages.bin` is captured, one frame per page, standing in until they are.
-That is the difference between a page that draws and a page that responds.
+The synth edit page's sixteen knob pointers are **generated** rather than
+captured: the value goes through the decompiled OAM builder and an affine
+matrix, so they turn.
+
+Not decompiled: the widget constructors that place the rest of the sprites. The
+OAM in `data/pages.bin` is captured, one frame per page, standing in until they
+are. That is the difference between a page that draws and a page that responds.
+
+Note for whoever picks this up: scanning main RAM for widget objects
+(`tools/widgets.py`) finds candidates but none that are live, and each OAM
+entry appears exactly once in RAM - in the shadow. So the screens do not build
+their sprites through the `0x0202a820` object and hand it to the allocator;
+they write the entries some other way. Finding that path is what unblocks
+generating the rest.
