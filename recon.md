@@ -945,11 +945,90 @@ extremes give 0/24 and 24/0. Verified for all 300 tempos and all 101 swing
 values (`src/core/seq.c`, `make test-seq`).
 
 **Song-player callback.** The tick does not know about song structure. It writes
-a message id and argument into the callback object and calls its vtable slot 1.
-The ids are readable FourCCs: `"step"`, `"edtp"` (end of pattern), `"stpt"` (bar
-— the song player answers with the next pattern), `"rntp"` (end of song). If the
-bar callback returns non-zero the transport stops and a bar-start event
-(`0x1C`) is broadcast. That is the seam between sequencer and song format.
+a message id and argument into the callback object and calls its vtable slot 1:
+
+```
+cb +0x00  vtable, slot 1 is the handler, called as handler(cb, seq)
+   +0x04  message id
+   +0x08  argument in, answer out
+```
+
+The ids are u32 constants that read as FourCCs when written in hex:
+
+```
+0x73746570  "step"  before each step advance, arg = the step about to be left
+0x65647470  "edtp"  end of pattern, arg = bar; the pattern is then dropped
+0x73747074  "stpt"  bar start, arg 0; the ANSWER is the next pattern pointer
+0x726E7470  "rntp"  sent after a pattern is installed, arg = bar
+```
+
+**Correction.** An earlier note here said a non-zero answer to the bar message
+stops the transport. It does not - the answer *is* the next pattern, and the
+sequencer installs it:
+
+```
+if (cb->answer) {
+    set_pattern(seq, cb->answer);            /* 0x0206DBE4 */
+    cb->msg = "rntp"; cb->arg = seq->bar; cb->handler(cb, seq);
+    post(seq->router, 28, 0x70, seq->tempo); /* 0x1C BAR_START, broadcast */
+}
+```
+
+An answer of zero leaves the sequencer with no pattern, which is the
+already-verified idle path. So the seam between sequencer and song format is one
+pointer per bar, and the chain walk lives entirely on the song-player side.
+
+**`set_pattern`, `0x0206DBE4`.** Runs with interrupts masked. Clears the old
+pattern's back-pointer, stores the new one, and then:
+
+```
+pattern +0x006  u8   steps in this pattern -> seq +0x2C
+        +0x008  u32  <- seq +0x4C  synth count
+        +0x00C  u32  <- seq +0x50  drum count
+        +0x010  u32  <- seq +0x54  track count
+        +0x014  ptr  per-track automation defaults, +4 per track
+        +0x024  step records, 4 bytes, + track*0x68 + step*4
+        +0x064  automation bytes, 2 per step, + track*0x68 + step*2
+        +0x508  u32  <- seq, back-pointer; cleared when the pattern is dropped
+```
+
+With a NULL pattern it resets `steps` to 16 and posts to target 16. With a
+pattern that differs from the previous one it broadcasts `0x1D`
+PATTERN_CHANGE carrying the tempo, then re-initialises every track
+(`0x0206DFCC`), a global (`0x0206EC10`) and both automation lanes of every synth
+track (`0x0206DEE4`). So a bar boundary is where tempo and per-pattern settings
+propagate to the machines.
+
+**Per-step velocity and pan.** The 16-bit value in a step record is two bytes,
+and when a track has a note the tick posts both to the mixer (`0x0206EB44` and
+`0x0206EBB0`):
+
+```
+volume: (velocity * chan[idx]) / 127, truncated to int8   -> knob 7
+pan:    clamp(pan + chan[idx+1] - 0x40, 0, 127)           -> knob 10
+```
+
+Both go out as opcode 6 to target `track | 0x40`, which the router sends to the
+mixer with the channel in the low nibble. `chan` is the byte array at seq
+`+0x60`, indexed through a two-byte-per-track table at `0x02160808`.
+
+Note that both router wrappers (`0x02070204`, `0x0207022C`) build the 8-byte
+event on the stack and leave bytes 2..3 uninitialised, so those bytes are
+whatever was on the stack. Only bytes 0, 1 and 4..7 carry anything.
+
+**Per-track mode bytes.** Inside the 36-byte track block at `seq + 0x64 +
+track*0x24`:
+
+```
++0x00..0x0F  note and gate state (+0x05 note, +0x06 velocity, +0x07 pan,
+             +0x0C live gate, +0x0D live note)
++0x10..0x1F  two 8-byte automation lanes
++0x20        automation enable: 1 = per-step, 2 = a second path
++0x21        automation mode, 0..3
++0x22        play mode: 0 = play the pattern, 1 = muted,
+             2 = play only if no live note, 3 = record (writes the live
+             note and gate back into the pattern)
+```
 
 ### Pattern data
 
@@ -1055,9 +1134,19 @@ this testable without building the whole context object.
 Also verified bit-exact: **automation lanes** and the **song file format**
 (section 14).
 
-Still decompiled but not verified: the song-player callback protocol, which is
-understood but has no implementation - the chain walker that answers `"stpt"`
-with the next pattern.
+Still decompiled but not verified, and all of it on the path to replaying a
+song as audio:
+
+- `set_pattern` (`0x0206DBE4`) and the three initialisers it calls on a bar
+  boundary, `0x0206DFCC`, `0x0206EC10`, `0x0206DEE4`.
+- The pattern-driven half of the tick: the per-track mode dispatch and the
+  velocity/pan posts. The tick is verified only with no pattern loaded.
+- Automation modes other than per-step latch, and the knob dispatch at the tail
+  of `0x0206E1EC`.
+- The song player itself - nothing walks the bar chain yet.
+- The unnamed regions of a pattern record, which is where the per-pattern synth,
+  drum and mixer settings live. Until those are named, a replay cannot set the
+  machines up from a song file at all.
 
 ## 14. Song file format - decompiled and verified
 
