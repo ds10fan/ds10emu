@@ -88,7 +88,7 @@ static void player_noop(ds10_song_player *p, ds10_seq *s)
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "tests/vectors/songrender.bin";
-    const char *tbl = argc > 2 ? argv[2] : "out/tables.bin";
+    const char *tbl = argc > 2 ? argv[2] : "data/tables.bin";
     char magic[4];
     uint32_t ncases, frames, frame, drumlen, i;
     unsigned long total = 0, bad = 0, badcases = 0;

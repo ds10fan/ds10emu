@@ -9,7 +9,7 @@ int main(int argc, char **argv)
 {
     ds10_table_set ts; ds10_pitch_tables pt; ds10_vcf_tables ft; ds10_voice v;
     int16_t buf[64]; int8_t knobs[31]; int i, f, note = atoi(argv[1]);
-    if (ds10_tables_load(&ts, "out/tables.bin")) return 2;
+    if (ds10_tables_load(&ts, "data/tables.bin")) return 2;
     ds10_tables_views(&ts.t, &pt, &ft);
     for (i = 0; i < 31; i++) knobs[i] = (int8_t)atoi(argv[2 + i]);
     memset(&v, 0, sizeof v);

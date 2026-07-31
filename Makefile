@@ -111,7 +111,7 @@ SONG_SRC = src/core/seq.c src/core/song.c src/core/md5.c src/core/tables.c \
            src/core/amp.c src/core/fx.c src/core/drum.c src/core/voice_state.c \
            src/core/mixer.c src/core/mixer_state.c
 
-test-songrender: out/test_songrender tests/vectors/songrender.bin out/tables.bin
+test-songrender: out/test_songrender tests/vectors/songrender.bin
 	@./out/test_songrender
 
 out/test_songrender: tests/test_songrender.c $(SONG_SRC)
@@ -124,9 +124,12 @@ out/songplay: src/app/songplay.c $(SONG_SRC)
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ src/app/songplay.c $(SONG_SRC)
 
-tables: out/tables.bin
-out/tables.bin: extract tools/oracle.py tools/emu.py
-	@$(PY) tools/oracle.py tables
+# data/tables.bin is committed, so the engine and its tests build and run with
+# no ROM present. This target re-extracts it and reports any difference, which
+# is the check that the committed copy is still the ROM's.
+tables:
+	@$(PY) tools/oracle.py tables out/tables.bin
+	@cmp out/tables.bin data/tables.bin && echo "data/tables.bin: unchanged"
 
 test-replay: out/test_replay tests/vectors/replay.bin
 	@./out/test_replay

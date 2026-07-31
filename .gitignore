@@ -1,21 +1,22 @@
-# Nothing derived from the ROM is committed. Test vectors are generated from
-# the user's own ROM by `make test`; only the generator is version-controlled.
+# Scratch: extraction output, disassembly, rendered audio. All reproducible
+# from the ROM with `make extract`.
 out/
-assets/
-tests/vectors/
+
+# The ROM itself, and the user's save files.
 *.nds
-*.bin
-*.asm
-*.wav
+*.SAV
+*.sav
+songs/
+
+# Test vectors are regenerated from the ROM by `make test`. ~25 MB, and they
+# change whenever a test does, so they stay out of history. The small, stable
+# ROM-derived inputs live in data/ and are committed.
+tests/vectors/
 
 # Build output
 build/
+web/build/
 *.o
 *.a
 
 __pycache__/
-
-# Save files the user supplies, and anything extracted from them.
-songs/
-*.SAV
-*.sav

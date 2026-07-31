@@ -216,7 +216,7 @@ static void usage(void)
 
 int main(int argc, char **argv)
 {
-    const char *out = "song.wav", *tbl = "out/tables.bin", *in = NULL;
+    const char *out = "song.wav", *tbl = "data/tables.bin", *in = NULL;
     int bars = 0, only = -1, i, chmask = 0x3F, automin = 0;
     static uint16_t fill[2 * DS10_SONG_PATTERNS];
     ds10_table_set ts;
