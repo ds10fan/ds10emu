@@ -1870,6 +1870,26 @@ The eleven fall into three kinds:
   81_KEY on under a third, so it is a shared prologue with per-screen work
   after it rather than one function emitted four times.
 
+  Their tails are short. 61_SYN_EDIT and 70_PATCH fetch the machine and call
+  the constructor; 71_KAOSS just calls it; 81_KEY silences every voice
+  (`0x0206e114` per track) before calling it and then enables input. All the
+  weight is in the prologue.
+
+52_FX's is the fullest of the state machines and worth reading as the example:
+
+```
+state 0   run the constructor, then for each widget sprintf its name, look it
+          up, and insert it into the registry - two inserts, or four when the
+          widget's +0x78 is 5, matching the registry's maps
+state 2   take the pen's widget, compare its name, look it up, branch on the
+          knob id, and push the value into the machine - five such sites, one
+          per control class
+tail      call its own pass at 0x0205eb84 and then the constructor again
+```
+
+That tail is why the effect type's three knobs share their coordinates in the
+table: changing the type rebuilds the screen.
+
 About 14.5 KB across the eleven.
 
 ### Two more updates

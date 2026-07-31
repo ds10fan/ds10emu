@@ -149,11 +149,13 @@ Remaining, roughly in order:
   one-shot setup rather than a loop - it allocates the app's shared singletons
   on first use.
 
-  The remaining five are characterised but not transcribed (`recon.md` §16):
-  52_FX is the mixer's shape, and 61_SYN_EDIT, 81_KEY, 71_KAOSS and 70_PATCH
-  share a prologue that builds the editor's common object and its nine `S_*`
-  overlays, with per-screen work after it. Reading those tails line by line is
-  what is left.
+  All eleven are read (`recon.md` §16). The four editor screens' tails turn out
+  to be two calls each - fetch the machine, call the constructor - with all the
+  weight in the shared prologue; 52_FX's is traced in full as the example of a
+  running state machine.
+
+  What is not reimplemented from them is the redraw of readouts that follow a
+  control rather than being one, beyond the mixer's meters and faders.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered
