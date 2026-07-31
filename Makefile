@@ -6,7 +6,7 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -253,3 +253,31 @@ out/arm9.bin: $(ROM) tools/ndsx.py
 
 clean:
 	rm -rf out
+
+# ---------------------------------------------------------------------------
+# GUI
+# ---------------------------------------------------------------------------
+
+# ndsref runs the ROM in melonDS and dumps, per frame, the whole 2D state plus
+# the framebuffers melonDS composited from it. That is the pixel ground truth
+# for the renderer; Unicorn stops at the CPU and cannot provide it.
+MELONDS ?= $(HOME)/p/melonDS
+MELON_BUILD ?= $(MELONDS)/build-nojit
+# The core's class layout depends on these, so the driver must be compiled
+# with the same set the library was.
+MELON_DEFS = -DARCHITECTURE_x86_64 -DGDBSTUB_ENABLED -DNDEBUG
+MELON_LIBS = $(MELON_BUILD)/src/libcore.a \
+             $(MELON_BUILD)/src/teakra/src/libteakra.a -lzstd -lpthread
+
+ndsref: out/ndsref
+out/ndsref: tools/ndsref/main.cpp tools/ndsref/platform.cpp
+	@mkdir -p out
+	@test -f $(MELON_BUILD)/src/libcore.a || { \
+	  echo "no melonDS core at $(MELON_BUILD)."; \
+	  echo "  git clone https://github.com/melonDS-emu/melonDS $(MELONDS)"; \
+	  echo "  cmake -B $(MELON_BUILD) -G Ninja -DBUILD_QT_SDL=OFF \\"; \
+	  echo "        -DENABLE_OGLRENDERER=OFF -DENABLE_JIT=OFF \\"; \
+	  echo "        -DCMAKE_BUILD_TYPE=Release $(MELONDS)"; \
+	  echo "  cmake --build $(MELON_BUILD)"; exit 1; }
+	$(CXX) -std=c++17 -O2 $(MELON_DEFS) -o $@ $^ \
+	  -I$(MELONDS)/src -I$(MELON_BUILD) $(MELON_LIBS)
