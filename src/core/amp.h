@@ -25,7 +25,21 @@ typedef struct {
     int32_t clipped;     /* +0x34 written by the stage; also a mod source */
     int32_t drive1;      /* +0x38 (knob*0x102)^2 >> 15 */
     int32_t drive2;      /* +0x3C 0x7FFF - knob*0xE8; 0x7FFF is fully clean */
+
+    /* Per-frame control. Appended so the per-sample test's flat field mapping
+     * over the first seven members stays valid. */
+    int32_t lfo_sel;     /* +0x04 */
+    int32_t env_sel;     /* +0x08 */
+    int32_t level_knob;  /* +0x18 knob * 0x20408 */
+    int32_t in_depth;    /* +0x1C vca.in depth */
+    int32_t eg_sel;      /* +0x24 vca EG source */
+    int32_t target;      /* +0x28 ramp target for `level` */
 } ds10_amp;
+
+/* Recompute the output level for the coming frame and set up its ramp.
+ * `env_out` is ENV+0x08 (3 entries), `lfo_out` the LFO array (5 entries). */
+void ds10_amp_update(ds10_amp *a, const int32_t *env_out,
+                     const int32_t *lfo_out);
 
 /* `in` is the filter output, `vco2` the raw VCO2 output (only used when the
  * extra distortion path is enabled). Returns the sample written to the voice's

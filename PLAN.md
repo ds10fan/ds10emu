@@ -263,10 +263,11 @@ Bit-exact against the oracle, zero mismatches, under `make test`:
 | LFO (`+0x34`) | `src/core/lfo.c` | 1136 frame transitions | **done** |
 | NOTECTRL / PITCHCTRL (`+0x38`, `+0x3C`) | `src/core/pitch.c` | 1180 frame transitions | **done** |
 | AMP + drive (`+0x48`) | `src/core/amp.c` | 15104 samples / 236 frames | **done** |
-| render chain (`+0x4C`) | | | |
+| render chain (`+0x4C`) | | | not needed for a single voice |
 | per-frame filter cutoff mapping | `src/core/vcf.c` | 468 frame transitions | **done** |
-| per-frame amp drive/level mapping | | | next |
-| per-frame osc prep (pitch reciprocal via hardware divider, xmod coefs) | | | |
+| per-frame amp drive/level mapping | `src/core/amp.c` | covered end-to-end | **done** |
+| per-frame osc prep (pitch reciprocal via hardware divider, xmod coefs) | `src/core/vco.c` | covered end-to-end | **done** |
+| **whole voice, end to end** | `src/core/voice.c` | **33280 samples / 520 frames** | **done** |
 | cutoff/pitch modulation matrix | | | |
 
 The **per-sample chain is complete**: oscillator -> filter -> amp -> output

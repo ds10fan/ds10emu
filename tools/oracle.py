@@ -449,6 +449,111 @@ def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
     print(f"{path}: {len(cases)} frame transitions")
 
 
+# --- end-to-end voice capture -----------------------------------------------
+# Field lists must match the C struct member order exactly. (offset, size);
+# size 1 = byte, 2 = signed halfword, 4 = word.
+V_LFO = [(0x00, 4), (0x04, 4), (0x08, 4), (0x0C, 4), (0x10, 4),
+         (0x14, 4), (0x18, 4), (0x1C, 4), (0x24, 4)]
+V_ENV = [(0x04, 1), (0x08, 4), (0x0C, 4)]
+V_ENVP = [(0x00, 4), (0x04, 4), (0x08, 4), (0x0C, 4)]
+V_NC = [(0x00, 4), (0x04, 4), (0x0C, 4), (0x10, 1)]
+V_PC = [(0x20, 4), (0x24, 4), (0x28, 4), (0x2C, 4), (0x30, 4), (0x34, 2),
+        (0x38, 4), (0x3C, 4), (0x40, 2), (0x44, 2), (0x48, 2),
+        (0x4C, 4), (0x50, 4), (0x54, 4)]
+V_VCO = [(0x0C, 4), (0x14, 4), (0x18, 4), (0x1C, 4), (0x20, 4), (0x24, 4),
+         (0x28, 4), (0x2C, 4), (0x30, 4), (0x38, 4), (0x3C, 4), (0x40, 4),
+         (0x44, 4), (0x48, 4), (0x4C, 4), (0x50, 4), (0x60, 4), (0x64, 4),
+         (0x68, 4), (0x6C, 4), (0x54, 4), (0x58, 4), (0x5C, 4)]
+V_VCF = [(0x24, 4), (0x34, 4), (0x38, 4), (0x40, 4), (0x50, 4), (0x54, 4),
+         (0x5C, 4), (0x60, 4), (0x04, 4), (0x08, 4), (0x0C, 4), (0x20, 4),
+         (0x1C, 4), (0x28, 4), (0x3C, 4), (0x44, 4), (0x48, 4), (0x4C, 4),
+         (0x58, 4)]
+V_AMP = [(0x0C, 4), (0x20, 4), (0x2C, 4), (0x30, 4), (0x34, 4), (0x38, 4),
+         (0x3C, 4), (0x04, 4), (0x08, 4), (0x18, 4), (0x1C, 4), (0x24, 4),
+         (0x28, 4)]
+
+
+def capture_voice(params, note, frames=4):
+    """Whole-voice state before a frame, and the 64 samples the original wrote."""
+    o = Oracle()
+    ptr = {k: o.u32(o.syn + off) for k, off in
+           (("lfo", 0x34), ("env", 0x30), ("nc", 0x38), ("pc", 0x3C),
+            ("vco", 0x40), ("vcf", 0x44), ("amp", 0x48))}
+    o.load_patch(params)
+
+    def read(base, fields, size=0x100):
+        raw = bytes(o.uc.mem_read(base, size))
+        return [_rdf(raw, off, sz) for off, sz in fields]
+
+    def snap():
+        envp = o.u32(ptr["env"])
+        return (read(ptr["lfo"], V_LFO, 0x34) + read(ptr["env"], V_ENV, 0x14) +
+                read(envp, V_ENVP, 0x10) + read(ptr["nc"], V_NC, 0x14) +
+                read(ptr["pc"], V_PC, 0x58) + read(ptr["vco"], V_VCO, 0xA0) +
+                read(ptr["vcf"], V_VCF, 0x64) + read(ptr["amp"], V_AMP, 0x40))
+
+    o.note_on(note)
+    o.call(RENDER, o.syn)              # event frame, not measured
+    cases = []
+    for _ in range(frames):
+        before = snap()
+        o.call(RENDER, o.syn)
+        out = list(struct.unpack(f"<{FRAME}h",
+                                o.uc.mem_read(OUTBUF, FRAME * 2)))
+        cases.append((before, out))
+    return cases
+
+
+NFIELD_TOTAL = None
+
+
+def cmd_voice_vectors(path="tests/vectors/voice.bin"):
+    """End-to-end: every factory patch plus parameter sweeps, whole frames."""
+    _n, init = factory_patch(0)
+    cases = []
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        for note in (36, 60, 84):
+            cases += capture_voice(p, note)
+    for w1 in range(4):
+        for w2 in range(4):
+            p = list(init)
+            p[6], p[7] = w1, w2
+            cases += capture_voice(p, 60)
+    for cutoff in (0, 40, 80, 127):
+        for peak in (0, 100, 127):
+            for ftype in (0, 1, 2):
+                p = list(init)
+                p[11], p[12], p[13] = cutoff, peak, ftype
+                cases += capture_voice(p, 60)
+    for drive in (0, 64, 127):
+        for sync in (0, 1):
+            p = list(init)
+            p[18], p[10] = drive, sync
+            cases += capture_voice(p, 60)
+
+    b = open("out/arm9.bin", "rb").read()
+    base = 0x02004000
+    s16 = lambda a, n: [struct.unpack_from("<h", b, a - base + 2 * i)[0]
+                        for i in range(n)]
+    u32t = lambda a, n: [_s32(struct.unpack_from("<I", b, a - base + 4 * i)[0])
+                         for i in range(n)]
+    nf = len(cases[0][0])
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"VOI1" + struct.pack("<II", len(cases), nf))
+        f.write(struct.pack("<128i", *u32t(DEPTH_TABLE, 128)))
+        f.write(struct.pack("<130i", *u32t(PITCH_TABLE, 130)))
+        f.write(struct.pack("<128h", *s16(0x020803C4, 128)))
+        f.write(struct.pack("<128h", *s16(0x020804C4, 128)))
+        f.write(struct.pack("<152i", *u32t(0x020807C4, 152)))
+        for state, out in cases:
+            f.write(struct.pack(f"<{nf}i", *state))
+            f.write(struct.pack(f"<{FRAME}h", *out))
+    print(f"{path}: {len(cases)} frames, {nf} state fields, "
+          f"{len(cases) * FRAME} samples")
+
+
 AMP_PTR = 0x48             # synth + 0x48
 # ds10_amp field order.
 AMP_FIELDS = [0x0C, 0x20, 0x2C, 0x30, 0x34, 0x38, 0x3C]
@@ -861,7 +966,8 @@ def main():
             "lfo-vectors": cmd_lfo_vectors,
             "pitch-vectors": cmd_pitch_vectors,
             "amp-vectors": cmd_amp_vectors,
-            "vcfupd-vectors": cmd_vcfupd_vectors}
+            "vcfupd-vectors": cmd_vcfupd_vectors,
+            "voice-vectors": cmd_voice_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1

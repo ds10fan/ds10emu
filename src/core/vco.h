@@ -43,7 +43,18 @@ typedef struct {
     int32_t xm_64;       /* +0x64 */
     int32_t xm_68;       /* +0x68 */
     int32_t xm_6c;       /* +0x6C */
+
+    /* Per-frame control. Appended so the per-sample test's flat field mapping
+     * over the first twenty members stays valid. */
+    int32_t pitch_in;    /* +0x54 knob 3 + 0x3F */
+    int32_t pitch1_in;   /* +0x58 knob 4 + 0x3F */
+    int32_t pitch2_in;   /* +0x5C knob 5 + 0x3F */
 } ds10_vco;
+
+/* Take the two phase increments the pitch block produced and derive everything
+ * the sample loop needs: the shaping reciprocals and the cross-mod
+ * coefficients. */
+void ds10_vco_update(ds10_vco *o, int32_t inc1, int32_t inc2);
 
 /* Advance one sample; returns the mixed output that feeds the filter. */
 int32_t ds10_vco_step(ds10_vco *o);

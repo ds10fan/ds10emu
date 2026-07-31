@@ -156,3 +156,37 @@ int32_t ds10_vco_step(ds10_vco *o)
     o->prev2 = ds10_shl(out2, 9);
     return (ds10_mul32(out1, o->vol1) + ds10_mul32(out2, o->vol2)) >> 15;
 }
+
+/* --- per-frame preparation (render preamble, 0x02074AD8..0x02074B98) ---
+ *
+ * The shaping value handed to the saw and square generators is a reciprocal of
+ * the phase increment, so waveform amplitude stays constant across pitch. The
+ * original computes it on the DS hardware divider; the guard below is why the
+ * divider is only engaged for increments at or above 0x01000000 - the quotient
+ * would otherwise exceed 32 bits.
+ */
+#define VCO_RECIP_NUM 0x007FFFFFFF000000ULL
+#define VCO_RECIP_MIN 0x01000000
+#define VCO_RECIP_SAT 0x7FFFFFFF
+
+static inline int32_t shaping_recip(int32_t inc)
+{
+    if (inc < VCO_RECIP_MIN)
+        return VCO_RECIP_SAT;
+    return (int32_t)(VCO_RECIP_NUM / (uint64_t)(uint32_t)inc);
+}
+
+void ds10_vco_update(ds10_vco *o, int32_t inc1, int32_t inc2)
+{
+    o->inc1 = inc1;
+    o->inc2 = inc2;
+    o->shape1 = shaping_recip(inc1);
+    o->shape2 = shaping_recip(inc2);
+
+    /* Cross-mod depths: two used directly, two scaled by the VCO2 increment so
+     * the modulation tracks pitch. */
+    o->xm_60 = o->pitch_in;
+    o->xm_68 = o->pitch1_in;
+    o->xm_64 = (int32_t)(((int64_t)inc2 * (int64_t)o->pitch_in) >> 7);
+    o->xm_6c = (int32_t)(((int64_t)inc2 * (int64_t)o->pitch2_in) >> 7);
+}
