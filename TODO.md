@@ -111,10 +111,17 @@ Remaining, roughly in order:
   Reading one screen constructor end to end - `0x02050108` is the sequencer's,
   and legible - is how that gets replaced.
 
-- **Pages whose sprites are not attributed.** `01_UNMAIN_MENU` and `90_MAP`
-  come out mostly as raw OAM rather than cells, and the four advertisement
-  screens have no sprite record at all. They probably draw from a sheet at a
-  tile base the matcher does not try.
+- **Text.** `90_MAP`'s unattributed sprites are text - the session name, the
+  tempo, the step count. Their tiles are past the end of CHARACTER_S and match
+  no asset, and the top screen's OBJ VRAM holds 125 KB of data only 13 KB of
+  which is a file: the glyphs are rasterised into VRAM at runtime from the
+  NFTR fonts. That means an NFTR renderer and a glyph cache, not a lookup.
+
+- **The title and advertisement screens' palettes.** Those pages carry their
+  own NCLR, and it goes into extended palette slot 0 at entry 1 - overlapping
+  the shared palette that is already there at entry 4. Loading both is worse
+  than loading neither (48967 pixels wrong against 8463), so the game must be
+  replacing rather than adding, and exactly how has not been worked out.
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
   small textured-quad rasteriser, not a polygon pipeline.
