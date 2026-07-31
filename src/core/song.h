@@ -40,13 +40,25 @@
 #define DS10_SONG_TAIL_MAX 1200
 #define DS10_SONG_NO_PATTERN 0xFFFF
 
-/* One step of one track. Verified field for field against the original's
- * accessor at 0x02033F8C, which copies exactly these four signed bytes. */
+/* One step of one track. The four bytes and their address are verified against
+ * the original's accessor at 0x02033F8C, but that only copies them - it does not
+ * say which is which. The order below is from the data, and it is NOT the order
+ * the sequencer's runtime pattern uses:
+ *
+ *   byte 0 is only ever 0..6 across all 26112 steps in the ROM, which are the
+ *   gate codes (4 full, 5 over, 6 retrigger);
+ *   byte 1 ranges 24..95 peaking hard at 60, plus 0xFF on 16910 steps, which is
+ *   the sequencer's "no note" marker;
+ *   byte 2 peaks at 127 and byte 3 at 64 - full velocity, centre pan.
+ *
+ * The runtime pattern has note first and gate second, so whatever builds it
+ * swaps them. Getting this backwards turns every rest into a tie and takes every
+ * pitch from the gate byte, which sounds like noise. */
 typedef struct {
-    int8_t note;   /* +0x00  negative = no note on this step */
-    int8_t gate;   /* +0x01  gate length */
-    int8_t b2;     /* +0x02  the low half of the 16-bit per-step value */
-    int8_t b3;     /* +0x03 */
+    int8_t gate;   /* +0x00  4 = full step, 5 = one over, 6 = retrigger */
+    int8_t note;   /* +0x01  0xFF = no note on this step */
+    int8_t vel;    /* +0x02  scales this channel's mixer volume */
+    int8_t pan;    /* +0x03  offsets this channel's mixer pan */
 } ds10_song_step;
 
 /* One step of the two automation lanes, from 0x020343B4. `raw` is what

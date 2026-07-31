@@ -1438,10 +1438,30 @@ copying signed bytes:
 0x020343B4  get automation  doc +0x40296 + pattern*676 + lane*64  + step*4
 ```
 
-A step record is `note, gate, b2, b3` with a negative note meaning no note -
-the same shape the sequencer consumes. An automation record is
-`raw[2], knob[2]`, and `raw == -1` is the "no automation here" case
-`ds10_lane_map` already handles.
+An automation record is `raw[2], knob[2]`, and `raw == -1` is the "no automation
+here" case `ds10_lane_map` already handles.
+
+A step record is **`gate, note, velocity, pan`** - and note that this is NOT the
+order the sequencer's runtime pattern uses, which is note first. The accessor
+above only copies the four bytes; it does not say which is which, so the order
+came from the data:
+
+```
+byte 0  only ever 0..6 across all 26112 steps in the ROM: the gate codes
+        (4 = full step, 5 = one over, 6 = retrigger)
+byte 1  24..95 peaking hard at 60, plus 0xFF on 16910 steps - the "no note"
+        marker. Drum steps sit on 60, which is the root note a drum buffer is
+        rendered at, i.e. unity playback speed
+byte 2  peaks at 127 - velocity
+byte 3  peaks at 64 - centre pan
+```
+
+Having these two swapped is what a differential test cannot catch: both sides of
+the comparison build the runtime pattern from my mapping, so they agree with each
+other while disagreeing with the music. It turns every rest into a tie and takes
+every pitch from the gate byte, which sounds like a drone with noise over it.
+`tools/mksong.py` writes a synthetic song - one sawtooth, filter open, a major
+scale up and down - as a listening check that pitches come out where they should.
 
 The automation accessors fold the track index with `if (track >= 2) track -= 2`,
 so the two lanes are shared between the synth track pair and whatever second

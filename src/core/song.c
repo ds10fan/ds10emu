@@ -54,10 +54,10 @@ static void parse_pattern(ds10_song_pattern *q, const uint8_t *p)
         for (s = 0; s < DS10_SONG_STEPS; s++) {
             const uint8_t *r = p + 0x42 + t * 64 + s * 4;
 
-            q->step[t][s].note = (int8_t)r[0];
-            q->step[t][s].gate = (int8_t)r[1];
-            q->step[t][s].b2 = (int8_t)r[2];
-            q->step[t][s].b3 = (int8_t)r[3];
+            q->step[t][s].gate = (int8_t)r[0];
+            q->step[t][s].note = (int8_t)r[1];
+            q->step[t][s].vel = (int8_t)r[2];
+            q->step[t][s].pan = (int8_t)r[3];
         }
     for (t = 0; t < DS10_SONG_LANES; t++)
         for (s = 0; s < DS10_SONG_STEPS; s++) {
@@ -82,10 +82,10 @@ static void write_pattern(const ds10_song_pattern *q, uint8_t *p)
         for (s = 0; s < DS10_SONG_STEPS; s++) {
             uint8_t *r = p + 0x42 + t * 64 + s * 4;
 
-            r[0] = (uint8_t)q->step[t][s].note;
-            r[1] = (uint8_t)q->step[t][s].gate;
-            r[2] = (uint8_t)q->step[t][s].b2;
-            r[3] = (uint8_t)q->step[t][s].b3;
+            r[0] = (uint8_t)q->step[t][s].gate;
+            r[1] = (uint8_t)q->step[t][s].note;
+            r[2] = (uint8_t)q->step[t][s].vel;
+            r[3] = (uint8_t)q->step[t][s].pan;
         }
     for (t = 0; t < DS10_SONG_LANES; t++)
         for (s = 0; s < DS10_SONG_STEPS; s++) {

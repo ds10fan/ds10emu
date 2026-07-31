@@ -791,7 +791,9 @@ def _rt_pattern(o, song_pat, ntracks, steps, nsyn=2, defaults=None):
         blk = pat + 0x24 + t * 0x68
         for st in range(16):
             src = 0x42 + t * 64 + st * 4
-            o.uc.mem_write(blk + st * 4, song_pat[src:src + 4])
+            g, n, vel, pan = song_pat[src:src + 4]
+            # File order is gate, note; the runtime wants note, gate.
+            o.uc.mem_write(blk + st * 4, bytes([n, g, vel, pan]))
         if t < nsyn:
             for st in range(16):
                 a = 0x1C2 + t * 64 + st * 4

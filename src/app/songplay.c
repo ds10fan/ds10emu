@@ -77,8 +77,9 @@ typedef struct {
     int done;
 } song_player;
 
-/* The sequencer reads a pattern with a 104-byte track stride; a song file uses
- * 64 and a different header. Same four bytes per step either way. */
+/* The sequencer reads a pattern with a 104-byte track stride; a song file uses 64
+ * and a different header. The step record's first two bytes also swap: the file
+ * has gate then note, the runtime note then gate. */
 static void build_pattern(ds10_rt_pattern *rt, const ds10_song_pattern *p)
 {
     int t, s;
@@ -89,8 +90,8 @@ static void build_pattern(ds10_rt_pattern *rt, const ds10_song_pattern *p)
         for (s = 0; s < DS10_SONG_STEPS; s++) {
             rt->step[t][s][0] = p->step[t][s].note;
             rt->step[t][s][1] = p->step[t][s].gate;
-            rt->step[t][s][2] = p->step[t][s].b2;
-            rt->step[t][s][3] = p->step[t][s].b3;
+            rt->step[t][s][2] = p->step[t][s].vel;
+            rt->step[t][s][3] = p->step[t][s].pan;
         }
 }
 
@@ -152,14 +153,16 @@ static void usage(void)
             "usage: songplay [-b bars] [-o out.wav] [-p pattern] [-t tables]"
             " song.dat\n"
             "  -b  bars to render (default: the whole chain)\n"
-            "  -p  loop one pattern instead of following the chain\n");
+            "  -p  loop one pattern instead of following the chain\n"
+            "  -c  channel bitmask, bit 0..5 = syn1 syn2 drum1..4"
+            " (default 0x3f)\n");
     exit(2);
 }
 
 int main(int argc, char **argv)
 {
     const char *out = "song.wav", *tbl = "out/tables.bin", *in = NULL;
-    int bars = 0, only = -1, i;
+    int bars = 0, only = -1, i, chmask = 0x3F;
     ds10_table_set ts;
     ds10_pitch_tables pt;
     ds10_vcf_tables ft;
@@ -198,6 +201,8 @@ int main(int argc, char **argv)
             bars = atoi(argv[++i]);
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
             only = atoi(argv[++i]);
+        else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc)
+            chmask = (int)strtol(argv[++i], 0, 0);
         else if (argv[i][0] == '-')
             usage();
         else
@@ -394,6 +399,11 @@ int main(int argc, char **argv)
 
                 if (dest < NSYN &&
                     (op == DS10_EV_NOTE_ON || op == DS10_EV_NOTE_OFF)) {
+                    if (getenv("DS10_TRACE"))
+                        fprintf(stderr, "[ev] f=%lu syn%d %s note=%d "
+                                "pay=%04x\n", nframes / FRAME, dest,
+                                op == DS10_EV_NOTE_ON ? "on " : "off", note,
+                                ev[k].payload);
                     ds10_voice_event(&voice[dest], op, note, 0, &ts.t);
                 } else if (dest >= NSYN && dest < NTRK &&
                            (op == DS10_EV_NOTE_ON || op == DS10_EV_NOTE_OFF)) {
@@ -420,6 +430,9 @@ int main(int argc, char **argv)
             memset(buf[NSYN + i], 0, sizeof buf[NSYN + i]);
             ds10_drum_render(&drum[i], buf[NSYN + i], FRAME);
         }
+        for (i = 0; i < NTRK; i++)
+            if (!(chmask & (1 << i)))
+                memset(buf[i], 0, sizeof buf[i]);
         ds10_mixer_render(&mix, chp, &ts.fx, l, r, FRAME);
         for (k = 0; k < FRAME; k++) {
             put16(f, (unsigned)(uint16_t)l[k]);

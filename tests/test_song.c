@@ -132,13 +132,13 @@ int main(int argc, char **argv)
 
                     rd(w, 4);
                     total++;
-                    if (st->note != (int8_t)w[0] || st->gate != (int8_t)w[1] ||
-                        st->b2 != (int8_t)w[2] || st->b3 != (int8_t)w[3]) {
+                    if (st->gate != (int8_t)w[0] || st->note != (int8_t)w[1] ||
+                        st->vel != (int8_t)w[2] || st->pan != (int8_t)w[3]) {
                         if (bad < 8)
                             fprintf(stderr,
                                     "%s p%u t%u s%u: got %d,%d,%d,%d "
                                     "want %d,%d,%d,%d\n", name, p, t, s,
-                                    st->note, st->gate, st->b2, st->b3,
+                                    st->gate, st->note, st->vel, st->pan,
                                     (int8_t)w[0], (int8_t)w[1], (int8_t)w[2],
                                     (int8_t)w[3]);
                         bad++;

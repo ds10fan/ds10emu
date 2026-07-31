@@ -171,7 +171,15 @@ int main(int argc, char **argv)
         pat.steps = (uint8_t)steps;
         for (t = 0; t < NTRK; t++)
             for (s = 0; s < DS10_SONG_STEPS; s++)
-                memcpy(pat.step[t][s], song_pat + 0x42 + t * 64 + s * 4, 4);
+                {
+                    /* File order is gate, note; the runtime wants note, gate. */
+                    const unsigned char *r = song_pat + 0x42 + t * 64 + s * 4;
+
+                    pat.step[t][s][0] = (int8_t)r[1];
+                    pat.step[t][s][1] = (int8_t)r[0];
+                    pat.step[t][s][2] = (int8_t)r[2];
+                    pat.step[t][s][3] = (int8_t)r[3];
+                }
 
         /* Start from the state the original's constructor left. Its accumulator
          * is not zero, and starting from zero delays the first step by three

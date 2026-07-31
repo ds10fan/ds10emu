@@ -172,7 +172,15 @@ int main(int argc, char **argv)
         pat.steps = (uint8_t)steps;
         for (t = 0; t < NTRK; t++)
             for (st = 0; st < DS10_SEQ_STEPS; st++)
-                memcpy(pat.step[t][st], song_pat + 0x42 + t * 64 + st * 4, 4);
+                {
+                    /* File order is gate, note; the runtime wants note, gate. */
+                    const unsigned char *r = song_pat + 0x42 + t * 64 + st * 4;
+
+                    pat.step[t][st][0] = (int8_t)r[1];
+                    pat.step[t][st][1] = (int8_t)r[0];
+                    pat.step[t][st][2] = (int8_t)r[2];
+                    pat.step[t][st][3] = (int8_t)r[3];
+                }
 
         /* Start from the state the original's constructor left, read out of the
          * vector - guessing at the defaults is how the first run of this test
