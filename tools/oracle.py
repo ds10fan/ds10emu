@@ -11,6 +11,7 @@ to compare a reimplementation against.
     python3 tools/oracle.py render [patch] [note] [frames]
     python3 tools/oracle.py wav <out.wav> [patch] [note] [frames]
     python3 tools/oracle.py waves [note]           # characterise vco1 = 0..3
+    python3 tools/oracle.py obj-vectors            # sprite widget -> OAM
 
 Verified: output is deterministic across runs, and pitch tracks
 440*2^((note-69)/12) at 32768 Hz to within measurement resolution.
@@ -1350,6 +1351,72 @@ KNOB_DESC = 0x0207F8E4
 KNOB_DESC_STRIDE = 38
 
 
+# --- the sprite widget ------------------------------------------------------
+#
+# 0x0202a820 sets a widget's fields and rebuilds its run of OAM entries. It
+# looks its default tile and palette up through the resource manager, which a
+# static image has no live copy of, so that call is stubbed to return a
+# resource we control. Everything else is the original's own arithmetic.
+OBJ_SET = 0x0202A820
+OBJ_RES = 0x02067F64
+FAKE_RES = 0x0F00F000       # a resource whose +4 points at FAKE_ENT
+FAKE_ENT = 0x0F00F100       # ... whose +4 is the packed {palette, tile}
+
+
+def _obj_oracle():
+    """A bare harness: allocator stubbed, resource lookup stubbed."""
+    uc, _loaded, _io = emu.build("arm9")
+    uc.mem_map(0x0E000000, 0x00100000)
+    uc.mem_write(ALLOC, ALLOC_STUB)
+    uc.mem_write(DEALLOC, DEALLOC_STUB)
+    Oracle._w32(uc, ARENA_PTR, ARENA_BASE)
+    uc.mem_write(HEAP_OBJ, b"\0" * 0x40)
+    Oracle._w32(uc, HEAP_GLOBAL, HEAP_OBJ)
+    # ldr r0,[pc,#0] ; bx lr ; .word FAKE_RES
+    uc.mem_write(OBJ_RES, struct.pack("<3I", 0xE59F0000, 0xE12FFF1E, FAKE_RES))
+    Oracle._w32(uc, FAKE_RES + 4, FAKE_ENT)
+    return uc
+
+
+# (count, res, bank, x, y, prio, xstep, tile, pal, affine, mode, mosaic,
+#  rot, shape, big) - the argument order of 0x0202a820 after `this`.
+OBJ_CASES = [
+    (4, 0, 0, 0x16, 3, 2, 8, 0, 0, 0, 0, 0, 0, 0, 1),
+    (1, 0, 0, 0, 0, 0, 0, 0x21A, 3, 0, 0, 0, 0, 0, 1),
+    (8, 1, 2, 200, 150, 3, 12, 0x2FF, 15, 7, 1, 1, 0x100, 0x4000, 1),
+    (16, 0, 0, -20, 191, 1, 5, 0x100, 5, 31, 3, 0, 0x300, 0x8000, 0),
+    (2, 3, 1, 255, 255, 2, 1, 0x3FF, 8, 3, 3, 1, 0x100, 0xC000, 1),
+    (3, 0, 0, 100, 64, 0, 43, 0, 0, 0, 2, 0, 0, 0x4000, 0),
+    (5, 2, 0, -8, 8, 2, 16, 0x200, 1, 0, 0, 1, 0x300, 0, 1),
+    (12, 0, 1, 74, 3, 3, 9, 0x21B, 2, 12, 1, 0, 0, 0x8000, 1),
+]
+
+
+def cmd_obj_vectors(path="tests/vectors/obj.bin"):
+    """Every case through the original's own setter; record the OAM it builds."""
+    uc = _obj_oracle()
+    obj = ARENA_BASE + 0x1000
+    with open(path, "wb") as f:
+        f.write(b"OBJ1")
+        f.write(struct.pack("<I", len(OBJ_CASES)))
+        for case in OBJ_CASES:
+            (count, res, bank, x, y, prio, xstep, tile, pal, affine, mode,
+             mosaic, rot, shape, big) = case
+            # A plausible {palette, tile} for the lookup to hand back.
+            Oracle._w32(uc, FAKE_ENT + 4, 0x3000 | 0x1A)
+            uc.mem_write(obj, b"\0" * 0x40)
+            emu.call(uc, OBJ_SET,
+                     (obj, count, res, bank, x, y, prio, xstep, tile, pal,
+                      affine, mode, mosaic, rot, shape, big))
+            buf = struct.unpack("<I", uc.mem_read(obj + 11 * 4, 4))[0]
+            oam = bytes(uc.mem_read(buf, count * 8)) if buf else b""
+            fields = struct.unpack("<16i", uc.mem_read(obj, 0x40))
+            f.write(struct.pack("<16i", *fields))
+            f.write(struct.pack("<I", len(oam)))
+            f.write(oam)
+    print(f"{path}: {len(OBJ_CASES)} widgets")
+
+
 def cmd_tables(path="out/tables.bin"):
     b = open("out/arm9.bin", "rb").read()
     base = 0x02004000
@@ -2492,6 +2559,7 @@ def main():
             "song-vectors": cmd_song_vectors,
             "replay-vectors": cmd_replay_vectors,
             "tables": cmd_tables,
+            "obj-vectors": cmd_obj_vectors,
             "songrender-vectors": cmd_songrender_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
