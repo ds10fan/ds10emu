@@ -1048,6 +1048,26 @@ int ds10_ui_text(ds10_ui *u, int engine, int slot, int x, int y,
     return slot;
 }
 
+/* A slider's value-to-position, from 0x02039188. The handle moves linearly
+ * along the span; the orientation decides which axis and which end is the
+ * minimum. The original writes the result into the drawable's x or y at 20.12
+ * and leaves the other axis at the slider's origin.
+ *
+ * The knob's equivalent is the sweep in ds10_ui_knob_value; between them they
+ * are the whole of what a control redraws when its value changes.
+ */
+int ds10_ui_slider_pos(int value, int min, int max, int span, int orient)
+{
+    int range = max - min, off;
+
+    if (value > max) value = max;
+    if (value < min) value = min;
+    if (range <= 0) return 0;
+    off = span * (value - min) / range;
+    /* 0 and 3 measure from the far end. */
+    return (orient == 0 || orient == 3) ? span - off : off;
+}
+
 /* 90_MAP's bottom bar. The slots and positions are the ones a captured frame
  * has: the session name from slot 0 at x 27, the swing value at 117 and the
  * tempo at 176, all on the baseline y = 177 in palette 9. */

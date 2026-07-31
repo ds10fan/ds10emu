@@ -41,6 +41,12 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Where a slider's handle sits for a value, decompiled from 0x02039188.
+ * `orient` is 0 for vertical with the value upward, 1 for vertical downward,
+ * 3 for horizontal reversed, anything else horizontal. Returns the offset
+ * along the span, in pixels from the slider's origin. */
+int ds10_ui_slider_pos(int value, int min, int max, int span, int orient);
+
 /* Redraw the navigation map's bottom bar: the session name, the swing and the
  * tempo, at the positions the game puts them. */
 void ds10_ui_map_labels(ds10_ui *u, const char *name, int swing, int bpm);

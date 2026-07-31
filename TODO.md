@@ -127,10 +127,12 @@ Remaining, roughly in order:
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
   small textured-quad rasteriser, not a polygon pipeline.
-- **The rest of the per-frame update.** The knob widget's is decompiled: value
-  to angle to matrix, from `0x02055b98`, checked against a captured frame. What
-  each screen redraws beyond that - which widgets it touches when what changes -
-  is still unread, and unlike the constructors there is no table to enumerate.
+- **The rest of the per-frame update.** Both shared widget updates are
+  decompiled: the knob's sweep (`0x02055b98`, checked against a captured
+  frame) and the slider's span (`0x02039188`). What each screen does *around*
+  them - which widgets it touches when what changes, and the readouts that
+  follow a control rather than being one - is still unread, and unlike the
+  constructors there is no table to enumerate. Twelve sets of event handlers.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered

@@ -1785,6 +1785,15 @@ matrices lie inside that sweep, several sit exactly on its end stops, and
 OCTAVE - whose 0 is the midpoint of a -2..2 range - carries the identity
 matrix.
 
+A slider's is `0x02039188`, and it is linear: the handle sits at
+`span * (value - min) / (max - min)` along the span, measured from the far end
+for the two orientations whose minimum is at the bottom or the right. The
+original writes it into the drawable's x or y at 20.12 and leaves the other
+axis at the slider's origin.
+
+Between the two - the knob's sweep and the slider's span - that is the whole of
+what a control redraws when its value changes.
+
 ### Text
 
 The interface's text is **one 8x8 sprite per character**, straight out of the
