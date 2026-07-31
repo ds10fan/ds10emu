@@ -1052,7 +1052,120 @@ every queue entry's destination, opcode, channel byte and payload. A machine is
 only a queue pointer at `+0x04` and a count byte at `+0x08`, which is what made
 this testable without building the whole context object.
 
-Still decompiled but **not** verified: the automation lanes (blocked on the
-layout question above) and the song file format (the loader is not decompiled).
-The song-player callback protocol is understood but has no implementation, since
-it belongs with the song format.
+Also verified bit-exact: **automation lanes** and the **song file format**
+(section 14).
+
+Still decompiled but not verified: the song-player callback protocol, which is
+understood but has no implementation - the chain walker that answers `"stpt"`
+with the next pattern.
+
+## 14. Song file format - decompiled and verified
+
+`ds10*.dat` in `/data/demo` and a save-RAM slot are the same record. Save RAM
+holds 18 of them at `save + 0x200 + slot*0x3000`, and the scanner at
+`0x0205D088` walks all 18 checking each one.
+
+### The container
+
+```
++0x00  16-byte MD5 of everything after it
++0x10  payload: a byte image of the in-memory song record
+```
+
+The hash routine is `0x02015404`, checked by `0x0205D038` (hash the payload into
+a stack buffer, compare 16 bytes). It is plain RFC 1321 MD5: a reference
+implementation reproduces the header of all 17 song and patch files in the ROM.
+
+Four payload lengths exist. The format only ever grew by appending, so an older
+file is a prefix of a newer one - which is why the loader dispatches on size:
+
+```
+11212  pre-release demos (version word 0 or 0xFFFF)
+11260  + 48
+12028  DS-10, version 1
+12252  DS-10 PLUS, version 2
+```
+
+### The payload is not marshalled
+
+`0x0205D320` writes a slot as a handful of unrolled copies. Every one has the
+same source and destination offset, so the file layout IS the struct layout:
+
+```
+payload   size   from
+0x0000       4   record +0x0000
+0x0004      32   record +0x0004
+0x0024     200   record +0x0024     bar chain
+0x00EC   10816   record +0x00EC     16 patterns x 676
+0x2B2C     160   record +0x2B2C
+0x2BCC      48   record +0x2BCC
+0x2BFC     768   record +0x2BFC     end of the DS-10 payload, 0x2EFC
+0x2EFC     168   record +0x2EFC     PLUS only
+0x2FA4      56   record +0x2FA4     end of the PLUS payload, 0x2FDC
+```
+
+The blocks are separate only because the compiler unrolled each field group.
+Nothing is reordered or packed, so a parser that copies the unnamed regions
+verbatim round-trips exactly.
+
+### Header
+
+```
++0x00  u16  version    1 = DS-10, 2 = PLUS, 0 or 0xFFFF = pre-release
++0x02  u16  revision
++0x04  u32  tempo, BPM                 117..132 across the demos
++0x08  u16  12 from version 1 on, 16 before it
++0x0A  u16  swing percent              50 straight, up to 65 in the demos
++0x0C  8    zero in every file
++0x14  16   name, 6 characters shown, NUL padded
++0x24  200  bar chain, 100 u16 pattern indices, first 0xFFFF ends the song
+```
+
+Chain lengths in the demos run from 0 (`ds10init`) to 90 bars.
+
+### Pattern, 676 bytes
+
+The editor's live model and the file agree from the pattern base onwards but not
+before it: the file has 0xEC bytes of header, the live model 0xB4. The accessors
+therefore use displacements 0x38 higher than the file offsets - which is what
+makes it possible to point them straight at a file image and have them read it
+correctly, and that is how the layout below was verified rather than guessed.
+
+```
++0x000  u32   steps in this pattern      6, 8, 10, 12 and 16 all occur
++0x004  0x3E  per-pattern parameters, not yet named
++0x042  0x180 6 tracks x 16 steps x 4 bytes    (2 synth + 4 drum)
++0x1C2  0x080 2 lanes x 16 steps x 4 bytes     automation, synth tracks only
++0x242  0x062 synth, drum and mixer settings, not yet named
+```
+
+Accessors, all leaf functions taking `(doc, pattern, track, step, out)` and
+copying signed bytes:
+
+```
+0x02033F8C  get step        doc +0x40116 + pattern*676 + track*64 + step*4
+0x02033FE4  get step count  doc +0x400D4 + pattern*676   (pattern from +0x40070)
+0x020343B4  get automation  doc +0x40296 + pattern*676 + lane*64  + step*4
+```
+
+A step record is `note, gate, b2, b3` with a negative note meaning no note -
+the same shape the sequencer consumes. An automation record is
+`raw[2], knob[2]`, and `raw == -1` is the "no automation here" case
+`ds10_lane_map` already handles.
+
+The automation accessors fold the track index with `if (track >= 2) track -= 2`,
+so the two lanes are shared between the synth track pair and whatever second
+numbering the UI uses.
+
+### Status
+
+Verified bit-exact (`src/core/song.c`, 26858 checks, `make test-song`): the MD5
+header on every file, every step record, every automation record and every
+pattern length of all 13 distinct songs read back through the original's own
+accessors, and a parse/serialise round trip that reproduces each file byte for
+byte - which is what makes the parse total, since a field I could not name still
+survives it.
+
+Not verified: the meaning of the unnamed regions (pattern header, pattern
+parameters, the three trailing blocks). They round-trip, but nothing here says
+what they are.

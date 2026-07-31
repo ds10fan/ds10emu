@@ -680,6 +680,112 @@ def capture_seq_notes():
     return cases
 
 
+# --- song file capture ------------------------------------------------------
+# The editor's song document is far too entangled with the GUI to construct, but
+# the pattern accessors are leaf functions: they take the document pointer, do
+# pure address arithmetic, and copy four signed bytes. So a bare region of
+# memory with the current-song index zeroed is a good enough document to make
+# them read a real song file, which pins the file layout against the original
+# rather than against my reading of it.
+SONG_GET_STEP = 0x02033F8C   # (doc, pattern, track, step, out4)
+SONG_GET_AUTO = 0x020343B4   # (doc, pattern, track, step, out4)
+SONG_STEP_COUNT = 0x02033FE4  # (doc) -> u32 at pattern[cur] + 0x00
+
+SONG_DOC = 0x0E200000        # scratch document
+SONG_DOC_SIZE = 0x00100000
+SONG_CUR_SONG = 0x8CD9C      # doc + this: index into the per-song array
+# Everything else hangs off B = doc + 0x20 + song*0x43040 + 0x40000: the live
+# song the editor is showing. Its pattern array starts at B + 0xB4, whereas in a
+# .dat file the same array starts at payload + 0xEC - the file header carries
+# 0x38 bytes the live model does not. So to make the accessors read a file, the
+# payload goes 0x38 bytes below B.
+SONG_B = 0x20 + 0x40000
+SONG_CUR_PATTERN = SONG_B + 0x50
+SONG_CUR_TRACK = SONG_B + 0x54
+SONG_RECORD = SONG_B - 0x38
+SONG_PATTERN_OFF = 0xEC      # pattern array, file-relative
+SONG_PATTERN_SIZE = 676
+
+SONG_PATTERNS = 16
+SONG_TRACKS = 6
+SONG_STEPS = 16
+SONG_LANES = 2
+SONG_OUT = 0x0E2F0000        # 4-byte landing pad for the accessors
+
+
+def song_files():
+    """Every song .dat in the extracted NitroFS, deduplicated by content."""
+    out, seen = [], set()
+    for sub in ("demo", "demoSP"):
+        d = os.path.join("out", "nitrofs", "data", sub)
+        if not os.path.isdir(d):
+            continue
+        for name in sorted(os.listdir(d)):
+            if "synth" in name or not name.endswith(".dat"):
+                continue
+            blob = open(os.path.join(d, name), "rb").read()
+            # ds10synth*.dat are 63-byte patch files, not songs.
+            if len(blob) < 0x1000 or blob in seen:
+                continue
+            seen.add(blob)
+            out.append((f"{sub}/{name}", blob))
+    return out
+
+
+def capture_song(o, blob):
+    """Read every step and automation record of `blob` with the game's code."""
+    o.uc.mem_write(SONG_DOC, b"\0" * 0x400)
+    o.w32(SONG_DOC + SONG_CUR_SONG, 0)
+    o.uc.mem_write(SONG_DOC + SONG_RECORD, blob[16:])
+
+    def rec(fn, pattern, track, step):
+        o.uc.mem_write(SONG_OUT, b"\0" * 4)
+        o.call(fn, SONG_DOC, pattern, track, step, SONG_OUT)
+        return bytes(o.uc.mem_read(SONG_OUT, 4))
+
+    steps, autos = [], []
+    for p in range(SONG_PATTERNS):
+        for t in range(SONG_TRACKS):
+            for s in range(SONG_STEPS):
+                steps.append(rec(SONG_GET_STEP, p, t, s))
+        for t in range(SONG_LANES):
+            for s in range(SONG_STEPS):
+                autos.append(rec(SONG_GET_AUTO, p, t, s))
+    # The step-count accessor reads the editor's pattern cursor rather than
+    # taking a pattern argument, and that cursor overlaps the file's bar chain -
+    # so poke it only after the records are captured.
+    counts = []
+    o.w32(SONG_DOC + SONG_CUR_TRACK, 0)
+    for p in range(SONG_PATTERNS):
+        o.w32(SONG_DOC + SONG_CUR_PATTERN, p)
+        counts.append(o.call(SONG_STEP_COUNT, SONG_DOC))
+    return steps, autos, counts
+
+
+def cmd_song_vectors(path="tests/vectors/song.bin"):
+    files = song_files()
+    if not files:
+        print("no song files - run `make extract` first")
+        return
+    o = Oracle()
+    o.uc.mem_map(SONG_DOC, SONG_DOC_SIZE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"SNG1")
+        f.write(struct.pack("<4I", len(files), SONG_PATTERNS, SONG_TRACKS,
+                            SONG_STEPS))
+        for name, blob in files:
+            steps, autos, counts = capture_song(o, blob)
+            f.write(struct.pack("<I", len(name)))
+            f.write(name.encode())
+            f.write(struct.pack("<I", len(blob)))
+            f.write(struct.pack(f"<{SONG_PATTERNS}I", *counts))
+            f.write(blob)
+            f.write(b"".join(steps))
+            f.write(b"".join(autos))
+    print(f"{path}: {len(files)} songs, "
+          f"{len(files) * SONG_PATTERNS * (SONG_TRACKS + SONG_LANES) * SONG_STEPS}"
+          " records")
 
 
 
@@ -1755,7 +1861,8 @@ def main():
             "mixer-vectors": cmd_mixer_vectors,
             "drum-vectors": cmd_drum_vectors,
             "event-vectors": cmd_event_vectors,
-            "seq-vectors": cmd_seq_vectors}
+            "seq-vectors": cmd_seq_vectors,
+            "song-vectors": cmd_song_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1

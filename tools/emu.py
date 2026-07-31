@@ -185,10 +185,17 @@ def build(cpu="arm7", trace_io=False):
 
 
 def call(uc, addr, args=(), max_insns=2_000_000):
-    """Call addr(args...) with an AAPCS-ish setup; return r0."""
+    """Call addr(args...) with an AAPCS-ish setup; return r0.
+
+    Arguments past the fourth go on the stack in AAPCS order, so a callee that
+    pushes N words and then reads [sp, #4*N] finds arg5 there.
+    """
+    args = list(args)
     regs = [UC_ARM_REG_R0, UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3]
-    for r, v in zip(regs, list(args) + [0] * 4):
+    for r, v in zip(regs, args + [0] * 4):
         uc.reg_write(r, v & 0xFFFFFFFF)
+    for i, v in enumerate(args[4:]):
+        uc.mem_write(STACK_TOP + 4 * i, struct.pack("<I", v & 0xFFFFFFFF))
     uc.reg_write(UC_ARM_REG_SP, STACK_TOP)
     uc.reg_write(UC_ARM_REG_LR, MAGIC_LR)
     uc.emu_start(addr, MAGIC_LR, count=max_insns)
