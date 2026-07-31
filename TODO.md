@@ -149,8 +149,11 @@ Remaining, roughly in order:
   one-shot setup rather than a loop - it allocates the app's shared singletons
   on first use.
 
-  Five left: 52_FX, 61_SYN_EDIT, 81_KEY, 71_KAOSS and 70_PATCH. All five inline
-  their redraw and all are around 2 KB.
+  The remaining five are characterised but not transcribed (`recon.md` §16):
+  52_FX is the mixer's shape, and 61_SYN_EDIT, 81_KEY, 71_KAOSS and 70_PATCH
+  share a prologue that builds the editor's common object and its nine `S_*`
+  overlays, with per-screen work after it. Reading those tails line by line is
+  what is left.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered

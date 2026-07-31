@@ -1854,9 +1854,23 @@ behaviour lives. All twelve are located:
 
 `0x0202e01c` is a shared widget helper, not a screen.
 
-A screen either inlines its redraw - the five long updates do - or delegates to
-a few named passes, which the short ones do. Either way the update is the whole
-of it: about 14.5 KB of code across the eleven.
+The eleven fall into three kinds:
+
+- **per-frame state machines**: 30_MIXER, 52_FX, 60_SYN_SEQ, 62_DRUM_SEQ. These
+  read the state field, dispatch, and do the registry work - 52_FX's profile is
+  eight registry inserts, five map lookups and five pushes into the machine,
+  which is the mixer's shape.
+- **one-shot setup**: the settings screen, 90_MAP and 33_DRUM_SELECTER. They
+  configure or allocate and call the constructor once.
+- **the editor screens**: 61_SYN_EDIT, 81_KEY, 71_KAOSS and 70_PATCH. These are
+  dominated by a shared prologue that lazily builds the editor's common object
+  and loads its nine `S_*` background overlays through nine calls to
+  `0x020284a4`. Comparing their instruction streams with immediates masked,
+  61_SYN_EDIT, 71_KAOSS and 70_PATCH agree on about half their instructions and
+  81_KEY on under a third, so it is a shared prologue with per-screen work
+  after it rather than one function emitted four times.
+
+About 14.5 KB across the eleven.
 
 ### Two more updates
 
