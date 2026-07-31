@@ -49,6 +49,7 @@ typedef struct {
     int32_t pitch_in;    /* +0x54 knob 3 + 0x3F */
     int32_t pitch1_in;   /* +0x58 knob 4 + 0x3F */
     int32_t pitch2_in;   /* +0x5C knob 5 + 0x3F */
+    int32_t balance;     /* +0x34 kept for readback; vol1/vol2 are derived */
 } ds10_vco;
 
 /* Take the two phase increments the pitch block produced and derive everything

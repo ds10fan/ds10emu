@@ -37,6 +37,12 @@ typedef struct {
     int32_t inc;         /* +0x18 shared by both accumulators */
     int32_t phase_up;    /* +0x1C counts up by inc */
     int32_t lfsr;        /* +0x24 noise register for sample-and-hold */
+
+    /* Patch-time control. Appended so the per-frame test's flat field mapping
+     * over the first nine members stays valid. */
+    uint8_t bpm_sync;    /* +0x28 */
+    int32_t bpm;         /* +0x2C set by a tempo event, not by a knob */
+    int16_t rate_knob;   /* +0x30 kept so BPM sync can re-derive `inc` */
 } ds10_lfo;
 
 void ds10_lfo_step(ds10_lfo *l);

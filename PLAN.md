@@ -268,6 +268,7 @@ Bit-exact against the oracle, zero mismatches, under `make test`:
 | per-frame amp drive/level mapping | `src/core/amp.c` | covered end-to-end | **done** |
 | per-frame osc prep (pitch reciprocal via hardware divider, xmod coefs) | `src/core/vco.c` | covered end-to-end | **done** |
 | **whole voice, end to end** | `src/core/voice.c` | **33280 samples / 520 frames** | **done** |
+| patch loader: 31 knobs -> voice state | `src/core/patch.c` | 2505 patches x 45 fields | **done** |
 | cutoff/pitch modulation matrix | | | |
 
 The **per-sample chain is complete**: oscillator -> filter -> amp -> output

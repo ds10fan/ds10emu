@@ -449,6 +449,87 @@ def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
     print(f"{path}: {len(cases)} frame transitions")
 
 
+# --- patch loading capture --------------------------------------------------
+# (object key, offset, size) for every field the 31 knobs write, in the order
+# tests/test_patch.c reads them.
+P_FIELDS = [
+    ("pc", 0x30, 4), ("pc", 0x20, 4), ("pc", 0x24, 4), ("pc", 0x28, 4),
+    ("pc", 0x2C, 4), ("pc", 0x34, 2),
+    ("pc", 0x40, 2), ("pc", 0x44, 2), ("pc", 0x48, 2),
+    ("pc", 0x4C, 4), ("pc", 0x50, 4), ("pc", 0x54, 4),
+    ("nc", 0x0C, 4),
+    ("vco", 0x54, 4), ("vco", 0x58, 4), ("vco", 0x5C, 4),
+    ("vco", 0x2C, 4), ("vco", 0x30, 4), ("vco", 0x34, 4),
+    ("vco", 0x38, 4), ("vco", 0x3C, 4), ("vco", 0x48, 4),
+    ("vcf", 0x1C, 4), ("vcf", 0x20, 4), ("vcf", 0x24, 4), ("vcf", 0x3C, 4),
+    ("vcf", 0x44, 4), ("vcf", 0x48, 4), ("vcf", 0x04, 4), ("vcf", 0x08, 4),
+    ("amp", 0x24, 4), ("amp", 0x1C, 4), ("amp", 0x20, 4), ("amp", 0x38, 4),
+    ("amp", 0x3C, 4), ("amp", 0x18, 4), ("amp", 0x04, 4), ("amp", 0x08, 4),
+    ("envp", 0x00, 4), ("envp", 0x04, 4), ("envp", 0x08, 4), ("envp", 0x0C, 4),
+    ("lfo", 0x18, 4), ("lfo", 0x30, 2), ("lfo", 0x28, 1),
+]
+
+
+def capture_patch(knob_sets):
+    """For each knob vector: load it through the original and read back state."""
+    cases = []
+    for knobs in knob_sets:
+        o = Oracle()
+        base = {k: o.u32(o.syn + off) for k, off in
+                (("lfo", 0x34), ("env", 0x30), ("nc", 0x38), ("pc", 0x3C),
+                 ("vco", 0x40), ("vcf", 0x44), ("amp", 0x48))}
+        base["envp"] = o.u32(base["env"])
+        bpm = _s32(o.u32(base["lfo"] + 0x2C))
+        o.load_patch(knobs)
+        out = []
+        for key, off, size in P_FIELDS:
+            raw = bytes(o.uc.mem_read(base[key] + off, 4))
+            out.append(_rdf(raw, 0, size))
+        cases.append((list(knobs), bpm, out))
+    return cases
+
+
+def cmd_patch_vectors(path="tests/vectors/patch.bin"):
+    _n, init = factory_patch(0)
+    sets = []
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        sets.append(p)
+    # Sweep every knob across its full range with the rest at INIT, which
+    # exercises far more of the space than the factory set does.
+    RANGES = [(-2, 2), (-63, 63), (0, 127), (-63, 63), (-63, 63), (-63, 63),
+              (0, 3), (0, 3), (-63, 63), (0, 127), (0, 1), (0, 127),
+              (0, 127), (0, 2), (-63, 63), (-63, 63), (0, 1), (-63, 63),
+              (0, 127), (0, 127), (0, 127), (0, 127), (0, 127), (0, 127),
+              (0, 127), (0, 1), (0, 6), (0, 6), (0, 6), (0, 6), (0, 6)]
+    for k, (lo, hi) in enumerate(RANGES):
+        for val in range(lo, hi + 1):
+            p = list(init)
+            p[k] = val
+            sets.append(p)
+    cases = capture_patch(sets)
+
+    b = open("out/arm9.bin", "rb").read()
+    bb = 0x02004000
+    s16 = lambda a, n: [struct.unpack_from("<h", b, a - bb + 2 * i)[0]
+                        for i in range(n)]
+    u32t = lambda a, n: [_s32(struct.unpack_from("<I", b, a - bb + 4 * i)[0])
+                         for i in range(n)]
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"PAT1" + struct.pack("<II", len(cases), len(P_FIELDS)))
+        f.write(struct.pack("<128i", *u32t(0x0207FD80, 128)))   # env rate
+        f.write(struct.pack("<16i", *u32t(0x0207FF80, 16)))     # lfo bpm
+        f.write(struct.pack("<128i", *u32t(0x0207FFC4, 128)))   # lfo free
+        f.write(struct.pack("<128i", *u32t(0x020801C4, 128)))   # porta
+        f.write(struct.pack("<128i", *u32t(0x020805C4, 128)))   # peak
+        for knobs, bpm, out in cases:
+            f.write(struct.pack("<31b", *knobs))
+            f.write(struct.pack("<i", bpm))
+            f.write(struct.pack(f"<{len(P_FIELDS)}i", *out))
+    print(f"{path}: {len(cases)} patches, {len(P_FIELDS)} fields each")
+
+
 # --- end-to-end voice capture -----------------------------------------------
 # Field lists must match the C struct member order exactly. (offset, size);
 # size 1 = byte, 2 = signed halfword, 4 = word.
@@ -967,7 +1048,8 @@ def main():
             "pitch-vectors": cmd_pitch_vectors,
             "amp-vectors": cmd_amp_vectors,
             "vcfupd-vectors": cmd_vcfupd_vectors,
-            "voice-vectors": cmd_voice_vectors}
+            "voice-vectors": cmd_voice_vectors,
+            "patch-vectors": cmd_patch_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
