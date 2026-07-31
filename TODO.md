@@ -131,8 +131,14 @@ Remaining, roughly in order:
   decompiled: the knob's sweep (`0x02055b98`, checked against a captured
   frame) and the slider's span (`0x02039188`). What each screen does *around*
   them - which widgets it touches when what changes, and the readouts that
-  follow a control rather than being one - is still unread, and unlike the
-  constructors there is no table to enumerate. Twelve sets of event handlers.
+  follow a control rather than being one - is still unread. Twelve sets of
+  event handlers.
+
+  There is more structure there than it first looked: every widget is
+  registered by name in one global registry (`recon.md` §16), so a handler
+  reaches its widgets by string key. The `sp_%d`, `mxp_%d`, `fxr_%d`, `octUp`
+  and `seqBank` strings in the pool are those keys, and they enumerate what
+  each screen can touch.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered

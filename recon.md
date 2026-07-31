@@ -1763,6 +1763,19 @@ Which is the argument for reading the table rather than the screen.
 A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
 `ds10synthNN.dat`, which is the 31 bytes that fill the file to its end.
 
+### The widget registry
+
+Every screen registers each widget by name into one global registry at
+`0x02124634` - `0x02029db4` inserts, `0x0202b198` removes, and the screen
+destructor (`0x0202a9e0` is one) unregisters the lot. The registry keeps
+separate maps by widget class: `+0x0c` and `+0x18` split on the widget's
+`+0x7c`, and a widget whose `+0x78` is 5 goes into `+0x24` or `+0x30` as well.
+`+0x44` and `+0x4c` hold whichever widget currently has the pen.
+
+So widget lookup is global and by name, not per-screen. That is what the
+`sp_%d`, `mxp_%d`, `fxr_%d`, `octUp` and `seqBank` strings in the string pool
+are for: they are the keys a screen's handlers use to reach its own widgets.
+
 ### A widget's update
 
 `0x02055b98` is the knob's value-to-angle map, and it is the same for every
