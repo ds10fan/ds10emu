@@ -100,16 +100,36 @@ def scan(ram):
     return found
 
 
+def same_run(run, oam, slot):
+    """Is this run at `slot` of an OAM half?
+
+    The allocator's copy (0x020689bc) moves three halfwords per entry, not
+    four: the fourth is the rotation parameter, which belongs to whoever owns
+    the affine slot, not to the sprite. So only the first six bytes of each
+    entry are the widget's.
+    """
+    n = len(run) // 8
+    if (slot + n) * 8 > len(oam):
+        return False
+    for i in range(n):
+        if run[i * 8:i * 8 + 6] != oam[(slot + i) * 8:(slot + i) * 8 + 6]:
+            return False
+    return True
+
+
 def live(widgets, oam):
     """Those whose entries are actually in OAM, and which engine's."""
     out = []
     for w in widgets:
         run = build(w)
         for engine, half in ((0, oam[:1024]), (1, oam[1024:])):
-            idx = half.find(run[:8])
-            if idx >= 0 and idx % 8 == 0 and half[idx:idx + len(run)] == run:
-                out.append((engine, idx // 8, w))
-                break
+            for slot in range(128 - len(run) // 8 + 1):
+                if same_run(run, half, slot):
+                    out.append((engine, slot, w))
+                    break
+            else:
+                continue
+            break
     return out
 
 

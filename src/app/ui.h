@@ -41,6 +41,10 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Set a knob's value and redraw its pointer. The pointer is a rot/scale
+ * sprite, so turning it is an affine matrix, not a different tile. */
+void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range);
+
 /* The GPU state, for tests that compare it against a captured frame. */
 ds10_gpu *ds10_ui_gpu(ds10_ui *u);
 

@@ -195,15 +195,20 @@ int ds10_web_knob_range(int id)
     return tables.knob_range[id];
 }
 
-/* Apply a knob to both voices, through the engine's own dispatch. */
+/* Apply a knob to both voices, through the engine's own dispatch, and turn
+ * its pointer on screen. */
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_knob_set(int id, int value)
 {
     int i;
 
-    if (!audio_ready || id < 0 || id > 30) return;
-    for (i = 0; i < NSYN; i++)
-        ds10_patch_set_knob(&voice[i], id, value, &tables.t);
+    if (id < 0 || id > 30) return;
+    if (audio_ready) {
+        for (i = 0; i < NSYN; i++)
+            ds10_patch_set_knob(&voice[i], id, value, &tables.t);
+        ds10_ui_knob_value(ui, id, value, tables.knob_min[id],
+                           tables.knob_range[id]);
+    }
 }
 
 /* Which MIDI note a touch on the keyboard page is, or -1. */

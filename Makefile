@@ -310,7 +310,7 @@ WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c \
           src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
           src/core/mixer.c src/core/patch.c src/core/event.c \
           src/core/tables.c src/core/voice_state.c src/core/mixer_state.c
-WEB_FLAGS = -O2 -std=c99 -Wall \
+WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             --preload-file data/nitrofs@/data/nitrofs \
             --preload-file data/pages.bin@/data/pages.bin \
             --preload-file data/tables.bin@/data/tables.bin \
@@ -334,11 +334,11 @@ PORT ?= 8537
 # Render a page natively, as a check that the browser build is not the odd one
 # out. ds10view writes PPMs; the wasm build produces the same pixels.
 ds10view: out/ds10view
-out/ds10view: src/app/ds10view.c $(WEB_SRC:src/web/main.c=) src/app/ui.c \
+out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c \
               src/gfx/nds2d.c src/gfx/nitro.c
 	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/gfx/nds2d.c \
-	    src/gfx/nitro.c
+	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/app/obj.c \
+	    src/gfx/nds2d.c src/gfx/nitro.c -lm
 
 # Render each page with the reimplementation and diff it against the captured
 # frame for the same page. Needs `make sweep` first.

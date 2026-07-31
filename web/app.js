@@ -113,6 +113,7 @@ function setKnob(id, value) {
   const lo = api.knobMin(id), n = api.knobRange(id);
   const v = Math.max(lo, Math.min(lo + n - 1, Math.round(value)));
   api.knobSet(id, v);
+  draw();
   status.textContent = api.knobName(id) + "  " + v + "   ("
     + lo + ".." + (lo + n - 1) + ")";
   return v;

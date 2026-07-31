@@ -17,7 +17,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <math.h>
+
 #include "ui.h"
+#include "obj.h"
 #include "../gfx/nitro.h"
 
 #define PAGE_TILES 0x04000
@@ -52,6 +55,11 @@ struct ds10_ui {
     int nblob;
     page_oam *pages;
     int npages;
+    /* The OAM slot and affine index each synth-edit knob's pointer uses,
+     * or -1. The two are different: the sprite lives in one slot and its
+     * rotation matrix in another, named by attr1 bits 9-13. */
+    int knob_slot[16];
+    int knob_affine[16];
 };
 
 static uint8_t *slurp(ds10_ui *u, const char *dir, const char *name,
@@ -192,6 +200,182 @@ static void apply_page_oam(ds10_ui *u, const char *name, int engine)
             memcpy(u->gpu.oam + (engine ? 0x400 : 0), u->pages[i].oam, 1024);
             return;
         }
+}
+
+/* 61_SYN_EDIT's knobs. Five columns at x = 22, 75, 124, 174, 225 and four
+ * rows at y = 39, 80, 121, 162, confirmed by looking for the light knob cap
+ * against the dark panel in the rendered page - which is pixel-exact against
+ * the hardware. Which knob is at which position is read off the caption
+ * printed under it. The four positions not listed carry switches rather than
+ * knobs (VCO SYNC, VCA EG, filter TYPE) and are not wired.
+ *
+ * The names are the game's own, from the table at 0x020852dc. */
+#define KNOB_R 12
+
+static const struct { int x, y, id; } SYN_KNOB[] = {
+    { 22,  39,  0}, { 22,  80,  2}, { 22, 121,  1}, { 22, 162, 19},
+    { 75,  39,  6}, { 75,  80,  9},                 { 75, 162, 18},
+    {124,  39,  7}, {124,  80,  8},
+    {174,  39, 11}, {174,  80, 12}, {174, 121, 14},
+    {225,  39, 20}, {225,  80, 21}, {225, 121, 22}, {225, 162, 23},
+};
+
+static const char *const KNOB_NAME[31] = {
+    "OCTAVE", "PITCH EG INT", "PORTA", "PITCH IN INT", "VCO1 P.IN INT",
+    "VCO2 P.IN INT", "VCO1 WAVE", "VCO2 WAVE", "VCO2 PITCH", "BALANCE",
+    "VCO SYNC", "CUTOFF", "PEAK", "FILTER TYPE", "VCF EG INT",
+    "CUTOFF IN INT", "VCA EG", "VCA IN INT", "DRIVE", "LEVEL", "ATTACK",
+    "DECAY", "SUSTAIN", "RELEASE", "MG FREQ", "MG BPM", "PITCH IN",
+    "VCO1 P.IN", "VCO2 P.IN", "CUTOFF IN", "VCA IN",
+};
+
+/* A knob pointer is one 8x16 sprite drawn double-size and rotated, with tile
+ * 0x21a. That is how the captured layer draws them: OAM slot 0 of the synth
+ * edit page is attr0 0x8317 - shape 2, rot/scale, double size - attr1 0x0216
+ * with affine index 1, attr2 0x3a1a. The affine slots live in the same OAM,
+ * four halfwords at entry*0x20 + 6, 0xe, 0x16, 0x1e.
+ *
+ * A double-size sprite is drawn from a box twice its size, so its top-left is
+ * the centre minus the full sprite width and height.
+ *
+ * The sweep is +/-150 degrees over the knob's range. That is what a DS-10 knob
+ * looks like, but the exact end stops have not been read out of the game.
+ */
+#define PTR_TILE 0x21A
+#define PTR_PAL 3
+#define PTR_PRIO 2
+#define PTR_W 8
+#define PTR_H 16
+#define PTR_SWEEP 150.0
+#define PTR_PI 3.14159265358979323846
+
+static void write_affine(uint8_t *oam, int slot, double deg)
+{
+    double c = cos(deg * PTR_PI / 180.0), s = sin(deg * PTR_PI / 180.0);
+    /* The DS stores the inverse transform, 8.8 fixed point. */
+    int16_t p[4] = {
+        (int16_t)lrint(c * 256.0), (int16_t)lrint(s * 256.0),
+        (int16_t)lrint(-s * 256.0), (int16_t)lrint(c * 256.0),
+    };
+    int i;
+
+    for (i = 0; i < 4; i++) {
+        int off = slot * 0x20 + 6 + i * 8;
+
+        oam[off] = (uint8_t)p[i];
+        oam[off + 1] = (uint8_t)(p[i] >> 8);
+    }
+}
+
+void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
+{
+    uint8_t *oam = u->gpu.oam;
+    size_t i;
+    double frac, deg;
+
+    if (range < 2) range = 2;
+    frac = (double)(value - lo) / (double)(range - 1);
+    if (frac < 0.0) frac = 0.0;
+    if (frac > 1.0) frac = 1.0;
+    deg = -PTR_SWEEP + frac * 2.0 * PTR_SWEEP;
+
+    for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
+        ds10_obj o;
+        int slot;
+
+        if (SYN_KNOB[i].id != id) continue;
+        slot = u->knob_slot[i];
+        if (slot < 0) continue;
+        memset(&o, 0, sizeof o);
+        o.count = 1;
+        o.x = SYN_KNOB[i].x - PTR_W;
+        o.y = SYN_KNOB[i].y - PTR_H;
+        o.tile = PTR_TILE;
+        o.palette = PTR_PAL;
+        o.priority = PTR_PRIO;
+        o.rot = 0x300;          /* rot/scale, double size */
+        o.shape = 0x8000;       /* tall */
+        o.affine = u->knob_affine[i];
+        o.big = 0;
+        ds10_obj_build(&o);
+        memcpy(oam + slot * 8, o.oam, 6);
+        write_affine(oam, u->knob_affine[i], deg);
+    }
+}
+
+int ds10_ui_knob_hit(int x, int y)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
+        int dx = x - SYN_KNOB[i].x, dy = y - SYN_KNOB[i].y;
+
+        if (dx * dx + dy * dy <= KNOB_R * KNOB_R) return SYN_KNOB[i].id;
+    }
+    return -1;
+}
+
+const char *ds10_ui_knob_name(int id)
+{
+    if (id < 0 || id > 30) return "";
+    return KNOB_NAME[id];
+}
+
+/* The captured sprite layer already draws a pointer for every knob: sixteen
+ * double-size rot/scale sprites with tile 0x21a, each with its own affine
+ * index. Take them over so turning a knob turns its pointer.
+ *
+ * Assignment is nearest-first and one-to-one. It has to be: the knob centres
+ * here are measured off the rendered page and are a pixel or two out, so two
+ * knobs can otherwise want the same pointer.
+ */
+static void claim_knob_slots(ds10_ui *u, const char *page)
+{
+    struct { int slot, affine, cx, cy; } ptr[32];
+    int nptr = 0, slot;
+    size_t i;
+
+    for (i = 0; i < sizeof u->knob_slot / sizeof u->knob_slot[0]; i++) {
+        u->knob_slot[i] = -1;
+        u->knob_affine[i] = -1;
+    }
+    if (strcmp(page, "61_SYN_EDIT") != 0) return;
+
+    for (slot = 0; slot < 128 && nptr < 32; slot++) {
+        const uint8_t *e = u->gpu.oam + slot * 8;
+        int a0 = e[0] | (e[1] << 8), a1 = e[2] | (e[3] << 8);
+        int a2 = e[4] | (e[5] << 8);
+
+        if ((a2 & 0x3FF) != PTR_TILE) continue;
+        if (((a0 >> 8) & 3) != 3) continue; /* double-size rot/scale */
+        ptr[nptr].slot = slot;
+        ptr[nptr].affine = (a1 >> 9) & 0x1F;
+        ptr[nptr].cx = (a1 & 0x1FF) + PTR_W;
+        ptr[nptr].cy = (a0 & 0xFF) + PTR_H;
+        nptr++;
+    }
+
+    for (;;) {
+        int bestk = -1, bestp = -1, bestd = 24 * 24;
+        int k, j;
+
+        for (k = 0; k < (int)(sizeof SYN_KNOB / sizeof SYN_KNOB[0]); k++) {
+            if (u->knob_slot[k] >= 0) continue;
+            for (j = 0; j < nptr; j++) {
+                int dx, dy, d;
+
+                if (ptr[j].slot < 0) continue;
+                dx = ptr[j].cx - SYN_KNOB[k].x;
+                dy = ptr[j].cy - SYN_KNOB[k].y;
+                d = dx * dx + dy * dy;
+                if (d < bestd) { bestd = d; bestk = k; bestp = j; }
+            }
+        }
+        if (bestk < 0) break;
+        u->knob_slot[bestk] = ptr[bestp].slot;
+        u->knob_affine[bestk] = ptr[bestp].affine;
+        ptr[bestp].slot = -1;
+    }
 }
 
 static int load_sprites(ds10_ui *u)
@@ -364,6 +548,7 @@ int ds10_ui_page(ds10_ui *u, const char *bottom, const char *top)
     if (bottom) {
         rc |= load_page(u, bottom, 0);
         apply_page_oam(u, bottom, 0);
+        claim_knob_slots(u, bottom);
     }
     if (top) {
         rc |= load_page(u, top, 1);
@@ -453,51 +638,6 @@ int ds10_ui_key_hit(int x, int y, int octave)
     i = (x - WHITE_X0) / WHITE_W;
     if (x < WHITE_X0 || i < 0 || i >= 14) return -1;
     return KEY_BASE + WHITE_SEMI[i] + octave * 12;
-}
-
-/* 61_SYN_EDIT's knobs. Five columns at x = 22, 75, 124, 174, 225 and four
- * rows at y = 39, 80, 121, 162, confirmed by looking for the light knob cap
- * against the dark panel in the rendered page - which is pixel-exact against
- * the hardware. Which knob is at which position is read off the caption
- * printed under it. The four positions not listed carry switches rather than
- * knobs (VCO SYNC, VCA EG, filter TYPE) and are not wired.
- *
- * The names are the game's own, from the table at 0x020852dc. */
-#define KNOB_R 12
-
-static const struct { int x, y, id; } SYN_KNOB[] = {
-    { 22,  39,  0}, { 22,  80,  2}, { 22, 121,  1}, { 22, 162, 19},
-    { 75,  39,  6}, { 75,  80,  9},                 { 75, 162, 18},
-    {124,  39,  7}, {124,  80,  8},
-    {174,  39, 11}, {174,  80, 12}, {174, 121, 14},
-    {225,  39, 20}, {225,  80, 21}, {225, 121, 22}, {225, 162, 23},
-};
-
-static const char *const KNOB_NAME[31] = {
-    "OCTAVE", "PITCH EG INT", "PORTA", "PITCH IN INT", "VCO1 P.IN INT",
-    "VCO2 P.IN INT", "VCO1 WAVE", "VCO2 WAVE", "VCO2 PITCH", "BALANCE",
-    "VCO SYNC", "CUTOFF", "PEAK", "FILTER TYPE", "VCF EG INT",
-    "CUTOFF IN INT", "VCA EG", "VCA IN INT", "DRIVE", "LEVEL", "ATTACK",
-    "DECAY", "SUSTAIN", "RELEASE", "MG FREQ", "MG BPM", "PITCH IN",
-    "VCO1 P.IN", "VCO2 P.IN", "CUTOFF IN", "VCA IN",
-};
-
-int ds10_ui_knob_hit(int x, int y)
-{
-    size_t i;
-
-    for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
-        int dx = x - SYN_KNOB[i].x, dy = y - SYN_KNOB[i].y;
-
-        if (dx * dx + dy * dy <= KNOB_R * KNOB_R) return SYN_KNOB[i].id;
-    }
-    return -1;
-}
-
-const char *ds10_ui_knob_name(int id)
-{
-    if (id < 0 || id > 30) return "";
-    return KNOB_NAME[id];
 }
 
 ds10_gpu *ds10_ui_gpu(ds10_ui *u)
