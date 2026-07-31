@@ -1676,6 +1676,23 @@ scales followed by a whole-pixel position - and the ones that are on screen
 place their cell exactly where the OAM has it. They sit inside larger 0xFC-byte
 widget objects, which is the stride the screen constructors step by.
 
+### A screen constructor, read
+
+`0x02065b04` builds 30_MIXER, and it is representative: a constructor is a walk
+over geometry tables, one widget per entry.
+
+```
+pan knobs    table 0x02087610, stride 0x18: {s16 x, s16 y, ..., u32 knob}
+             x = 21 + 43*ch, y = 47, hit box 28x28, knob 9 + ch
+volume       table 0x020875b0, stride 0x10: {s16 x, s16 y, s32 h, ..., u32 knob}
+             x = 10 + 43*ch, y = 85, 32 wide, 0x51 + 0x10 tall, knob 17 + ch
+buttons      two rows of six, x = 3 + 43*ch, y = 62 + 11*row, 40x10
+```
+
+Those knob ids are the ones the **audio** work arrived at independently: the
+sequencer's per-channel volume is knob `channel + 17` and its pan `channel + 9`
+(section 15). Two halves of the ROM, read years-of-effort apart, agreeing.
+
 ### Status
 
 Reproduced from the asset files alone, and pixel-exact against melonDS for the

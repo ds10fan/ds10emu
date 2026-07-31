@@ -125,6 +125,14 @@ function onMove(ev) {
   const y = (ev.clientY - r.top) * 192 / r.height;
   /* Up increases. A full screen height covers the whole range twice, which
    * is about what the device feels like. */
+  if (drag.mixer) {
+    const v = Math.max(0, Math.min(127,
+      Math.round(drag.start + (drag.y - y) * 128 / 96)));
+    api.mixerSet(drag.id, v);
+    status.textContent = (drag.id < 17 ? "PAN " : "VOLUME ")
+      + ((drag.id < 17 ? drag.id - 9 : drag.id - 17) + 1) + "   " + v;
+    return;
+  }
   const span = api.knobRange(drag.id);
   drag.value = setKnob(drag.id, drag.start + (drag.y - y) * span / 96);
 }
@@ -144,6 +152,20 @@ function onDown(which, ev) {
     if (next) {
       document.getElementById("pick-bottom").value = next;
       show();
+    }
+    return;
+  }
+  if (page === "30_MIXER") {
+    startAudio();
+    const id = api.mixerHit(x, y);
+    if (id >= 0) {
+      const r = ev.target.getBoundingClientRect();
+      drag = {id: id, mixer: true, start: 64,
+              y: (ev.clientY - r.top) * 192 / r.height};
+      api.mixerSet(id, 64);
+      status.textContent = (id < 17 ? "PAN " : "VOLUME ")
+        + ((id < 17 ? id - 9 : id - 17) + 1) + "   64";
+      ev.target.setPointerCapture(ev.pointerId);
     }
     return;
   }
@@ -194,6 +216,9 @@ Module.onRuntimeInitialized = () => {
     knobMin: Module.cwrap("ds10_web_knob_min", "number", ["number"]),
     knobRange: Module.cwrap("ds10_web_knob_range", "number", ["number"]),
     knobSet: Module.cwrap("ds10_web_knob_set", null, ["number", "number"]),
+    mixerHit: Module.cwrap("ds10_web_mixer_hit", "number",
+                           ["number", "number"]),
+    mixerSet: Module.cwrap("ds10_web_mixer_set", null, ["number", "number"]),
   };
   if (api.init() < 0) {
     status.textContent = "error: " + api.error();

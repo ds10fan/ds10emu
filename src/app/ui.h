@@ -41,6 +41,10 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Hit-test a touch on the mixer page. Returns a mixer knob id - 9..14 are the
+ * pans, 17..22 the volumes - or -1. Decompiled from 0x02065b04. */
+int ds10_ui_mixer_hit(int x, int y);
+
 /* Set a knob's value and redraw its pointer. The pointer is a rot/scale
  * sprite, so turning it is an affine matrix, not a different tile. */
 void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range);

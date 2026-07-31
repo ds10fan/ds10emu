@@ -108,8 +108,10 @@ Remaining, roughly in order:
   constructor and its per-frame update. The lists here were recovered from one
   captured frame per page (`tools/pages.py` inverts the expansion), so a page
   shows the state it was captured in until something is wired to change it.
-  Reading one screen constructor end to end - `0x02050108` is the sequencer's,
-  and legible - is how that gets replaced.
+  One has now been read end to end: `0x02065b04` builds 30_MIXER out of two
+  geometry tables, and its controls are wired (`recon.md` §16). It is the
+  template for the rest - a constructor is a walk over a table, one widget per
+  entry. `0x02050108` (the sequencer) and `0x02049150` (KAOSS) are next.
 
 - **Text.** `90_MAP`'s unattributed sprites are text - the session name, the
   tempo, the step count. Their tiles are past the end of CHARACTER_S and match

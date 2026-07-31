@@ -289,6 +289,48 @@ void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
     }
 }
 
+/* 30_MIXER, decompiled from 0x02065b04 and the two tables it walks
+ * (0x02087610 and 0x020875b0):
+ *
+ *   six pan knobs   x = 21 + 43*ch, y = 47, hit box 28x28 centred there,
+ *                   mixer knob 9 + ch
+ *   six volume      x = 10 + 43*ch, y = 85, 32 wide and 0x51 + 0x10 tall,
+ *                   mixer knob 17 + ch
+ *   two rows of six buttons at x = 3 + 43*ch, y = 62 + 11*row, 40x10
+ *
+ * Those knob ids are the same ones the audio side arrived at independently -
+ * the sequencer's channel volume is knob channel+17 and its pan channel+9.
+ */
+#define MIX_PAN_X 21
+#define MIX_PAN_Y 47
+#define MIX_PAN_R 14
+#define MIX_VOL_X 10
+#define MIX_VOL_Y 85
+#define MIX_VOL_W 32
+#define MIX_VOL_H 0x61
+#define MIX_STEP 43
+
+int ds10_ui_mixer_hit(int x, int y)
+{
+    int ch;
+
+    for (ch = 0; ch < 6; ch++) {
+        int cx = MIX_PAN_X + MIX_STEP * ch;
+
+        if (x >= cx - MIX_PAN_R && x < cx + MIX_PAN_R &&
+            y >= MIX_PAN_Y - MIX_PAN_R && y < MIX_PAN_Y + MIX_PAN_R)
+            return 9 + ch;
+    }
+    for (ch = 0; ch < 6; ch++) {
+        int vx = MIX_VOL_X + MIX_STEP * ch;
+
+        if (x >= vx && x < vx + MIX_VOL_W &&
+            y >= MIX_VOL_Y && y < MIX_VOL_Y + MIX_VOL_H)
+            return 17 + ch;
+    }
+    return -1;
+}
+
 int ds10_ui_knob_hit(int x, int y)
 {
     size_t i;
