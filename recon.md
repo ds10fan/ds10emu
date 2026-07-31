@@ -1286,9 +1286,9 @@ cases, 0 mismatches**. That covers song file to stereo - patches, sequencer, not
 emission, routing, two synth voices, four drum voices and their one-second
 buffers, the mixer and the effect.
 
-### Automation lanes - the remaining gap
+### Automation lanes
 
-Partly decompiled. What is established:
+Verified for the path a recorded song plays back through. What is established:
 
 - A lane's **offset is the knob's minimum and its scale is the knob's range**
   (`max - min + 1`). `0x0206F538` builds a RAM table from the synth's knob
@@ -1315,12 +1315,16 @@ Partly decompiled. What is established:
   `raw[2], knob[2]`, and the 73 bytes at `+0x25B` hold 12-byte per-track records
   from `+0x25C` whose bytes 2 and 3 are that track's two lane knob ids.
 
-What is **not** established: the processor's mode dispatch. It branches on track
-state `+0x20` (1 or 2) and `+0x21` (0..3), and only the `+0x21 == 0` per-step
-latch is read. 141 of the ROM's 272 patterns carry automation, so this is the one
-audible feature the render still omits.
+The processor branches on track state `+0x20` (1 or 2) and `+0x21` (0..3). The
+path a recorded song plays back through is `+0x20 == 1` with `+0x21 == 0`: latch
+both lanes on a step's first sub-tick, then push their held values into the
+machine every sub-tick. That is implemented and **included in the bit-exact
+render** - the lane values go into the original's own knob handler, and the 19
+songrender cases still match sample for sample with automation enabled. The other
+paths consume a pending value from live knob input, which is editing rather than
+playback; a track asking for one is left un-automated.
 
-Also still open:
+Still open:
 
 - How the original drives the offline drum render (`0x0206EEA0` plays into a
   recorder). Affects only the first samples of a buffer.

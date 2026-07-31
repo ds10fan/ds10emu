@@ -311,6 +311,40 @@ static void run_step(ds10_seq_ctx *c)
     s->auto_sub = 0;
 }
 
+/* The automation processor, 0x0206E1EC, for the path a recorded song plays back
+ * through: enable 1 with mode 0, the per-step latch. The other paths - enable 2,
+ * and modes 1..3, which consume a pending value from live knob input - are not
+ * decompiled, and a track set to one of them is left alone here.
+ *
+ * Runs on every sub-tick but latches only on a step's first one, then always
+ * pushes both lanes' held values into the machine. */
+static void automation(ds10_seq_ctx *c)
+{
+    int track, l;
+
+    if (c->autom == 0)
+        return;
+    for (track = 0; track < c->nauto; track++) {
+        ds10_seq_auto *a = &c->autom[track];
+
+        if (a->enable != 1 || a->mode != 0)
+            continue;
+        if (c->s->auto_sub == 0) {
+            const int8_t *raw = c->lane_raw + track * 2 * DS10_SEQ_STEPS +
+                                c->s->step * 2;
+
+            for (l = 0; l < DS10_SEQ_LANES; l++)
+                ds10_lane_hold(&a->lane[l], raw[l], c->defaults[track]);
+        }
+        if (c->knob == 0 || c->machine[track] == 0)
+            continue;
+        for (l = 0; l < DS10_SEQ_LANES; l++)
+            if (a->lane[l].knob != DS10_LANE_OFF)
+                c->knob(c->machine[track], a->lane[l].knob,
+                        a->lane[l].cur >> 8);
+    }
+}
+
 int ds10_seq_run(ds10_seq_ctx *c)
 {
     ds10_seq *s = c->s;
@@ -376,11 +410,12 @@ int ds10_seq_run(ds10_seq_ctx *c)
         }
 
         c->nout += ds10_seq_emit(s, c->trk, c->out + c->nout);
-        /* The automation processor (0x0206E1EC) runs here when a pattern is
-         * loaded. Its per-lane work is skipped unless a track enables it, but it
-         * always bumps the automation sub-step on the way out. */
-        if (c->pat != 0)
+        /* The automation processor, 0x0206E1EC. It always bumps the automation
+         * sub-step on the way out, whatever the tracks are set to. */
+        if (c->pat != 0) {
+            automation(c);
             s->auto_sub++;
+        }
 
         s->subtick--;
         s->accum -= s->period;

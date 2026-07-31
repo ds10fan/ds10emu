@@ -70,6 +70,15 @@ static int32_t next_word(void)
     return (int32_t)rd32();
 }
 
+/* The automation processor pushes lane values straight into the machine through
+ * vtable slot +0x18, which for a synth is the knob handler. */
+static const ds10_tables *g_tables;
+
+static void knob_hook(void *machine, int knob, int value)
+{
+    ds10_patch_set_knob((ds10_voice *)machine, knob, value, g_tables);
+}
+
 static void player_noop(ds10_song_player *p, ds10_seq *s)
 {
     (void)p;
@@ -92,6 +101,7 @@ int main(int argc, char **argv)
         return 2;
     }
     ds10_tables_views(&ts.t, &pt, &ft);
+    g_tables = &ts.t;
 
     g = fopen(path, "rb");
     if (!g) {
@@ -131,6 +141,9 @@ int main(int argc, char **argv)
         ds10_seq_track trk[NTRK];
         ds10_seq_posted ev[MAXEV];
         ds10_seq_ctx ctx;
+        ds10_seq_auto autom[NSYN];
+        int8_t lane_raw[NSYN * 2 * DS10_SEQ_STEPS];
+        const int8_t *dflt[NSYN];
         ds10_rt_pattern pat;
         ds10_song_player player;
         int8_t chan[64];
@@ -207,6 +220,32 @@ int main(int argc, char **argv)
             chan_idx[2 * t + 1] = (uint8_t)(9 + t);
         }
 
+        /* Automation: two lanes per synth track. The knob ids come from the
+         * file's per-step bytes (identical on every step), the offset and scale
+         * from the knob descriptors, exactly as 0x0206DEE4 sets them up. */
+        memset(autom, 0, sizeof autom);
+        for (t = 0; t < NSYN; t++) {
+            const unsigned char *ab = song_pat + 0x1C2 + t * 64;
+
+            autom[t].enable = 1;
+            autom[t].mode = 0;
+            dflt[t] = (const int8_t *)song_pat + 4 + t * 31;
+            for (s = 0; s < DS10_SEQ_STEPS; s++) {
+                lane_raw[t * 2 * DS10_SEQ_STEPS + s * 2] = (int8_t)ab[s * 4];
+                lane_raw[t * 2 * DS10_SEQ_STEPS + s * 2 + 1] =
+                    (int8_t)ab[s * 4 + 1];
+            }
+            for (v = 0; v < DS10_SEQ_LANES; v++) {
+                int kn = ab[2 + v];
+
+                autom[t].lane[v].knob = (uint8_t)kn;
+                if (kn < 31) {
+                    autom[t].lane[v].offset = (int8_t)ts.knob_min[kn];
+                    autom[t].lane[v].scale = (uint8_t)ts.knob_range[kn];
+                }
+            }
+        }
+
         memset(&ctx, 0, sizeof ctx);
         ctx.s = &seq;
         ctx.trk = trk;
@@ -216,6 +255,13 @@ int main(int argc, char **argv)
         ctx.chan_idx = chan_idx;
         ctx.out = ev;
         ctx.max = MAXEV;
+        ctx.autom = autom;
+        ctx.lane_raw = lane_raw;
+        ctx.defaults = dflt;
+        ctx.nauto = NSYN;
+        ctx.knob = knob_hook;
+        for (v = 0; v < NSYN; v++)
+            ctx.machine[v] = &voice[v];
 
         /* The patch is already in the captured state - the generator loaded it
          * through the original's own knob handler before snapshotting - so this

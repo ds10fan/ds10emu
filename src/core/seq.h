@@ -121,6 +121,25 @@ void ds10_seq_set_tempo(ds10_seq *s, int tempo);
 void ds10_seq_set_swing(ds10_seq *s, int swing);
 void ds10_seq_tick(ds10_seq *s);
 
+/* --- automation lanes (0x0206E1EC) --------------------------------------- */
+/* Two per synth track, 8 bytes each. `value` of -1 means take the per-track
+ * default from the pattern header instead of the step byte. */
+typedef struct {
+    uint8_t knob;
+    int8_t value;
+    int8_t offset;
+    uint8_t scale;
+    int16_t cur;     /* result, held as value<<8 */
+    int16_t delta;
+} ds10_lane;
+
+/* Map a raw lane byte to the knob value the machine receives. A raw value of -1
+ * means "no automation on this step": the per-track default from the pattern
+ * header is used directly, bypassing offset and scale entirely. */
+int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults);
+/* Hold mode: latch the step's value for the whole step. */
+void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults);
+
 /* --- the pattern-driven tick (the rest of 0x0206E5AC) --------------------- */
 
 #define DS10_SEQ_MAXTRACKS 6
@@ -154,6 +173,19 @@ struct ds10_song_player {
 #define DS10_KNOB_CHAN_VOL 7
 #define DS10_KNOB_CHAN_PAN 10
 
+/* Two automation lanes per synth track, initialised from the pattern by
+ * 0x0206DEE4: `knob` is the lane's target (0xFF = lane off), `offset` is that
+ * knob's minimum and `scale` its range, so a recorded 0..127 value sweeps exactly
+ * one knob's range. */
+#define DS10_SEQ_LANES 2
+#define DS10_LANE_OFF 0xFF
+
+typedef struct {
+    ds10_lane lane[DS10_SEQ_LANES];
+    uint8_t enable;      /* track state +0x20: 1 and 2 are two processor paths */
+    uint8_t mode;        /* track state +0x21, 0..3 */
+} ds10_seq_auto;
+
 typedef struct {
     ds10_seq *s;
     ds10_seq_track *trk;
@@ -165,6 +197,16 @@ typedef struct {
     ds10_seq_posted *out;           /* every routed event, in order */
     int nout;
     int max;
+
+    /* Automation. `nauto` is the synth track count the processor loops over
+     * (seq +0x4C). `knob` is the machine's knob handler, reached through vtable
+     * slot +0x18 in the original; NULL disables the dispatch. */
+    ds10_seq_auto *autom;
+    const int8_t *lane_raw;         /* two bytes per (track, step) */
+    const int8_t *const *defaults;  /* per-track knob array, for a raw of -1 */
+    int nauto;
+    void (*knob)(void *machine, int knob, int value);
+    void *machine[DS10_SEQ_MAXTRACKS];
 } ds10_seq_ctx;
 
 /* One tick call, the whole of 0x0206E5AC: accumulator, step advance, the song
@@ -174,22 +216,3 @@ typedef struct {
 int ds10_seq_run(ds10_seq_ctx *c);
 
 #endif /* DS10_SEQ_H */
-
-/* --- automation lanes (0x0206E1EC) --------------------------------------- */
-/* Two per synth track, 8 bytes each. `value` of -1 means take the per-track
- * default from the pattern header instead of the step byte. */
-typedef struct {
-    uint8_t knob;
-    int8_t value;
-    int8_t offset;
-    uint8_t scale;
-    int16_t cur;     /* result, held as value<<8 */
-    int16_t delta;
-} ds10_lane;
-
-/* Map a raw lane byte to the knob value the machine receives. A raw value of -1
- * means "no automation on this step": the per-track default from the pattern
- * header is used directly, bypassing offset and scale entirely. */
-int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults);
-/* Hold mode: latch the step's value for the whole step. */
-void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults);

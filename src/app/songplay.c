@@ -24,6 +24,8 @@
  *   - The nine extra bytes per drum at payload +0x2BA8. 0x0206B9DC pushes them
  *     into a second parameter space whose meaning is not established, so they are
  *     ignored.
+ *   - Automation paths other than the per-step latch. A track whose pattern asks
+ *     for one of the others is left un-automated; none of the ROM's demos does.
  *   - The 73 bytes of a pattern after its 25 mixer knobs, at payload +0x25B.
  *     Nothing here reads them.
  *
@@ -57,6 +59,15 @@
 #define NDRUM DS10_SONG_DRUMS
 #define DRUM_LEN 0x8000        /* one second at 32768 Hz */
 #define DRUM_ROOT 60
+
+/* The automation processor writes straight into the machine, which for a synth
+ * track is its knob handler. */
+static const ds10_tables *g_tables;
+
+static void knob_hook(void *machine, int knob, int value)
+{
+    ds10_patch_set_knob((ds10_voice *)machine, knob, value, g_tables);
+}
 
 typedef struct {
     ds10_song_player base;
@@ -164,6 +175,9 @@ int main(int argc, char **argv)
     ds10_seq_track trk[NTRK];
     ds10_seq_posted ev[MAXEV];
     ds10_seq_ctx ctx;
+    static ds10_seq_auto autom[NSYN];
+    static int8_t lane_raw[NSYN * 2 * DS10_SONG_STEPS];
+    const int8_t *dflt[NSYN];
     song_player sp;
     const int8_t *chan_vals;
     static int8_t chan[64];
@@ -197,6 +211,7 @@ int main(int argc, char **argv)
         return 2;
     }
     ds10_tables_views(&ts.t, &pt, &ft);
+    g_tables = &ts.t;
 
     f = fopen(in, "rb");
     if (!f) {
@@ -306,6 +321,13 @@ int main(int argc, char **argv)
     ctx.chan_idx = chan_idx;
     ctx.out = ev;
     ctx.max = MAXEV;
+    ctx.autom = autom;
+    ctx.lane_raw = lane_raw;
+    ctx.defaults = dflt;
+    ctx.nauto = NSYN;
+    ctx.knob = knob_hook;
+    for (i = 0; i < NSYN; i++)
+        ctx.machine[i] = &voice[i];
 
     memset(silence, 0, sizeof silence);
     for (i = 0; i < DS10_MIX_CHANNELS; i++)
@@ -339,6 +361,32 @@ int main(int argc, char **argv)
                     ds10_mixer_set_knob(&mix, i,
                                         song.pattern[sp.last].mixer[i], &ts.fx);
                 memcpy(chan, song.pattern[sp.last].mixer, DS10_MIX_KNOBS);
+                /* And 0x0206DEE4 re-initialises both automation lanes of every
+                 * synth track: the knob id off the pattern, the offset and scale
+                 * off that knob's descriptor. */
+                for (i = 0; i < NSYN; i++) {
+                    const ds10_song_pattern *q = &song.pattern[sp.last];
+                    int l, st;
+
+                    memset(&autom[i], 0, sizeof autom[i]);
+                    autom[i].enable = 1;
+                    dflt[i] = q->knobs[i];
+                    for (st = 0; st < DS10_SONG_STEPS; st++)
+                        for (l = 0; l < DS10_SEQ_LANES; l++)
+                            lane_raw[i * 2 * DS10_SONG_STEPS + st * 2 + l] =
+                                q->lane[i][st].raw[l];
+                    for (l = 0; l < DS10_SEQ_LANES; l++) {
+                        int kn = (uint8_t)q->lane[i][0].knob[l];
+
+                        autom[i].lane[l].knob = (uint8_t)kn;
+                        if (kn < DS10_SONG_KNOBS) {
+                            autom[i].lane[l].offset =
+                                (int8_t)ts.knob_min[kn];
+                            autom[i].lane[l].scale =
+                                (uint8_t)ts.knob_range[kn];
+                        }
+                    }
+                }
             }
             for (k = 0; k < n; k++) {
                 int dest = ev[k].dest, op = ev[k].opcode;

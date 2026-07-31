@@ -776,15 +776,32 @@ TRK_REPLAY_FIELDS = (0, 1, 2, 4, 5, 6, 7, 0x0C, 0x0D)
 RT_PAT_SIZE = 0x50C           # the back-pointer at +0x508 is the last field
 
 
-def _rt_pattern(o, song_pat, ntracks, steps):
-    """Build a runtime pattern from a parsed .dat pattern."""
+def _rt_pattern(o, song_pat, ntracks, steps, nsyn=2, defaults=None):
+    """Build a runtime pattern from a parsed .dat pattern.
+
+    Track block: 16 four-byte step records, then the two automation lanes' 16
+    recorded pairs at +0x40, then the lane knob ids at +0x64/+0x65 and the
+    automation enable at +0x66. The knob ids are stored per step in the file and
+    are the same for every step, so step 0 supplies them.
+    """
     pat = o.call(NEW_THUNK, RT_PAT_SIZE)
     o.uc.mem_write(pat, b"\0" * RT_PAT_SIZE)
     o.uc.mem_write(pat + 6, bytes([steps]))
     for t in range(ntracks):
+        blk = pat + 0x24 + t * 0x68
         for st in range(16):
             src = 0x42 + t * 64 + st * 4
-            o.uc.mem_write(pat + 0x24 + t * 0x68 + st * 4, song_pat[src:src + 4])
+            o.uc.mem_write(blk + st * 4, song_pat[src:src + 4])
+        if t < nsyn:
+            for st in range(16):
+                a = 0x1C2 + t * 64 + st * 4
+                o.uc.mem_write(blk + 0x40 + st * 2, song_pat[a:a + 2])
+            k = 0x1C2 + t * 64
+            o.uc.mem_write(blk + 0x64, song_pat[k + 2:k + 4])
+            o.uc.mem_write(blk + 0x66, bytes([1]))
+    if defaults is not None:
+        for t in range(nsyn):
+            o.w32(pat + 0x14 + t * 4, defaults[t])
     return pat
 
 
@@ -826,6 +843,9 @@ def capture_replay(blob, pattern_idx, ticks, tempo, swing, modes, chan, idx,
     off = 0xEC + pattern_idx * 676
     song_pat = payload[off:off + 676]
     steps = struct.unpack_from("<I", song_pat, 0)[0]
+
+
+
     pat = _rt_pattern(o, song_pat, NMACH, steps)
 
     chan_arr = o.call(NEW_THUNK, 0x40)
@@ -958,6 +978,20 @@ def cmd_replay_vectors(path="tests/vectors/replay.bin"):
 # the patches and step data of a real demo pattern. This is the audio the
 # reimplementation has to match sample for sample.
 SONGR_OUT = (0x0F00C000, 0x0F00C400)   # one output buffer per voice
+SEQ_LANE_INIT = 0x0206DEE4    # (seq, track, lane) - lane config from the pattern
+LANE_TABLE = 0x0216098C       # 4 bytes per knob; +1 offset, +3 scale
+
+
+def _lane_table(o):
+    """The RAM table 0x0206F538 builds from the synth's knob descriptors."""
+    b = open("out/arm9.bin", "rb").read()
+    out = bytearray(31 * 4)
+    for k in range(31):
+        a = KNOB_DESC + k * KNOB_DESC_STRIDE - 0x02004000
+        mn, mx = struct.unpack_from("<hh", b, a + 0x20)
+        out[k * 4 + 1] = mn & 0xFF
+        out[k * 4 + 3] = (mx - mn + 1) & 0xFF
+    return out
 SONGR_SLOT = (0x0F00C800, 0x0F00C808)
 TICK_NUM, TICK_DEN = 1600, 4096        # sequencer ticks per 64-sample frame
 
@@ -1044,7 +1078,11 @@ def capture_songrender(blob, pattern_idx, frames):
     off = 0xEC + pattern_idx * 676
     song_pat = payload[off:off + 676]
     steps = struct.unpack_from("<I", song_pat, 0)[0]
-    pat = _rt_pattern(o, song_pat, NMACH, steps)
+    dflt = [o.call(NEW_THUNK, 0x80) for _ in range(2)]
+    for v in range(2):
+        o.uc.mem_write(dflt[v],
+                       bytes(song_pat[4 + v * 31:4 + (v + 1) * 31]))
+    pat = _rt_pattern(o, song_pat, NMACH, steps, 2, dflt)
 
     # Two real voices as machines 0 and 1; the drum tracks and the two buses get
     # queue-only stand-ins, since a drum voice needs a rendered sample buffer.
@@ -1143,6 +1181,12 @@ def capture_songrender(blob, pattern_idx, frames):
     for t in range(NMACH):
         o.uc.mem_write(seq + 0x64 + t * 0x24, bytes([0] * 0x24))
         o.uc.mem_write(seq + 0x64 + t * 0x24 + 0x0D, bytes([0xFF]))
+    # The original's own lane initialiser, which copies the enable byte out of the
+    # pattern and looks the offset and scale up from the knob descriptors.
+    o.uc.mem_write(LANE_TABLE, bytes(_lane_table(o)))
+    for t in range(2):
+        for lane in range(2):
+            o.call(SEQ_LANE_INIT, seq, t, lane)
     o.uc.mem_write(seq + 0x0C, bytes([1, 1]))
 
     # Opcode 4 carries the BPM to the mixer's effect; nothing the sequencer
