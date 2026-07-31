@@ -1821,7 +1821,14 @@ a cell. The renderer for that is now in `src/app/ui.c` and the map's bottom bar
 is generated from the loaded song rather than replayed. Attributing the rest to
 text rather than to cells is what would empty the raw list.
 
-The four advertisement screens have no sprite record at all, and their own
-NCLR goes into extended palette slot 0 at entry 1, overlapping the shared
-palette already there at entry 4. Loading both makes them worse, so the game
-replaces rather than adds; how has not been worked out.
+A page that carries its own NCLR - the title and advertisement screens - puts
+it in the extended palette slot **its own layer reads**, replacing the shared
+colours there rather than sitting alongside them. Engine B's page layer is BG0,
+which takes slot 0; engine A's is BG1, which takes slot 3 because its BGCNT has
+bit 13 set. The offset within the slot is entry 4, the same as the shared
+palette's - the slot is what differs, not the offset. With that, `AD0_TITLE_i`
+is pixel-exact and the other five ad screens render.
+
+The wrong turn here was assuming the two palettes overlapped, on the strength
+of the page's colours appearing to start at entry 1. They do not overlap; they
+are in different slots, and the entry was misread off a run of zeros.

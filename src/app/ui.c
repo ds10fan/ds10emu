@@ -177,6 +177,28 @@ static int load_page(ds10_ui *u, const char *name, int engine)
     }
     put(bank, banklen, PAGE_TILES, g.data, g.len);
     put(bank, banklen, PAGE_MAP, s.data, (size_t)s.ncells * 2);
+
+    /* A page with its own palette - the title and advertisement screens have
+     * one - replaces the shared colours in the slot its own layer reads,
+     * rather than sitting alongside them. Engine B's page layer is BG0, which
+     * takes extended slot 0; engine A's is BG1, which takes slot 3 because its
+     * BGCNT has bit 13 set. It goes in at entry 4, the same place the shared
+     * palette does - the slot is what differs, not the offset.
+     */
+    {
+        uint8_t *pblob = slurp(u, "mainbg", name, ".NCLR", &glen);
+        ds10_nclr pal;
+
+        if (pblob && ds10_nclr_parse(&pal, pblob, glen) == 0) {
+            uint8_t *pb = engine ? u->gpu.vram.h : u->gpu.vram.g;
+            size_t pl = engine ? sizeof u->gpu.vram.h : sizeof u->gpu.vram.g;
+            size_t slot = engine ? 0 : 0x2000;
+
+            if (slot + 0x2000 <= pl) memset(pb + slot, 0, 0x2000);
+            put(pb, pl, slot + PAL_OFFSET, pal.data,
+                (size_t)pal.ncolors * 2);
+        }
+    }
     return 0;
 }
 
