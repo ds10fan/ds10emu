@@ -1336,15 +1336,34 @@ Still open:
 Still decompiled but not verified, and all of it on the path to replaying a song
 as audio rather than as events:
 
-- `set_pattern` (`0x0206DBE4`) itself. What it calls on a bar boundary is
-  reproduced - `0x0206DFCC` reloads the synth patches, `0x0206EC10` pushes the 25
-  mixer knobs, `0x0206DEE4` re-initialises the automation lanes - and crucially at
-  the moment it does, **inside the tick, before the new pattern's first step is
-  processed**. Doing that work after the tick returned silenced the first note of
-  every song: the step's own volume event had already gone out scaled against a
-  mixer knob array that was still zero, so channel 0 was set to silence and stayed
-  there until the next note. The array the sequencer scales against is the mixer's
-  own live knob array, not a copy taken later.
+- `set_pattern` (`0x0206DBE4`) itself, though what it does is now reproduced:
+
+```
+steps and the automation sub-step are reset whichever pattern arrives, but
+if (prev != pat) {
+    prev = pat
+    broadcast 0x1D PATTERN_CHANGE with the tempo   <- arms the voices' bar flags
+    0x0206DFCC  reload every synth patch knob
+    0x0206EC10  push all 25 mixer knobs
+    0x0206DEE4  re-initialise both automation lanes of every synth track
+}
+```
+
+  Two things about this were wrong and both were audible.
+
+  **When.** It runs inside the tick, before the new pattern's first step is
+  processed. Doing it after the tick returned silenced the first note of every
+  song: the step's own volume event had already gone out, scaled against a mixer
+  knob array that was still zero, so channel 0 was set to silence and stayed there
+  until the next note. The array the sequencer scales against is the mixer's own
+  live knob array, not a copy taken later.
+
+  **The 0x1D broadcast.** Missing it left the voices' `bar_lfo` and `bar_env`
+  flags unset, so the 0x1C bar line had nothing to consume and a BPM-synced LFO
+  never re-phased - an LFO filter sweep drifted against the bar instead of
+  restarting with it. Note the guard: only a pattern that differs from the
+  previous one broadcasts, so a pattern repeating across bars deliberately does
+  not re-phase.
 - Automation modes other than per-step latch, and the knob dispatch at the tail
   of `0x0206E1EC` - which is `machine->vtable[0x18](machine, lane->knob,
   lane->cur >> 8)` for each lane whose knob is not `0xFF`.

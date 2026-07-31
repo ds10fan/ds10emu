@@ -98,8 +98,6 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
     int i = (int)(pat - sp->rt), t, l, st;
     const ds10_song_pattern *q;
 
-    if (i == sp->last)
-        return;
     sp->last = i;
     q = &sp->song->pattern[i];
 
@@ -440,9 +438,18 @@ int main(int argc, char **argv)
                                      &ts.fx);
                 } else if (op == DS10_EV_BAR_START ||
                            op == DS10_EV_PATTERN_CHANGE) {
-                    if (dest < NSYN)
+                    if (dest < NSYN) {
+                        int32_t before = voice[dest].lfo.phase_up;
+
                         ds10_voice_event(&voice[dest], op, 0,
                                          (int32_t)song.tempo, &ts.t);
+                        if (getenv("DS10_TRACE"))
+                            fprintf(stderr, "[bar] f=%lu syn%d op=%02x bar=%d "
+                                    "sync=%d phase %d -> %d\n",
+                                    nframes / FRAME, dest, op, seq.bar,
+                                    voice[dest].lfo.bpm_sync, before,
+                                    voice[dest].lfo.phase_up);
+                    }
                 }
             }
         }

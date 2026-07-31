@@ -390,15 +390,26 @@ int ds10_seq_run(ds10_seq_ctx *c)
                 c->player->answer = 0;
                 say(c, DS10_MSG_BAR, 0);
                 if (c->player->answer != 0) {
-                    /* The answer IS the next pattern. set_pattern (0x0206DBE4)
-                     * would also re-initialise the tracks and broadcast 0x1D;
-                     * neither is modelled yet, so this only installs. */
+                    /* The answer IS the next pattern, and installing it is
+                     * set_pattern (0x0206DBE4). Step count and automation
+                     * sub-step are reset either way, but the 0x1D broadcast and
+                     * the machine re-initialisation happen only when the pattern
+                     * actually differs from the previous one - repeating a
+                     * pattern does not re-phase anything. */
                     c->pat = c->player->answer;
                     s->pattern = 1;
                     s->steps = c->pat->steps;
                     s->auto_sub = 0;
-                    if (c->install)
-                        c->install(c, c->pat);
+                    if (c->prev != c->pat) {
+                        c->prev = c->pat;
+                        /* 0x1D PATTERN_CHANGE, broadcast with the tempo. This is
+                         * what arms the voices' bar flags; without it the bar
+                         * line below has nothing to consume and a BPM-synced LFO
+                         * never re-phases. */
+                        post(c, 29, 0x70, s->tempo);
+                        if (c->install)
+                            c->install(c, c->pat);
+                    }
                     say(c, DS10_MSG_RUN, s->bar);
                     /* 0x1C BAR_START, broadcast, carrying the tempo. The
                      * original puts it in the event's u32 at +4; the low half is
