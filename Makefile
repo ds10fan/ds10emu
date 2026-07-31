@@ -6,7 +6,7 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-obj test-cell test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -310,7 +310,7 @@ WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
           src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
           src/core/mixer.c src/core/patch.c src/core/event.c \
           src/core/tables.c src/core/voice_state.c src/core/mixer_state.c \
-          src/core/seq.c
+          src/core/seq.c src/core/song.c src/core/md5.c src/core/drum.c
 WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             --preload-file data/nitrofs@/data/nitrofs \
             --preload-file data/pages.bin@/data/pages.bin \
@@ -340,6 +340,14 @@ out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c src/app/cell.c \
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/app/obj.c \
 	    src/app/cell.c src/gfx/nds2d.c src/gfx/nitro.c -lm
+
+# The browser build against songplay, sample for sample. Needs node and the
+# wasm build; both run the same engine, so this catches setup mistakes rather
+# than DSP ones.
+test-websong: web out/songplay
+	@./out/songplay -b 3 -o out/ref_demo.wav \
+	    data/nitrofs/demo/ds10demo01.dat >/dev/null
+	@node tools/websong.js
 
 # Render each page with the reimplementation and diff it against the captured
 # frame for the same page. Needs `make sweep` first.

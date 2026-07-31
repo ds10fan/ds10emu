@@ -14,6 +14,13 @@ const BOTTOM_PAGES = [
   "63_DRUM_EDIT_PATCH", "33_DRUM_SELECTER", "01_MAIN_MENU", "15_OPTION",
   "31_SONG", "90_MAP",
 ];
+/* The ROM's demo songs. Loading one plays it through the decompiled engine;
+ * the output is sample-identical to what out/songplay renders. */
+const SONGS = [
+  "(none)", "ds10demo00", "ds10demo01", "ds10demo02", "ds10demo03",
+  "ds10demo05", "ds10demo06", "ds10demo07",
+  "ds10pdemo00", "ds10pdemo01", "ds10pdemo02", "ds10pdemo03",
+];
 const TOP_PAGES = [
   "90_MAP", "AD0_TITLE", "AD1_KORG", "AD2_PROCYONSTUDIO", "AD3_AQI",
   "AD4_CAVIA", "01_MAIN_MENU",
@@ -309,11 +316,29 @@ Module.onRuntimeInitialized = () => {
                           ["number", "number"]),
     seqPlay: Module.cwrap("ds10_web_seq_play", null, ["number"]),
     seqTempo: Module.cwrap("ds10_web_seq_tempo", null, ["number"]),
+    song: Module.cwrap("ds10_web_song", "number", ["string"]),
+    songBars: Module.cwrap("ds10_web_song_bars", "number", []),
   };
   if (api.init() < 0) {
     status.textContent = "error: " + api.error();
     return;
   }
+  fill(document.getElementById("pick-song"), SONGS, "(none)");
+  document.getElementById("pick-song").addEventListener("change", (e) => {
+    if (e.target.value === "(none)") {
+      playing = false;
+      api.seqPlay(0);
+      status.textContent = "stopped";
+      return;
+    }
+    startAudio();
+    if (api.song(e.target.value) < 0) {
+      status.textContent = "error: " + api.error();
+      return;
+    }
+    playing = true;
+    status.textContent = e.target.value + "  " + api.songBars() + " bars";
+  });
   fill(document.getElementById("pick-bottom"), BOTTOM_PAGES, "81_KEY_i");
   fill(document.getElementById("pick-top"), TOP_PAGES, "90_MAP");
   for (const id of ["pick-bottom", "pick-top"])

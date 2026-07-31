@@ -1710,8 +1710,10 @@ Read so far:
 |---|---|---|
 | `0x02065b04` | 30_MIXER | tables above |
 | `0x0204bff8` | 81_KEY | OCT- at (4,2), OCT+ at (0x23,2), both 0x1c x 0xe; synth selector at (0x42,4), 0x46 x 0xc |
+| `0x020594d4` | 62_DRUM_SEQ_GATE | four drum rows at y = 0x21 + 13*i, name at x = 3 and solo at x = 0x16, both 19 x 13; a 64-entry grid state, four drums by sixteen steps |
 | `0x02049150` | 71_KAOSS | two knob assignments, three buttons at x = 4 + 21*i, y = 2 |
 | `0x02050108` | 60_SYN_SEQ_* | six page variants; two 16-step runs at x = 0x16 and 0x4a, y = 3 |
+| `0x020594d4` | 62_DRUM_SEQ_GATE | four drum rows at y = 0x21 + 13*i, name at x = 3 and solo at x = 0x16, both 19 x 13; a 64-entry grid state, four drums by sixteen steps |
 | `0x02049150` | 71_KAOSS | pad at (0,20), 256 x 172; three buttons at x = 4 + 21*i, y = 2 |
 | `0x02062914` | 31_SONG | fifteen buttons from a 0x44-stride table, four more from a second |
 | `0x0205e1e4` | 52_FX | thirteen knobs sharing four positions at y = 161, x = 64/118/172/226; slider at (8,146); nine route buttons 66 x 14 |

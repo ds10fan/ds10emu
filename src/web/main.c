@@ -22,6 +22,8 @@
 #include "../core/voice.h"
 #include "../core/voice_state.h"
 #include "../core/seq.h"
+#include "../core/song.h"
+#include "../core/drum.h"
 
 #define FB (DS10_SCR_W * DS10_SCR_H)
 
@@ -56,14 +58,123 @@ static ds10_seq_posted seq_ev[SEQ_MAXEV];
 static int8_t seq_chan[DS10_MIX_KNOBS];
 static uint8_t seq_chan_idx[2 * DS10_SEQ_MAXTRACKS];
 static int seq_acc, seq_playing;
+
+/* A loaded song: sixteen patterns, four drum buffers, and the arrangement.
+ * All of it goes through the same code songplay uses, which is bit-exact
+ * against the original. */
+#define NDRUM DS10_SONG_DRUMS
+#define DRUM_LEN 0x8000     /* one second at 32768 Hz */
+#define DRUM_ROOT 60
+
+static ds10_song song;
+static ds10_rt_pattern song_rt[DS10_SONG_PATTERNS];
+static int16_t drumbuf[NDRUM][DRUM_LEN];
+static ds10_drum drum[NDRUM];
+static ds10_seq_auto seq_auto[NSYN];
+static int8_t lane_raw[NSYN * 2 * DS10_SONG_STEPS];
+static const int8_t *lane_dflt[NSYN];
+static int song_loaded, song_bar, song_bars;
+
 static ds10_song_player seq_player;
 
-/* The tick asks the song player what to do at a bar line. Ours always answers
- * with the one pattern, so it loops. */
+/* The tick asks the song player what to do at a bar line. With no song loaded
+ * the answer is always the scratch pattern, so it loops; with one, it walks
+ * the arrangement and wraps at the end. */
 static void seq_handle(ds10_song_player *p, ds10_seq *s)
 {
-    (void)s;
-    if (p->msg == DS10_MSG_BAR) p->answer = &seq_pat;
+    if (p->msg != DS10_MSG_BAR) return;
+    if (!song_loaded) {
+        p->answer = &seq_pat;
+        return;
+    }
+    if (song_bars <= 0) {
+        p->answer = &song_rt[0];
+        return;
+    }
+    song_bar = s->bar % song_bars;
+    p->answer = &song_rt[song.chain[song_bar] % DS10_SONG_PATTERNS];
+}
+
+/* What a pattern change re-initialises: both patches, the mixer's 25 knobs,
+ * and the automation lanes. It has to run inside the tick - doing it after
+ * leaves the first step's volume events scaled against the old mixer. */
+static void seq_install(ds10_seq_ctx *c, ds10_rt_pattern *pat)
+{
+    int i = (int)(pat - song_rt), t, l, st;
+    const ds10_song_pattern *q;
+
+    if (!song_loaded || i < 0 || i >= DS10_SONG_PATTERNS) return;
+    q = &song.pattern[i];
+    for (t = 0; t < NSYN; t++)
+        ds10_patch_load(&voice[t], q->knobs[t], &tables.t);
+    for (t = 0; t < DS10_MIX_KNOBS; t++)
+        ds10_mixer_set_knob(&mixer, t, q->mixer[t], &tables.fx);
+    memcpy(seq_chan, q->mixer, DS10_MIX_KNOBS);
+
+    for (t = 0; t < NSYN; t++) {
+        memset(&c->autom[t], 0, sizeof c->autom[t]);
+        c->autom[t].enable = 1;
+        lane_dflt[t] = q->knobs[t];
+        for (st = 0; st < DS10_SONG_STEPS; st++)
+            for (l = 0; l < DS10_SEQ_LANES; l++)
+                lane_raw[t * 2 * DS10_SONG_STEPS + st * 2 + l] =
+                    q->lane[t][st].raw[l];
+        for (l = 0; l < DS10_SEQ_LANES; l++) {
+            int kn = (uint8_t)q->lane[t][0].knob[l];
+
+            c->autom[t].lane[l].knob = (uint8_t)kn;
+            if (kn < DS10_SONG_KNOBS) {
+                c->autom[t].lane[l].offset = (int8_t)tables.knob_min[kn];
+                c->autom[t].lane[l].scale = (uint8_t)tables.knob_range[kn];
+            }
+        }
+    }
+}
+
+/* The sequencer reads a pattern with a different stride from the file's, and
+ * the step record's first two bytes swap: the file has gate then note. */
+static void build_rt(ds10_rt_pattern *rt, const ds10_song_pattern *p)
+{
+    int t, s;
+
+    memset(rt, 0, sizeof *rt);
+    rt->steps = (uint8_t)p->steps;
+    for (t = 0; t < DS10_SONG_TRACKS; t++)
+        for (s = 0; s < DS10_SONG_STEPS; s++) {
+            rt->step[t][s][0] = p->step[t][s].note;
+            rt->step[t][s][1] = p->step[t][s].gate;
+            rt->step[t][s][2] = p->step[t][s].vel;
+            rt->step[t][s][3] = p->step[t][s].pan;
+        }
+}
+
+/* A drum is not played live: its patch is rendered once into a one-second
+ * buffer at note 60 and the voice resamples that. */
+static void render_drums(void)
+{
+    ds10_voice v;
+    int i, j;
+
+    for (i = 0; i < NDRUM; i++) {
+        memset(&v, 0, sizeof v);
+        ds10_voice_state_load(&v, tables.voice_init);
+        ds10_patch_load(&v, ds10_song_drum_knobs(&song, i), &tables.t);
+        ds10_voice_note_on(&v, DRUM_ROOT, &tables.t);
+        for (j = 0; j < DRUM_LEN; j += WEB_FRAME)
+            ds10_voice_render(&v, &pitch_tables, &vcf_tables,
+                              drumbuf[i] + j, WEB_FRAME);
+        memset(&drum[i], 0, sizeof drum[i]);
+        drum[i].env.stage = DS10_DRUM_RELEASE;
+        drum[i].env.retrig = 1;
+        ds10_drum_set_sample(&drum[i], drumbuf[i], DRUM_LEN, DRUM_ROOT);
+    }
+}
+
+/* The automation processor writes straight into the machine, which for a
+ * synth track is its knob handler. */
+static void seq_knob(void *machine, int knob, int value)
+{
+    ds10_patch_set_knob((ds10_voice *)machine, knob, value, &tables.t);
 }
 static int audio_ready;
 static float audio_out[4096 * 2];
@@ -183,6 +294,13 @@ int ds10_web_audio_init(void)
     seq_ctx.chan_idx = seq_chan_idx;
     seq_player.handle = seq_handle;
     seq_ctx.player = &seq_player;
+    seq_ctx.autom = seq_auto;
+    seq_ctx.lane_raw = lane_raw;
+    seq_ctx.defaults = lane_dflt;
+    seq_ctx.nauto = NSYN;
+    seq_ctx.knob = seq_knob;
+    for (i = 0; i < NSYN; i++) seq_ctx.machine[i] = &voice[i];
+    seq_ctx.install = seq_install;
     seq_ctx.out = seq_ev;
     seq_ctx.max = SEQ_MAXEV;
     ds10_seq_set_swing(&seq, 50);
@@ -191,6 +309,95 @@ int ds10_web_audio_init(void)
     audio_ready = 1;
     return 0;
 }
+
+/* Load one of the ROM's demo songs and play it. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song(const char *name)
+{
+    char path[256];
+    FILE *f;
+    static uint8_t blob[16 + 12252];
+    long n;
+    int i;
+
+    if (!audio_ready && ds10_web_audio_init() < 0) return -1;
+    snprintf(path, sizeof path, "/data/nitrofs/demo/%s.dat", name);
+    f = fopen(path, "rb");
+    if (!f) {
+        snprintf(last_error, sizeof last_error, "cannot open %s", path);
+        return -1;
+    }
+    fseek(f, 0, SEEK_END);
+    n = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (n <= 0 || n > (long)sizeof blob ||
+        fread(blob, 1, (size_t)n, f) != (size_t)n) {
+        fclose(f);
+        snprintf(last_error, sizeof last_error, "short read on %s", path);
+        return -1;
+    }
+    fclose(f);
+    if (ds10_song_parse(&song, blob, (size_t)n) != DS10_SONG_OK) {
+        snprintf(last_error, sizeof last_error, "%s: not a song", path);
+        return -1;
+    }
+    for (i = 0; i < DS10_SONG_PATTERNS; i++)
+        build_rt(&song_rt[i], &song.pattern[i]);
+    render_drums();
+
+    /* Back to the constructor state before the song's own patches go in. The
+     * knob handler has order-dependent side effects - a mod source writes
+     * fields a later knob only clears for its own destination - so starting
+     * from the scratch patch does not give the same voice as starting fresh. */
+    memset(voice, 0, sizeof voice);
+    memset(&mixer, 0, sizeof mixer);
+    for (i = 0; i < NSYN; i++)
+        ds10_voice_state_load(&voice[i], tables.voice_init);
+    ds10_mixer_state_load(&mixer, tables.mixer_init);
+    ds10_fx_state_load(&mixer.fx, tables.fx_init);
+    mixer.fx.buf_l = delay_l;
+    mixer.fx.buf_r = delay_r;
+    memset(delay_l, 0, sizeof delay_l);
+    memset(delay_r, 0, sizeof delay_r);
+    memset(seq_track, 0, sizeof seq_track);
+    song_bars = ds10_song_bars(&song);
+    song_bar = 0;
+    song_loaded = 1;
+
+    /* Restart the transport and let the first bar install pattern zero. */
+    seq.accum = DS10_SEQ_TEMPO_NUM / 120 - DS10_SEQ_INCR + 1;
+    seq.playing = 1;
+    seq.starting = 1;
+    seq_ctx.pat = &song_rt[0];
+    seq_ctx.prev = NULL;
+    ds10_seq_set_swing(&seq, (int)song.swing);
+
+    /* The tempo broadcast has to be dispatched, not just posted: opcode 4 goes
+     * to every machine and the mixer, and it is the only thing that tells a
+     * voice the BPM its synced LFO runs against. */
+    {
+        int n = ds10_seq_tempo(&seq_ctx, (int)song.tempo);
+        int j;
+
+        for (j = 0; j < n; j++) {
+            if (seq_ev[j].dest < NSYN)
+                ds10_voice_event(&voice[seq_ev[j].dest], seq_ev[j].opcode, 0,
+                                 (int32_t)seq_ev[j].payload, &tables.t);
+            else if (seq_ev[j].dest == DS10_BUS1(DS10_SONG_TRACKS))
+                ds10_mixer_event(&mixer, seq_ev[j].opcode, seq_ev[j].channel,
+                                 seq_ev[j].payload,
+                                 (int32_t)seq_ev[j].payload, &tables.fx);
+        }
+    }
+    seq_playing = 1;
+    return 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song_bars(void) { return song_bars; }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song_bar(void) { return song_bar; }
 
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_seq_play(int on)
@@ -264,16 +471,40 @@ int ds10_web_audio(int frames)
                     int dest = seq_ev[k].dest, op = seq_ev[k].opcode;
                     int note = (int8_t)(seq_ev[k].payload & 0xFF);
 
+                    /* The same dispatch songplay uses; anything else a
+                     * voice acts on - the tempo included - takes its
+                     * argument from the payload word. */
                     if (dest < NSYN && (op == DS10_EV_NOTE_ON ||
-                                        op == DS10_EV_NOTE_OFF))
-                        ds10_voice_event(&voice[dest], op, note, 0, &tables.t);
+                                        op == DS10_EV_NOTE_OFF)) {
+                        ds10_voice_event(&voice[dest], op, note, 0,
+                                         &tables.t);
+                    } else if (dest >= NSYN && dest < DS10_SONG_TRACKS &&
+                               (op == DS10_EV_NOTE_ON ||
+                                op == DS10_EV_NOTE_OFF)) {
+                        if (op == DS10_EV_NOTE_ON)
+                            ds10_drum_note_on(&drum[dest - NSYN], note,
+                                              tables.drum_pitch);
+                        else
+                            ds10_drum_note_off(&drum[dest - NSYN]);
+                    } else if (dest == DS10_BUS1(DS10_SONG_TRACKS)) {
+                        ds10_mixer_event(&mixer, op, seq_ev[k].channel,
+                                         seq_ev[k].payload, 0, &tables.fx);
+                    } else if (dest < NSYN) {
+                        ds10_voice_event(&voice[dest], op, 0,
+                                         (int32_t)seq_ev[k].payload,
+                                         &tables.t);
+                    }
                 }
             }
         }
         for (i = 0; i < NSYN; i++)
             ds10_voice_render(&voice[i], &pitch_tables, &vcf_tables,
                               buf[i], WEB_FRAME);
-        for (i = NSYN; i < 6; i++) memset(buf[i], 0, sizeof buf[i]);
+        for (i = NSYN; i < 6; i++) {
+            memset(buf[i], 0, sizeof buf[i]);
+            if (song_loaded) ds10_drum_render(&drum[i - NSYN], buf[i],
+                                              WEB_FRAME);
+        }
         ds10_mixer_render(&mixer, chp, &tables.fx, l, r, WEB_FRAME);
         for (k = 0; k < WEB_FRAME; k++) {
             audio_out[(done + k) * 2] = (float)l[k] / 32768.0f;
