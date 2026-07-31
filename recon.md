@@ -1763,6 +1763,28 @@ Which is the argument for reading the table rather than the screen.
 A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
 `ds10synthNN.dat`, which is the 31 bytes that fill the file to its end.
 
+### A widget's update
+
+`0x02055b98` is the knob's value-to-angle map, and it is the same for every
+screen that has knobs:
+
+```
+angle = 0xA000 + 0xC000 * (value - min) / (max - min)
+```
+
+with 0x10000 a full turn - 225 degrees at the minimum, sweeping 270 clockwise
+to 135. The 0xC000 is `(sweep/2) * 0x10000 / 360` doubled, and the divide by
+360 is a multiply by 0xB60B60B7 that the compiler emitted; every screen passes
+270 as the sweep.
+
+The drawable's rotation field is that angle shifted right by four, indexing a
+4096-entry table of (sin, cos) in 1.12 at `0x0207a3d8`.
+
+Checked against a captured frame: all sixteen of the synth edit page's pointer
+matrices lie inside that sweep, several sit exactly on its end stops, and
+OCTAVE - whose 0 is the midpoint of a -2..2 range - carries the identity
+matrix.
+
 ### Text
 
 The interface's text is **one 8x8 sprite per character**, straight out of the

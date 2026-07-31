@@ -246,15 +246,26 @@ static const char *const KNOB_NAME[31] = {
  * A double-size sprite is drawn from a box twice its size, so its top-left is
  * the centre minus the full sprite width and height.
  *
- * The sweep is +/-150 degrees over the knob's range. That is what a DS-10 knob
- * looks like, but the exact end stops have not been read out of the game.
+ * The sweep is the game's own, from 0x02055b98:
+ *
+ *     angle = 0xA000 + 0xC000 * (value - min) / (max - min)
+ *
+ * in sixteenths of a degree-ish units where 0x10000 is a full turn - so 225
+ * degrees at the minimum, sweeping 270 degrees clockwise to 135. The 0xC000
+ * comes out of a divide-by-360 the compiler turned into a multiply by
+ * 0xB60B60B7; the screens all pass 270 as the sweep.
+ *
+ * Checked against a captured frame: all sixteen pointer matrices lie inside
+ * that sweep, several sit exactly on its end stops, and OCTAVE - whose 0 is
+ * the midpoint of its -2..2 range - has the identity matrix.
  */
+#define PTR_SWEEP_START 225.0
 #define PTR_TILE 0x21A
 #define PTR_PAL 3
 #define PTR_PRIO 2
 #define PTR_W 8
 #define PTR_H 16
-#define PTR_SWEEP 150.0
+#define PTR_SWEEP 270.0
 #define PTR_PI 3.14159265358979323846
 
 /* An affine slot holds four halfwords, 8.8, scattered through OAM at
@@ -291,10 +302,12 @@ void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
     double frac, deg;
 
     if (range < 2) range = 2;
+    /* The original divides by max - min, which is one less than the range the
+     * knob descriptors carry. */
     frac = (double)(value - lo) / (double)(range - 1);
     if (frac < 0.0) frac = 0.0;
     if (frac > 1.0) frac = 1.0;
-    deg = -PTR_SWEEP + frac * 2.0 * PTR_SWEEP;
+    deg = PTR_SWEEP_START + frac * PTR_SWEEP;
 
     for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
         ds10_obj o;
