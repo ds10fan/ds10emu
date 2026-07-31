@@ -127,18 +127,15 @@ Remaining, roughly in order:
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
   small textured-quad rasteriser, not a polygon pipeline.
-- **The rest of the per-frame update.** Both shared widget updates are
-  decompiled: the knob's sweep (`0x02055b98`, checked against a captured
-  frame) and the slider's span (`0x02039188`). What each screen does *around*
-  them - which widgets it touches when what changes, and the readouts that
-  follow a control rather than being one - is still unread. Twelve sets of
-  event handlers.
+- **The screens' redraw passes.** The per-frame update's shape is decompiled
+  (`recon.md` §16): a four-state machine whose running state takes the widget
+  under the pen from the global registry, maps its name to a knob, pushes the
+  value into the machine and redraws. Both widget redraws are decompiled too -
+  the knob's sweep and the slider's span.
 
-  There is more structure there than it first looked: every widget is
-  registered by name in one global registry (`recon.md` §16), so a handler
-  reaches its widgets by string key. The `sp_%d`, `mxp_%d`, `fxr_%d`, `octUp`
-  and `seqBank` strings in the pool are those keys, and they enumerate what
-  each screen can touch.
+  What is not read is each screen's own two redraw passes - `0x0206724c` and
+  `0x02067160` on the mixer - which are what update the readouts that follow a
+  control rather than being one. Those are per screen.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered

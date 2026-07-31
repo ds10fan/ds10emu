@@ -1785,6 +1785,34 @@ both: 53_DRUMEDIT is the synth edit page and 63_DRUM_EDIT_PATCH is the patch
 bay, and 54_DRUM_FX is the FX page with three effect buttons instead of nine
 route buttons.
 
+### A screen's per-frame update
+
+Each screen's update is a four-state machine on its `+0x13c`, and the shape is
+shared - `0x02066e78` is the mixer's, `0x0205f2cc` the FX page's, and both
+read the same `+0x134`, `+0x13c` and `+0x144`:
+
+```
+0  build     when the transition object's +0x144 is 0 or 4, run the
+             constructor and go to 1
+1  settle    wait for the transition object's +0x140 to reach 5
+2  run       the loop below
+3  swap      flip the deck, rebuild, back to 2
+```
+
+State 2 is the whole of a screen's behaviour:
+
+- take the widget the pen is on from the registry's `+0x44`;
+- look its name up in the screen's own name-to-knob map - `+0x210` on the
+  mixer - and read the knob id from the entry's `+0x0c`;
+- fold the id into a channel: 9..14 are the pans and 0x11..0x16 the volumes,
+  so the channel is the id minus 9 or minus 0x11;
+- push the value into the machine (`0x0206e084`);
+- run the two redraw passes.
+
+Which is the same relation this reimplementation implements directly, with the
+name lookup collapsed out: a hit box gives a knob id, the id goes to the
+engine, and the widget redraws through the sweep or the span.
+
 ### The widget registry
 
 Every screen registers each widget by name into one global registry at
