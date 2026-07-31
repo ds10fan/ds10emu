@@ -834,30 +834,37 @@ void ds10_ui_frame(ds10_ui *u, uint32_t *top, uint32_t *bottom)
     ds10_gpu_frame(&u->gpu, top, bottom);
 }
 
-/* The navigation map's boxes. The coordinates are where the boxes are drawn
- * on 90_MAP; each opens the page named here. Read off the rendered screen
- * rather than out of the map's own hit-test code, which is not decompiled. */
+/* 90_MAP's boxes, from its constructor at 0x02062914 and the tables at
+ * 0x02087018 and 0x02086f08. Each entry carries its rectangle, its caption and
+ * an index into the twenty-entry screen table at 0x02085f80, which is what
+ * names the page it opens.
+ *
+ * This replaces coordinates read off the rendered screen. The second table is
+ * the DRUMS submenu, which the map shows over itself.
+ */
 static const struct {
-    int x0, y0, x1, y1;
+    int x, y, w, h;
     const char *page;
 } MAP_BOX[] = {
-    {  8,  30,  76,  46, "60_SYN_SEQ_PIANO" },
-    { 20,  46,  88,  62, "81_KEY_i" },
-    { 20,  62,  88,  78, "71_KAOSS" },
-    {104,  30, 168,  46, "61_SYN_EDIT" },
-    {112,  46, 176,  62, "70_PATCH" },
-    {  8,  90,  76, 106, "60_SYN_SEQ_PIANO" },
-    { 20, 106,  88, 122, "81_KEY_i" },
-    { 20, 122,  88, 138, "71_KAOSS" },
-    {104,  90, 168, 106, "61_SYN_EDIT" },
-    {112, 106, 176, 122, "70_PATCH" },
-    {  8, 150,  84, 166, "62_DRUM_SEQ_GATE" },
-    {200,  30, 252,  46, "30_MIXER" },
-    {208,  46, 252,  62, "52_FX" },
-    {200,  90, 252, 106, "01_MAIN_MENU" },
-    {200, 106, 252, 122, "31_SONG" },
-    {200, 122, 252, 138, "51_ALL_DRUMS" },
-    {  0,   0, 120,  18, "32_PATTERN" },
+    {  7,  25, 46, 16, "60_SYN_SEQ_PIANO"},  /* SYN1 SEQ */
+    {  7,  87, 46, 16, "60_SYN_SEQ_PIANO"},  /* SYN2 SEQ */
+    {  7, 149, 54, 16, "51_ALL_DRUMS"},      /* DRUMS SEQ */
+    { 39,  45, 54, 16, "81_KEY_i"},          /* SYN1 KBD */
+    { 39,  65, 54, 16, "71_KAOSS"},          /* SYN1 KAOSS */
+    { 39, 107, 54, 16, "81_KEY_i"},          /* SYN2 KBD */
+    { 39, 127, 54, 16, "71_KAOSS"},          /* SYN2 KAOSS */
+    {117,  25, 46, 16, "61_SYN_EDIT"},       /* SYN1 EDIT */
+    {117,  87, 46, 16, "61_SYN_EDIT"},       /* SYN2 EDIT */
+    {131,  54, 53, 16, "70_PATCH"},          /* SYN1 PATCH */
+    {131, 116, 53, 16, "70_PATCH"},          /* SYN2 PATCH */
+    {203,  25, 36, 16, "30_MIXER"},
+    {207,  55, 30, 16, "52_FX"},
+    {  4,   2, 76, 14, "32_PATTERN"},
+    {206, 142, 46, 16, "33_DRUM_SELECTER"},  /* DRUMS */
+    /* the DRUMS submenu */
+    { 85,  64, 88, 16, "53_DRUMEDIT"},
+    { 85,  96, 88, 16, "63_DRUM_EDIT_PATCH"},
+    { 85, 128, 88, 16, "54_DRUM_FX"},
 };
 
 const char *ds10_ui_map_hit(int x, int y)
@@ -865,8 +872,8 @@ const char *ds10_ui_map_hit(int x, int y)
     size_t i;
 
     for (i = 0; i < sizeof MAP_BOX / sizeof MAP_BOX[0]; i++)
-        if (x >= MAP_BOX[i].x0 && x < MAP_BOX[i].x1 &&
-            y >= MAP_BOX[i].y0 && y < MAP_BOX[i].y1)
+        if (x >= MAP_BOX[i].x && x < MAP_BOX[i].x + MAP_BOX[i].w &&
+            y >= MAP_BOX[i].y && y < MAP_BOX[i].y + MAP_BOX[i].h)
             return MAP_BOX[i].page;
     return NULL;
 }

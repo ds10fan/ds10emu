@@ -1725,7 +1725,7 @@ Read so far:
 | `0x02047384` | 61_SYN_EDIT | sixteen knobs (0x020851d4) and three switches (0x02085180), each knob a 40 x 40 box |
 | `0x0204e140` | 70_PATCH | six knobs at y = 93, x = 23 + 43*i (0x02085918); MG BPM slider at (11,38) |
 | `0x02049150` | 71_KAOSS | pad at (0,20), 256 x 172; three buttons at x = 4 + 21*i, y = 2 |
-| `0x02062914` | 31_SONG | fifteen buttons from a 0x44-stride table, four more from a second |
+| `0x02062914` | 90_MAP | fifteen boxes (0x02087018) and the DRUMS submenu's four (0x02086f08), each with its rectangle, caption and an index into the screen table |
 | `0x0205e1e4` | 52_FX | thirteen knobs sharing four positions at y = 161, x = 64/118/172/226; slider at (8,146); nine route buttons 66 x 14 |
 
 52_FX's table at `0x02086874` carries each knob's caption inline and its
@@ -1762,6 +1762,28 @@ Which is the argument for reading the table rather than the screen.
 
 A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
 `ds10synthNN.dat`, which is the 31 bytes that fill the file to its end.
+
+### The map's boxes
+
+`0x02062914` builds 90_MAP out of two tables of 0x44-byte entries. Each carries
+a rectangle, an inline caption and an index into the twenty-entry screen table
+at `0x02085f80`, which is what names the page the box opens:
+
+```
+SYN1 SEQ   (7,25) 46x16   -> 60_SYN_SEQ_PIANO     MIXER  (203,25) 36x16 -> 30_MIXER
+SYN1 KBD  (39,45) 54x16   -> 81_KEY_i             FX     (207,55) 30x16 -> 52_FX
+SYN1 KAOSS(39,65) 54x16   -> 71_KAOSS             DRUMS (206,142) 46x16 -> 33_DRUM_SELECTER
+SYN1 EDIT(117,25) 46x16   -> 61_SYN_EDIT          pattern  (4,2) 76x14 -> 32_PATTERN
+SYN1 PATCH(131,54) 53x16  -> 70_PATCH
+```
+
+with the SYN2 row 62 pixels below its SYN1 counterpart, and the DRUMS submenu's
+three at (85,64), (85,96) and (85,128).
+
+Two screens share a layout with two others, which is why the same tables serve
+both: 53_DRUMEDIT is the synth edit page and 63_DRUM_EDIT_PATCH is the patch
+bay, and 54_DRUM_FX is the FX page with three effect buttons instead of nine
+route buttons.
 
 ### The widget registry
 

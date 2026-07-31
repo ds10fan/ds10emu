@@ -185,7 +185,7 @@ function onDown(which, ev) {
     }
     return;
   }
-  if (page === "70_PATCH") {
+  if (page === "70_PATCH" || page === "63_DRUM_EDIT_PATCH") {
     startAudio();
     const id = api.patchHit(x, y);
     if (id >= 0) {
@@ -224,7 +224,7 @@ function onDown(which, ev) {
       + (cur === note ? "  cleared" : "  note " + note);
     return;
   }
-  if (page === "52_FX") {
+  if (page === "52_FX" || page === "54_DRUM_FX") {
     startAudio();
     const id = api.fxHit(x, y, 0);   /* delay; the type selector is unwired */
     if (id >= 0) {
@@ -251,7 +251,7 @@ function onDown(which, ev) {
     }
     return;
   }
-  if (page === "61_SYN_EDIT") {
+  if (page === "61_SYN_EDIT" || page === "53_DRUMEDIT") {
     startAudio();
     const id = api.knobHit(x, y);
     if (id >= 0) {
