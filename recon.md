@@ -1652,6 +1652,30 @@ A knob pointer turns out to be one double-size rot/scale sprite with tile
 `0x21a` - sixteen of them on the synth edit page, each with its own affine
 index. Turning a knob is a matrix, not a different tile.
 
+### What a drawable is
+
+`0x02022c38(gfx, d, priority)` draws one element, and `0x02022ba4` shows what
+`d` is - a 20-byte record:
+
+```
++0x00  u16  cell index
++0x02  u16  rotation; >>4 indexes a sin/cos table at 0x02022c34
++0x04  s32  x scale, 20.12
++0x08  s32  y scale, 20.12
++0x0c  s32  x position, 20.12
++0x10  s32  y position, 20.12
+```
+
+The draw builds a matrix from the rotation and the scales, expands the cell
+through it, offsets every tile by `0x200` if the element came from the first
+resource, stamps the priority and appends. `0x02022d38` is the same with no
+tile offset, for the sheet based at tile 0.
+
+These records are findable in a RAM dump - scan for two consecutive `0x1000`
+scales followed by a whole-pixel position - and the ones that are on screen
+place their cell exactly where the OAM has it. They sit inside larger 0xFC-byte
+widget objects, which is the stride the screen constructors step by.
+
 ### Status
 
 Reproduced from the asset files alone, and pixel-exact against melonDS for the
@@ -1659,17 +1683,17 @@ same page (`make test-page`): `61_SYN_EDIT`, `70_PATCH`, `30_MIXER`, `81_KEY_i`,
 `60_SYN_SEQ_PIANO`, `01_UNMAIN_MENU`. `71_KAOSS` differs only by its moving
 cursor and `90_MAP` by the live values it displays.
 
-The synth edit page's sixteen knob pointers are **generated** rather than
-captured: the value goes through the decompiled OAM builder and an affine
-matrix, so they turn.
+`data/pages.bin` holds a **display list** per page - cell, position, matrix,
+priority - and the sprites are generated from it by the decompiled expander.
+`tools/pages.py` builds those lists by inverting the expansion against a
+captured frame. The synth edit page's 38 visible sprites come out of 19 cells
+with nothing left over, and its knob pointers turn because their matrix is
+ours to set.
 
-Not decompiled: the widget constructors that place the rest of the sprites. The
-OAM in `data/pages.bin` is captured, one frame per page, standing in until they
-are. That is the difference between a page that draws and a page that responds.
+Not decompiled: the code that *produces* those lists - each screen's
+constructor and its per-frame update. Until that is read, a page shows the
+state it was captured in.
 
-Note for whoever picks this up: scanning main RAM for widget objects
-(`tools/widgets.py`) finds candidates but none that are live, and each OAM
-entry appears exactly once in RAM - in the shadow. So the screens do not build
-their sprites through the `0x0202a820` object and hand it to the allocator;
-they write the entries some other way. Finding that path is what unblocks
-generating the rest.
+`01_UNMAIN_MENU` and `90_MAP` come out mostly as unattributed OAM rather than
+cells, and the four advertisement screens have no sprite record at all. They
+are probably drawing from a sheet at a tile base the matcher does not try.
