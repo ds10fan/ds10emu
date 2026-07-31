@@ -2,14 +2,16 @@
  * canvases. The C side owns the framebuffers; this only copies them out. */
 "use strict";
 
-/* The pages under /data/mainbg that are screens rather than fragments. The
- * "_i" variants are the inverted/highlighted versions the game swaps in. */
+/* The pages under /data/mainbg that are whole screens. Those whose sprite
+ * layer is known reproduce the hardware exactly; the rest draw their
+ * background only, which is why they look bare. */
 const BOTTOM_PAGES = [
-  "61_SYN_EDIT", "70_PATCH", "71_KAOSS", "81_KEY", "30_MIXER", "52_FX",
-  "32_PATTERN", "51_ALL_DRUMS", "53_DRUMEDIT", "54_DRUM_FX", "55_DRUMEDITMAP",
-  "60_SYN_SEQ_PIANO", "60_SYN_SEQ_GATE", "60_SYN_SEQ_PAN", "60_SYN_SEQ_VOL",
-  "60_SYN_SEQ_KAOSS", "62_DRUM_SEQ_GATE", "63_DRUM_EDIT_PATCH",
-  "33_DRUM_SELECTER", "01_MAIN_MENU", "15_OPTION", "31_SONG", "90_MAP",
+  "61_SYN_EDIT", "70_PATCH", "81_KEY_i", "30_MIXER", "60_SYN_SEQ_PIANO",
+  "71_KAOSS", "52_FX", "32_PATTERN", "51_ALL_DRUMS", "53_DRUMEDIT",
+  "54_DRUM_FX", "55_DRUMEDITMAP", "60_SYN_SEQ_GATE", "60_SYN_SEQ_PAN",
+  "60_SYN_SEQ_VOL", "60_SYN_SEQ_KAOSS", "62_DRUM_SEQ_GATE",
+  "63_DRUM_EDIT_PATCH", "33_DRUM_SELECTER", "01_MAIN_MENU", "15_OPTION",
+  "31_SONG", "90_MAP",
 ];
 const TOP_PAGES = [
   "90_MAP", "AD0_TITLE", "AD1_KORG", "AD2_PROCYONSTUDIO", "AD3_AQI",

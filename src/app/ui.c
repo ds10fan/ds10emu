@@ -29,12 +29,29 @@
  * the first four to the backdrop and whatever else wants them. */
 #define PAL_OFFSET 8
 
+/* Sprite graphics. DS10FONT and CHARACTER_c share OBJ-A; CHARACTER_S is the
+ * top screen's. A widget's tile number is its cell's plus 0x200, which is
+ * CHARACTER_c's base in 64-byte units - the same +0x200 the game's own OAM
+ * builder adds. */
+#define OBJ_FONT 0x0000
+#define OBJ_CHARS 0x8000
+
+/* One page's sprite layer, as the game had it. See tools/pages.py: these are
+ * captured rather than generated, until the widget constructors are read. */
+typedef struct {
+    char name[24];
+    uint8_t engine;
+    uint8_t oam[1024];
+} page_oam;
+
 struct ds10_ui {
     char root[256];
     char err[600];
     ds10_gpu gpu;
     uint8_t *blob[8]; /* whatever is currently held open */
     int nblob;
+    page_oam *pages;
+    int npages;
 };
 
 static uint8_t *slurp(ds10_ui *u, const char *dir, const char *name,
@@ -97,7 +114,19 @@ static int load_page(ds10_ui *u, const char *name, int engine)
     gblob = slurp(u, "mainbg", name, ".NCGR", &glen);
     if (!gblob) return -1;
     sblob = slurp(u, "mainbg", name, ".NSCR", &slen);
-    if (!sblob) return -1;
+    if (!sblob) {
+        /* The main menu's two files disagree on how to spell it: the tiles are
+         * 01_MAIN_MENU and the tilemap is 01_MEIN_MENU. */
+        char alt[64];
+        char *p;
+
+        snprintf(alt, sizeof alt, "%s", name);
+        p = strstr(alt, "MAIN");
+        if (p) memcpy(p, "MEIN", 4);
+        else if ((p = strstr(alt, "MEIN")) != NULL) memcpy(p, "MAIN", 4);
+        if (p) sblob = slurp(u, "mainbg", alt, ".NSCR", &slen);
+        if (!sblob) return -1;
+    }
     if (ds10_ncgr_parse(&g, gblob, glen) < 0) {
         snprintf(u->err, sizeof u->err, "%s.NCGR: bad CHAR block", name);
         return -1;
@@ -108,6 +137,100 @@ static int load_page(ds10_ui *u, const char *name, int engine)
     }
     put(bank, banklen, PAGE_TILES, g.data, g.len);
     put(bank, banklen, PAGE_MAP, s.data, (size_t)s.ncells * 2);
+    return 0;
+}
+
+/* data/pages.bin, if it is there. Without it the pages simply draw with no
+ * sprite layer, which is how this looked before the file existed. */
+static void load_pages(ds10_ui *u)
+{
+    char path[512];
+    FILE *f;
+    uint32_t version, count, i;
+    unsigned char hdr[12];
+
+    snprintf(path, sizeof path, "%s/../pages.bin", u->root);
+    f = fopen(path, "rb");
+    if (!f) return;
+    if (fread(hdr, 1, 12, f) != 12 || memcmp(hdr, "PAGE", 4) != 0) {
+        fclose(f);
+        return;
+    }
+    version = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) |
+              ((uint32_t)hdr[6] << 16) | ((uint32_t)hdr[7] << 24);
+    count = (uint32_t)hdr[8] | ((uint32_t)hdr[9] << 8) |
+            ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
+    if (version != 1 || count == 0 || count > 512) {
+        fclose(f);
+        return;
+    }
+    u->pages = calloc(count, sizeof *u->pages);
+    if (!u->pages) {
+        fclose(f);
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        int len = fgetc(f);
+
+        if (len <= 0 || len >= (int)sizeof u->pages[i].name) break;
+        if (fread(u->pages[i].name, 1, (size_t)len, f) != (size_t)len) break;
+        u->pages[i].name[len] = 0;
+        u->pages[i].engine = (uint8_t)fgetc(f);
+        if (fread(u->pages[i].oam, 1, 1024, f) != 1024) break;
+        u->npages++;
+    }
+    fclose(f);
+}
+
+static void apply_page_oam(ds10_ui *u, const char *name, int engine)
+{
+    int i;
+
+    memset(u->gpu.oam + (engine ? 0x400 : 0), 0, 1024);
+    for (i = 0; i < u->npages; i++)
+        if (strcmp(u->pages[i].name, name) == 0) {
+            memcpy(u->gpu.oam + (engine ? 0x400 : 0), u->pages[i].oam, 1024);
+            return;
+        }
+}
+
+static int load_sprites(ds10_ui *u)
+{
+    static const struct { const char *name; int engine; size_t off; } BANK[] = {
+        {"DS10FONT", 0, OBJ_FONT},
+        {"CHARACTER_c", 0, OBJ_CHARS},
+        {"CHARACTER_S", 1, 0},
+    };
+    uint8_t *blob;
+    size_t len;
+    ds10_ncgr g;
+    ds10_nclr pal;
+    size_t k;
+
+    for (k = 0; k < sizeof BANK / sizeof BANK[0]; k++) {
+        uint8_t *bank = BANK[k].engine ? u->gpu.vram.i : u->gpu.vram.e;
+        size_t banklen = BANK[k].engine ? sizeof u->gpu.vram.i
+                                        : sizeof u->gpu.vram.e;
+
+        blob = slurp(u, "mainobj", BANK[k].name, ".NCGR", &len);
+        if (!blob) return -1;
+        if (ds10_ncgr_parse(&g, blob, len) < 0) {
+            snprintf(u->err, sizeof u->err, "%s.NCGR: bad CHAR block",
+                     BANK[k].name);
+            return -1;
+        }
+        put(bank, banklen, BANK[k].off, g.data, g.len);
+    }
+
+    /* Each engine's sprite palette, at entry 4 of its OBJ half. */
+    blob = slurp(u, "mainobj", "CHARACTER_c", ".NCLR", &len);
+    if (blob && ds10_nclr_parse(&pal, blob, len) == 0)
+        memcpy(u->gpu.palette + 0x200 + PAL_OFFSET, pal.data,
+               (size_t)pal.ncolors * 2);
+    blob = slurp(u, "mainobj", "CHARACTER_S", ".NCLR", &len);
+    if (blob && ds10_nclr_parse(&pal, blob, len) == 0)
+        memcpy(u->gpu.palette + 0x600 + PAL_OFFSET, pal.data,
+               (size_t)pal.ncolors * 2);
     return 0;
 }
 
@@ -141,15 +264,6 @@ static int load_shared(ds10_ui *u)
             PAL_OFFSET, pal.data, (size_t)pal.ncolors * 2);
         put(u->gpu.vram.h, sizeof u->gpu.vram.h, (size_t)e * 0x2000 +
             PAL_OFFSET, pal.data, (size_t)pal.ncolors * 2);
-    }
-
-    /* And the sprite palette, which is the same colours in the OBJ half. */
-    blob = slurp(u, "mainobj", "CHARACTER_c", ".NCLR", &len);
-    if (blob && ds10_nclr_parse(&pal, blob, len) == 0) {
-        memcpy(u->gpu.palette + 0x200 + PAL_OFFSET, pal.data,
-               (size_t)pal.ncolors * 2);
-        memcpy(u->gpu.palette + 0x600 + PAL_OFFSET, pal.data,
-               (size_t)pal.ncolors * 2);
     }
 
     /* S_bg is the panel texture behind every page, on both screens. */
@@ -223,7 +337,8 @@ ds10_ui *ds10_ui_new(const char *root)
     if (!u) return NULL;
     snprintf(u->root, sizeof u->root, "%s", root);
     set_registers(u);
-    if (load_shared(u) < 0) {
+    load_pages(u);
+    if (load_shared(u) < 0 || load_sprites(u) < 0) {
         fprintf(stderr, "ds10_ui_new: %s\n", u->err);
         drop_blobs(u);
         free(u);
@@ -237,6 +352,7 @@ void ds10_ui_free(ds10_ui *u)
 {
     if (!u) return;
     drop_blobs(u);
+    free(u->pages);
     free(u);
 }
 
@@ -245,8 +361,14 @@ int ds10_ui_page(ds10_ui *u, const char *bottom, const char *top)
     int rc = 0;
 
     /* Engine A drives the touch screen when POWCNT's swap bit is clear. */
-    if (bottom) rc |= load_page(u, bottom, 0);
-    if (top) rc |= load_page(u, top, 1);
+    if (bottom) {
+        rc |= load_page(u, bottom, 0);
+        apply_page_oam(u, bottom, 0);
+    }
+    if (top) {
+        rc |= load_page(u, top, 1);
+        apply_page_oam(u, top, 1);
+    }
     drop_blobs(u);
     return rc;
 }

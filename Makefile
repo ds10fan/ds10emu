@@ -6,7 +6,7 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -307,12 +307,13 @@ EMCC ?= emcc
 WEB_SRC = src/web/main.c src/app/ui.c src/gfx/nds2d.c src/gfx/nitro.c
 WEB_FLAGS = -O2 -std=c99 -Wall \
             --preload-file data/nitrofs@/data/nitrofs \
+            --preload-file data/pages.bin@/data/pages.bin \
             -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8"]' \
             -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
 
 web: web/build/ds10.js
 web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \
-                   web/index.html web/app.js
+                   data/pages.bin web/index.html web/app.js
 	@mkdir -p web/build
 	$(EMCC) $(WEB_FLAGS) -o web/build/ds10.js $(WEB_SRC)
 	@cp web/index.html web/app.js web/build/
@@ -331,3 +332,12 @@ out/ds10view: src/app/ds10view.c $(WEB_SRC:src/web/main.c=) src/app/ui.c \
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/gfx/nds2d.c \
 	    src/gfx/nitro.c
+
+# Render each page with the reimplementation and diff it against the captured
+# frame for the same page. Needs `make sweep` first.
+test-page: out/ds10view
+	@$(PY) tools/pagecheck.py out/sweep
+
+# The captured sprite layer per page, until the widget constructors are read.
+data/pages.bin: tools/pages.py
+	@$(PY) tools/pages.py out/sweep $@
