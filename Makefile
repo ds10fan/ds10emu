@@ -6,7 +6,7 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: fonttest test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-obj test-cell test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -382,3 +382,9 @@ test-page: out/ds10view
 # The captured sprite layer per page, until the widget constructors are read.
 data/pages.bin: tools/pages.py
 	@$(PY) tools/pages.py out/sweep $@
+
+# Render a string with one of the ROM's fonts, as an eye check on the reader.
+fonttest: out/fonttest
+out/fonttest: tools/fonttest.c src/gfx/nftr.c src/gfx/nitro.c src/gfx/nftr.h
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tools/fonttest.c src/gfx/nftr.c src/gfx/nitro.c

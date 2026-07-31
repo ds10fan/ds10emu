@@ -1763,6 +1763,24 @@ Which is the argument for reading the table rather than the screen.
 A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
 `ds10synthNN.dat`, which is the 31 bytes that fill the file to its end.
 
+### Text
+
+The interface's captions are not in any tile sheet. The top screen's sprite
+VRAM holds about 125 KB of which only CHARACTER_S's 13 KB is a file; read the
+rest as 4-bit tiles and it is digits and letters. The glyphs are rasterised
+into VRAM at runtime from the eight NFTR fonts in `/data`.
+
+`src/gfx/nftr.c` reads them - FINF, CGLP, CWDH and CMAP - and `make fonttest`
+renders a string as ASCII art to check it. All eight are 1 bit per pixel with
+a ten-pixel line, in a 10 by 10 cell of thirteen bytes, rows packed end to end
+with no padding between them.
+
+What is *not* established is how a rasterised glyph is packed into sprite
+tiles. Matching a rendered glyph against the captured VRAM as 8x8 tiles gets
+nowhere useful, which is unsurprising for a ten-pixel cell: it spans two tiles
+vertically. Finding the game's glyph cache is what settles it, and until then
+the map's captions stay as captured OAM.
+
 ### Status
 
 Reproduced from the asset files alone, and pixel-exact against melonDS for the

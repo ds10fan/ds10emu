@@ -128,6 +128,11 @@ Remaining, roughly in order:
   the shared palette that is already there at entry 4. Loading both is worse
   than loading neither (48967 pixels wrong against 8463), so the game must be
   replacing rather than adding, and exactly how has not been worked out.
+- **Text.** `src/gfx/nftr.c` reads the fonts and renders legibly (`make
+  fonttest`). What is missing is the packing into sprite tiles - a ten-pixel
+  cell spans two 8x8 tiles, and matching a rendered glyph against captured
+  VRAM does not resolve how. The game's glyph cache is the thing to find.
+
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
   small textured-quad rasteriser, not a polygon pipeline.
