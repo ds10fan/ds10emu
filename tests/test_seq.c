@@ -18,7 +18,8 @@
 
 #include "../src/core/seq.h"
 
-#define MAGIC "SEQ2"
+#define MAGIC "SEQ3"
+#define NMACH 6
 #define NF 19
 
 static FILE *g;
@@ -90,7 +91,7 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "tests/vectors/seq.bin";
     char magic[4];
-    uint32_t ntempo, nswing, nf, nnotes, i, k;
+    uint32_t ntempo, nswing, nf, nnotes, nemits, i, k;
     unsigned long bad = 0, total = 0;
     int32_t nruns;
 
@@ -108,9 +109,94 @@ int main(int argc, char **argv)
     nswing = rd32();
     nf = rd32();
     nnotes = rd32();
+    nemits = rd32();
     if (nf != NF) {
         fprintf(stderr, "vector file has %u fields, expected %d\n", nf, NF);
         return 2;
+    }
+
+    /* Event emission: run the gate countdown for six tracks with assorted prior
+     * states and check every event the router posted - which machine or bus it
+     * landed on, the opcode, the channel byte the router filled in, and the
+     * payload - plus the resulting track state. */
+    for (i = 0; i < nemits; i++) {
+        ds10_seq s;
+        ds10_seq_track tr[NMACH];
+        ds10_seq_posted out[NMACH * 8];
+        int32_t st[NMACH][5], nposted, want[NMACH * 8][4], after[NMACH][5];
+        int32_t j, got_n, w, m, seen;
+
+        for (j = 0; j < NMACH; j++)
+            for (k = 0; k < 5; k++)
+                st[j][k] = (int32_t)rd32();
+        nposted = (int32_t)rd32();
+        for (j = 0; j < nposted; j++)
+            for (k = 0; k < 4; k++)
+                want[j][k] = (int32_t)rd32();
+        for (j = 0; j < NMACH; j++)
+            for (k = 0; k < 5; k++)
+                after[j][k] = (int32_t)rd32();
+
+        memset(&s, 0, sizeof s);
+        s.ntracks = NMACH;
+        for (j = 0; j < NMACH; j++) {
+            tr[j].sounding = (uint8_t)st[j][0];
+            tr[j].pending = (int8_t)st[j][1];
+            tr[j].gate_left = (int8_t)st[j][2];
+            tr[j].gate_mode = (int8_t)st[j][3];
+            tr[j].note = (int8_t)st[j][4];
+        }
+        got_n = ds10_seq_emit(&s, tr, out);
+        total++;
+        if (got_n != nposted) {
+            if (bad < 10)
+                fprintf(stderr, "emit case %u: posted %d entries, want %d\n",
+                        i, got_n, nposted);
+            bad++;
+        }
+        /* The capture walks destinations in order and each queue in post order,
+         * so replay that grouping over our output and compare element-wise. */
+        seen = 0;
+        for (m = 0; m < NMACH + 2; m++) {
+            for (j = 0; j < got_n; j++) {
+                if (out[j].dest != m)
+                    continue;
+                w = seen++;
+                total++;
+                if (w >= nposted) {
+                    bad++;
+                    continue;
+                }
+                if (want[w][0] != m || want[w][1] != out[j].opcode ||
+                    want[w][2] != out[j].channel ||
+                    want[w][3] != out[j].payload) {
+                    if (bad < 10)
+                        fprintf(stderr, "emit case %u entry %d: got "
+                                "dest=%d op=%d ch=%d pay=%#x, want "
+                                "dest=%d op=%d ch=%d pay=%#x\n", i, w,
+                                m, out[j].opcode, out[j].channel,
+                                out[j].payload, want[w][0], want[w][1],
+                                want[w][2], want[w][3]);
+                    bad++;
+                }
+            }
+        }
+        for (j = 0; j < NMACH; j++) {
+            int32_t g[5];
+
+            g[0] = tr[j].sounding; g[1] = tr[j].pending; g[2] = tr[j].gate_left;
+            g[3] = tr[j].gate_mode; g[4] = tr[j].note;
+            total++;
+            for (k = 0; k < 5; k++) {
+                if (g[k] != after[j][k]) {
+                    if (bad < 10)
+                        fprintf(stderr, "emit case %u track %d: field %u "
+                                "got %d want %d\n", i, j, k, g[k],
+                                after[j][k]);
+                    bad++;
+                }
+            }
+        }
     }
 
     /* Note and gate handling: the step trigger, then one sub-tick of the gate
@@ -241,7 +327,7 @@ int main(int argc, char **argv)
     }
     fclose(g);
 
-    printf("%s: %lu checks (tempo, swing, notes/gates, %d tick runs), "
+    printf("%s: %lu checks (tempo, swing, notes/gates, emission, %d tick runs), "
            "%lu mismatches\n", bad ? "FAIL" : "PASS", total, nruns, bad);
     return bad ? 1 : 0;
 }

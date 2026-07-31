@@ -80,6 +80,28 @@ void ds10_seq_step_track(ds10_seq_track *t, int note, int gate, int subticks);
 /* Advance the gate countdown one sub-tick; returns what to emit. */
 int ds10_seq_gate(ds10_seq_track *t);
 
+/* An event as the router builds it: opcode, channel, and a payload whose low
+ * byte is the note. Target bits: 0x20 machine array, 0x10 broadcast, 0x40
+ * mixer, 0x80 second bus, low nibble channel. */
+/* One queue entry as it lands on a destination. A single logical event fans out
+ * to several of these: a note-on targets 0xA0, which is the track's machine
+ * plus the second bus, so it posts twice. */
+typedef struct {
+    uint8_t dest;     /* machine index, or DS10_BUS1 / DS10_BUS2 */
+    uint8_t opcode;
+    uint8_t channel;  /* byte 1, written by the router */
+    uint16_t payload; /* note | 0x7F00 */
+} ds10_seq_posted;
+
+/* Destination ids above the machine array. */
+#define DS10_BUS1(nmach) (nmach)
+#define DS10_BUS2(nmach) ((nmach) + 1)
+
+/* Run the gate countdown for every track, emit note events and route them.
+ * Returns the number of queue entries written. Mirrors 0x0206E8C8 feeding
+ * 0x0207025C. */
+int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out);
+
 void ds10_seq_set_tempo(ds10_seq *s, int tempo);
 void ds10_seq_set_swing(ds10_seq *s, int swing);
 void ds10_seq_tick(ds10_seq *s);

@@ -513,6 +513,73 @@ def capture_seq_ticks(tempo, swing, ticks=400):
 
 
 DS10_SEQ_TEMPO_NUM = 60000000
+SEQ_EMIT = 0x0206E8C8         # (seq) -> gate countdown + note event emission
+ROUTER_ENABLE = 0x02160A90    # the router bails out if this word is zero
+NMACH = 6
+
+
+def capture_seq_emit():
+    """Run the real emission through a router into fake machines.
+
+    A "machine" only needs a queue pointer at +0x04 and a count byte at +0x08,
+    which is the whole interface the router uses.
+    """
+    o = Oracle()
+    seq = _new_seq(o)
+    o.w32(ROUTER_ENABLE, 1)
+
+    machines = [o.call(NEW_THUNK, 0x10) for _ in range(NMACH)]
+    queues = [o.call(NEW_THUNK, 8 * 32) for _ in range(NMACH)]
+    for m, q in zip(machines, queues):
+        o.w32(m + 0x04, q)
+        o.uc.mem_write(m + 0x08, b"\0")
+    arr = o.call(NEW_THUNK, 4 * NMACH)
+    for i, m in enumerate(machines):
+        o.w32(arr + 4 * i, m)
+    # Bus 1 (mixer) and bus 2 each get a machine too.
+    bus = [o.call(NEW_THUNK, 0x10) for _ in range(2)]
+    bq = [o.call(NEW_THUNK, 8 * 32) for _ in range(2)]
+    for m, q in zip(bus, bq):
+        o.w32(m + 0x04, q)
+        o.uc.mem_write(m + 0x08, b"\0")
+    router = o.call(NEW_THUNK, 0x20)
+    o.w32(router + 0x00, arr)
+    o.w32(router + 0x04, bus[0])
+    o.w32(router + 0x08, bus[1])
+    o.w32(router + 0x14, NMACH)
+    o.w32(seq + 0x34, router)
+    o.w32(seq + 0x54, NMACH)
+
+    cases = []
+    inits = [[0, 0, 0, 0, 0], [1, 1, 0, 8, 60], [1, 2, 0, 8, 48],
+             [1, 3, 0, 8, 72], [1, 2, 3, 0xFF - 256, 36],
+             [1, 1, 0, 6, 96], [1, 2, 5, 12, 24], [1, 0, 0, 4, 55]]
+    for combo in range(len(inits)):
+        # Give each track a different prior state so one call emits a mix.
+        trk_state = [inits[(combo + i) % len(inits)] for i in range(NMACH)]
+        for i, st in enumerate(trk_state):
+            base = seq + 0x64 + i * 0x24
+            o.uc.mem_write(base, bytes([st[0], st[1] & 0xFF, st[2] & 0xFF, 0,
+                                        st[3] & 0xFF, st[4] & 0xFF, 0, 0]))
+        for m in machines + bus:
+            o.uc.mem_write(m + 0x08, b"\0")
+        o.call(SEQ_EMIT, seq)
+        posted = []
+        for idx, (m, q) in enumerate(zip(machines + bus, queues + bq)):
+            n = o.uc.mem_read(m + 0x08, 1)[0]
+            for e in range(n):
+                raw = bytes(o.uc.mem_read(q + 8 * e, 8))
+                posted.append((idx, raw[0], raw[1],
+                               struct.unpack_from("<H", raw, 4)[0]))
+        after = []
+        for i in range(NMACH):
+            raw = bytes(o.uc.mem_read(seq + 0x64 + i * 0x24, 8))
+            after.append([raw[j] - 256 if raw[j] > 127 else raw[j]
+                          for j in TRK_FIELDS])
+        cases.append((trk_state, posted, after))
+    return cases
+
+
 SEQ_STEP_TRACK = 0x0206E9D8   # (track, note, gate, subticks)
 SEQ_GATE = 0x0206EABC         # (track) -> event code
 TRK_FIELDS = [0, 1, 2, 4, 5]
@@ -567,11 +634,20 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
         for w in (0, 25, 50, 75, 100):
             runs.append((t, w, capture_seq_ticks(t, w)))
     notes = capture_seq_notes()
+    emits = capture_seq_emit()
     nf = len(SEQ_FIELDS)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
-        f.write(b"SEQ2" + struct.pack("<IIII", len(tempo), len(swing), nf,
-                                      len(notes)))
+        f.write(b"SEQ3" + struct.pack("<IIIII", len(tempo), len(swing), nf,
+                                       len(notes), len(emits)))
+        for trk_state, posted, after in emits:
+            for st in trk_state:
+                f.write(struct.pack("<5i", *st))
+            f.write(struct.pack("<i", len(posted)))
+            for idx, op, ch, pay in posted:
+                f.write(struct.pack("<4i", idx, op, ch, pay))
+            for a in after:
+                f.write(struct.pack("<5i", *a))
         for before, note, gate, sub, after_step, after_gate, r in notes:
             f.write(struct.pack("<5i", *before))
             f.write(struct.pack("<3i", note, gate, sub))
@@ -589,7 +665,8 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
                 f.write(struct.pack(f"<{nf}i", *before))
                 f.write(struct.pack(f"<{nf}i", *after))
     print(f"{path}: {len(tempo)} tempos, {len(swing)} swings, "
-          f"{len(runs)} runs x {len(runs[0][2])} ticks, {len(notes)} note cases")
+          f"{len(runs)} runs x {len(runs[0][2])} ticks, {len(notes)} note cases, "
+          f"{len(emits)} emit cases")
 
 
 # --- synth event handling capture -------------------------------------------

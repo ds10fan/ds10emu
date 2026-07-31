@@ -128,3 +128,76 @@ int ds10_seq_gate(ds10_seq_track *t)
     }
     return ev;
 }
+
+/* --- note event emission and routing (0x0206E8C8, 0x0207025C) ------------- */
+
+/* Note-off goes to the track's own machine only; note-on additionally goes to
+ * the second bus, which is how the UI learns what is playing. */
+#define TARGET_OFF 0x20
+#define TARGET_ON 0xA0
+#define PAYLOAD_HI 0x7F00
+
+/* Route one logical event to every destination its target byte selects. */
+static int route(int nmach, int target, int opcode, uint16_t payload,
+                 ds10_seq_posted *out)
+{
+    int channel = target & 0x0F;
+    int n = 0;
+
+    if (target & 0x20) {
+        if (target & 0x10) {
+            /* Broadcast: every machine, each stamped with its own index. */
+            int i;
+
+            for (i = 0; i < nmach; i++) {
+                out[n].dest = (uint8_t)i;
+                out[n].opcode = (uint8_t)opcode;
+                out[n].channel = (uint8_t)i;
+                out[n++].payload = payload;
+            }
+        } else {
+            out[n].dest = (uint8_t)channel;
+            out[n].opcode = (uint8_t)opcode;
+            out[n].channel = (uint8_t)channel;
+            out[n++].payload = payload;
+        }
+    }
+    if (target & 0x40) {
+        out[n].dest = (uint8_t)DS10_BUS1(nmach);
+        out[n].opcode = (uint8_t)opcode;
+        out[n].channel = (uint8_t)channel;
+        out[n++].payload = payload;
+    }
+    if (target & 0x80) {
+        out[n].dest = (uint8_t)DS10_BUS2(nmach);
+        out[n].opcode = (uint8_t)opcode;
+        out[n].channel = (uint8_t)channel;
+        out[n++].payload = payload;
+    }
+    return n;
+}
+
+int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out)
+{
+    int tr, n = 0;
+
+    for (tr = 0; tr < s->ntracks; tr++) {
+        int ev = ds10_seq_gate(&tracks[tr]);
+        uint16_t payload = (uint16_t)((tracks[tr].note & 0xFF) | PAYLOAD_HI);
+
+        if (ev == DS10_NOTE_OFF) {
+            n += route((int)s->ntracks, TARGET_OFF | tr, DS10_NOTE_OFF,
+                       payload, out + n);
+        } else if (ev == DS10_NOTE_ON) {
+            n += route((int)s->ntracks, TARGET_ON | tr, DS10_NOTE_ON,
+                       payload, out + n);
+        } else if (ev == DS10_NOTE_RETRIG) {
+            n += route((int)s->ntracks, TARGET_ON | tr, DS10_NOTE_OFF,
+                       payload, out + n);
+            n += route((int)s->ntracks, TARGET_ON | tr, DS10_NOTE_ON,
+                       payload, out + n);
+        }
+        tracks[tr].pending = 0;
+    }
+    return n;
+}
