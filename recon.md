@@ -1813,6 +1813,31 @@ Which is the same relation this reimplementation implements directly, with the
 name lookup collapsed out: a hit box gives a knob id, the id goes to the
 engine, and the widget redraws through the sweep or the span.
 
+### Every screen's update, by address
+
+Each screen is a constructor plus an update, and the update is where its
+behaviour lives. All twelve are located:
+
+| screen | constructor | update | bytes | its own passes |
+|---|---|---|---|---|
+| 30_MIXER | `0x02065b04` | `0x02066e78` | 732 | `0x0206724c` `0x02067160` `0x0206617c` |
+| 52_FX | `0x0205e1e4` | `0x0205f2cc` | 2220 | `0x0205eb84` |
+| 61_SYN_EDIT | `0x02047384` | `0x02047de0` | 2220 | inline |
+| 81_KEY | `0x0204bff8` | `0x0204c9d0` | 1984 | inline |
+| 71_KAOSS | `0x02049150` | `0x0204a1d4` | 2168 | inline |
+| 70_PATCH | `0x0204e140` | `0x0204e9a4` | 2204 | inline |
+| 60_SYN_SEQ | `0x02050108` | `0x02051074` | 480 | `0x02050fd4` `0x02051254` `0x020513a4` `0x020514ec` `0x02051630` `0x02051774` |
+| 62_DRUM_SEQ | `0x020594d4` | `0x0205a384` | 872 | `0x02058e94` `0x020590f0` `0x0205a704` `0x0205a8a0` `0x0205aa34` `0x0205abc4` |
+| 90_MAP | `0x02062914` | `0x02063fd0` | 1308 | inline |
+| 33_DRUM_SELECTER | `0x020572b0` | `0x02057f74` | 388 | `0x02057a74` `0x0205830c` |
+| settings | `0x02039e68` | `0x0203ac3c` | 280 | `0x0203ac30` `0x0203ad54` `0x0203ad5c` `0x0203ad68` `0x0203ad70` |
+
+`0x0202e01c` is a shared widget helper, not a screen.
+
+A screen either inlines its redraw - the five long updates do - or delegates to
+a few named passes, which the short ones do. Either way the update is the whole
+of it: about 14.5 KB of code across the eleven.
+
 ### The mixer's redraw passes
 
 The two passes state 2 ends with, on the mixer:

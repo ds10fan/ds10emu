@@ -135,8 +135,11 @@ Remaining, roughly in order:
 
   The mixer's two are read (`recon.md` §16): one drives the level meters from
   the sequencer's step velocities, the other handles the mute and solo rows.
-  Its fader handles move with their volume. The other screens' passes are the
-  same shape and are not read.
+  Its fader handles move with their volume.
+
+  The other ten are located and sized in the same table - about 14.5 KB across
+  eleven functions. Five inline their redraw and the rest delegate to named
+  passes. That is the whole of what is left unread.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered
