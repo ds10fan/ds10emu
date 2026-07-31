@@ -129,8 +129,9 @@ function onMove(ev) {
     const v = Math.max(0, Math.min(127,
       Math.round(drag.start + (drag.y - y) * 128 / 96)));
     api.mixerSet(drag.id, v);
-    status.textContent = (drag.id < 17 ? "PAN " : "VOLUME ")
-      + ((drag.id < 17 ? drag.id - 9 : drag.id - 17) + 1) + "   " + v;
+    status.textContent = (drag.id < 9 ? "FX parameter " + drag.id + " "
+      : drag.id < 17 ? "PAN " + (drag.id - 8)
+      : "VOLUME " + (drag.id - 16)) + "   " + v;
     return;
   }
   const span = api.knobRange(drag.id);
@@ -152,6 +153,19 @@ function onDown(which, ev) {
     if (next) {
       document.getElementById("pick-bottom").value = next;
       show();
+    }
+    return;
+  }
+  if (page === "52_FX") {
+    startAudio();
+    const id = api.fxHit(x, y, 0);   /* delay; the type selector is unwired */
+    if (id >= 0) {
+      const r = ev.target.getBoundingClientRect();
+      drag = {id: id, mixer: true, start: 64,
+              y: (ev.clientY - r.top) * 192 / r.height};
+      api.mixerSet(id, 64);
+      status.textContent = "FX parameter " + id + "   64";
+      ev.target.setPointerCapture(ev.pointerId);
     }
     return;
   }
@@ -229,6 +243,8 @@ Module.onRuntimeInitialized = () => {
     mixerHit: Module.cwrap("ds10_web_mixer_hit", "number",
                            ["number", "number"]),
     mixerSet: Module.cwrap("ds10_web_mixer_set", null, ["number", "number"]),
+    fxHit: Module.cwrap("ds10_web_fx_hit", "number",
+                        ["number", "number", "number"]),
   };
   if (api.init() < 0) {
     status.textContent = "error: " + api.error();

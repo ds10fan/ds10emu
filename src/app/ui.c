@@ -856,6 +856,47 @@ static const struct { int x, y, w, h, id; } KEY_BUTTON[] = {
     {0x42, 4, 0x46, 0x0C, 2},
 };
 
+/* 52_FX, from 0x0205e1e4 and its table at 0x02086874.
+ *
+ * Thirteen rotary knobs share four positions along y = 161. Which three of
+ * them are showing depends on the effect type - the table holds all of them at
+ * the same coordinates, three per type - and DRY/WET is always the fourth.
+ * Below them is one slider at (8, 146).
+ *
+ * The parameter ids are mixer knob ids: the mixer forwards 1..8 straight to
+ * the effect, which is what the audio side found independently.
+ *
+ *   delay    DELAY TIME 2   L/R RATIO 3   FEEDBACK 7
+ *   flanger  LFO FREQ   4   DEPTH     5   (unused)
+ *   chorus   LFO FREQ   4   DEPTH     5   FEEDBACK 7
+ *   always   DRY/WET    8               slider 6
+ */
+#define FX_KNOB_Y 161
+#define FX_KNOB_R 20
+
+static const int FX_PARAM[3][3] = {
+    {2, 3, 7},   /* delay */
+    {4, 5, -1},  /* flanger */
+    {4, 5, 7},   /* chorus */
+};
+static const int FX_KNOB_X[4] = {64, 118, 172, 226};
+
+int ds10_ui_fx_hit(int x, int y, int type)
+{
+    int i;
+
+    if (type < 0 || type > 2) type = 0;
+    if (x >= 8 && x < 8 + 0x13 && y >= 146 && y < 146 + 0x1A) return 6;
+    if (y < FX_KNOB_Y - FX_KNOB_R || y >= FX_KNOB_Y + FX_KNOB_R) return -1;
+    for (i = 0; i < 4; i++) {
+        int cx = FX_KNOB_X[i];
+
+        if (x < cx - FX_KNOB_R || x >= cx + FX_KNOB_R) continue;
+        return i == 3 ? 8 : FX_PARAM[type][i];
+    }
+    return -1;
+}
+
 int ds10_ui_key_button(int x, int y)
 {
     size_t i;

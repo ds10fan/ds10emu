@@ -1712,6 +1712,19 @@ Read so far:
 | `0x0204bff8` | 81_KEY | OCT- at (4,2), OCT+ at (0x23,2), both 0x1c x 0xe; synth selector at (0x42,4), 0x46 x 0xc |
 | `0x02049150` | 71_KAOSS | two knob assignments, three buttons at x = 4 + 21*i, y = 2 |
 | `0x02050108` | 60_SYN_SEQ_* | six page variants; two 16-step runs at x = 0x16 and 0x4a, y = 3 |
+| `0x0205e1e4` | 52_FX | thirteen knobs sharing four positions at y = 161, x = 64/118/172/226; slider at (8,146); nine route buttons 66 x 14 |
+
+52_FX's table at `0x02086874` carries each knob's caption inline and its
+parameter id, and those ids are mixer knob ids - the mixer forwards 1..8
+straight to the effect, which is what section 15 found from the audio side.
+Three knobs show at a time, chosen by the effect type:
+
+```
+delay    DELAY TIME 2   L/R RATIO 3   FEEDBACK 7
+flanger  LFO FREQ   4   DEPTH     5   -
+chorus   LFO FREQ   4   DEPTH     5   FEEDBACK 7
+always   DRY/WET    8                 slider 6
+```
 
 ### Status
 

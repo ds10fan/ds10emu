@@ -173,6 +173,13 @@ int ds10_web_page(const char *bottom, const char *top)
     return 0;
 }
 
+/* Which mixer knob an FX-page touch drives, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_fx_hit(int x, int y, int type)
+{
+    return ds10_ui_fx_hit(x, y, type);
+}
+
 /* Which of the keyboard page's top-bar buttons a touch is on, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_key_button(int x, int y) { return ds10_ui_key_button(x, y); }

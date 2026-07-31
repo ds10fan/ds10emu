@@ -41,6 +41,11 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Hit-test the FX page. Returns the mixer knob id the control drives, or -1.
+ * `type` picks which set of three knobs is showing: 0 delay, 1 flanger,
+ * 2 chorus. Decompiled from 0x0205e1e4. */
+int ds10_ui_fx_hit(int x, int y, int type);
+
 /* Hit-test the keyboard page's top bar. Returns 0 for OCT-, 1 for OCT+,
  * 2 for the synth selector, or -1. Decompiled from 0x0204bff8. */
 int ds10_ui_key_button(int x, int y);
