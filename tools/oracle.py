@@ -12,6 +12,7 @@ to compare a reimplementation against.
     python3 tools/oracle.py wav <out.wav> [patch] [note] [frames]
     python3 tools/oracle.py waves [note]           # characterise vco1 = 0..3
     python3 tools/oracle.py obj-vectors            # sprite widget -> OAM
+    python3 tools/oracle.py cell-vectors           # NCER cell -> OAM
 
 Verified: output is deterministic across runs, and pitch tracks
 440*2^((note-69)/12) at 32768 Hz to within measurement resolution.
@@ -1417,6 +1418,71 @@ def cmd_obj_vectors(path="tests/vectors/obj.bin"):
     print(f"{path}: {len(OBJ_CASES)} widgets")
 
 
+# --- the cell expander -------------------------------------------------------
+#
+# 0x02069564 turns an NCER cell into OAM entries, optionally through a 2x2
+# matrix and a translation. It touches no globals beyond the ROM's own sprite
+# dimension tables, so it runs with nothing set up.
+CELL_EXPAND = 0x02069564
+CELL_OBJ = 0x0F00F200      # the cell's OAM triplets
+CELL_REC = 0x0F00F300      # {u16 nobj, u16 pad, u32 objs}
+CELL_MTX = 0x0F00F320      # {a, b, c, d} in 20.12
+CELL_POS = 0x0F00F340      # {x, y} in 20.12
+CELL_OUT = 0x0F00F400
+
+ONE = 0x1000
+
+# Each case: the cell's triplets, then a matrix, a translation, the affine
+# slot and whether to ask for a double-size box.
+CELL_CASES = [
+    ([(0x0000, 0x0000, 0x0000)], None, None, 0, 0),
+    ([(0x0020, 0x0030, 0x1234)], None, (10 * ONE, 20 * ONE), 0, 0),
+    ([(0x4020, 0x8030, 0x0201)], (ONE, 0, 0, ONE), None, 3, 0),
+    ([(0x4020, 0x8030, 0x0201)], (ONE, 0, 0, ONE), None, 3, 1),
+    ([(0x8017, 0x4216, 0x3A1A)], (0, ONE, -ONE, 0), (40 * ONE, 60 * ONE),
+     7, 1),
+    ([(0xC0F0, 0xC1F0, 0x0FFF)], (ONE // 2, 0, 0, ONE // 2),
+     (-20 * ONE, 5 * ONE), 1, 0),
+    ([(0x0000, 0x0000, 0x0000), (0x0010, 0x0020, 0x0040),
+      (0x8020, 0x4040, 0x0080)], (ONE, ONE // 4, -ONE // 4, ONE),
+     (128 * ONE, 96 * ONE), 12, 1),
+    ([(0x0300, 0x0100, 0x0000)], (ONE, 0, 0, ONE), (8 * ONE, 8 * ONE), 2, 0),
+]
+
+
+def cmd_cell_vectors(path="tests/vectors/cell.bin"):
+    """Every case through the original's own expander; record its OAM."""
+    uc, _loaded, _io = emu.build("arm9")
+    uc.mem_map(0x0E000000, 0x00100000)
+    with open(path, "wb") as f:
+        f.write(b"CEL1")
+        f.write(struct.pack("<I", len(CELL_CASES)))
+        for objs, mtx, pos, affine, dbl in CELL_CASES:
+            raw = b"".join(struct.pack("<3H", *o) for o in objs)
+            uc.mem_write(CELL_OBJ, raw)
+            uc.mem_write(CELL_REC,
+                         struct.pack("<HHI", len(objs), 0, CELL_OBJ))
+            if mtx:
+                uc.mem_write(CELL_MTX, struct.pack("<4i", *mtx))
+            if pos:
+                uc.mem_write(CELL_POS, struct.pack("<2i", *pos))
+            uc.mem_write(CELL_OUT, b"\0" * 256)
+            n = emu.call(uc, CELL_EXPAND,
+                         (CELL_OUT, 16, CELL_REC, CELL_MTX if mtx else 0,
+                          CELL_POS if pos else 0, affine, dbl))
+            out = bytes(uc.mem_read(CELL_OUT, max(1, n) * 8))
+            f.write(struct.pack("<H", len(objs)))
+            f.write(raw)
+            f.write(struct.pack("<i", 1 if mtx else 0))
+            f.write(struct.pack("<4i", *(mtx or (0, 0, 0, 0))))
+            f.write(struct.pack("<i", 1 if pos else 0))
+            f.write(struct.pack("<2i", *(pos or (0, 0))))
+            f.write(struct.pack("<HH", affine, dbl))
+            f.write(struct.pack("<I", n))
+            f.write(out)
+    print(f"{path}: {len(CELL_CASES)} cells")
+
+
 def cmd_tables(path="out/tables.bin"):
     b = open("out/arm9.bin", "rb").read()
     base = 0x02004000
@@ -2560,6 +2626,7 @@ def main():
             "replay-vectors": cmd_replay_vectors,
             "tables": cmd_tables,
             "obj-vectors": cmd_obj_vectors,
+            "cell-vectors": cmd_cell_vectors,
             "songrender-vectors": cmd_songrender_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)

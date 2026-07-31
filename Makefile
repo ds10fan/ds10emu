@@ -6,10 +6,10 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-obj test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-obj test-cell test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -354,6 +354,18 @@ out/test_obj: tests/test_obj.c src/app/obj.c src/app/obj.h
 
 tests/vectors/obj.bin: extract tools/oracle.py
 	@$(PY) tools/oracle.py obj-vectors
+
+# The cell expander: the function the whole interface draws through, against
+# the original under Unicorn.
+test-cell: out/test_cell tests/vectors/cell.bin
+	@./out/test_cell
+
+out/test_cell: tests/test_cell.c src/app/cell.c src/app/cell.h
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_cell.c src/app/cell.c
+
+tests/vectors/cell.bin: extract tools/oracle.py
+	@$(PY) tools/oracle.py cell-vectors
 
 test-page: out/ds10view
 	@$(PY) tools/pagecheck.py out/sweep
