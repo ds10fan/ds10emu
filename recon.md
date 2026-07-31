@@ -1711,11 +1711,17 @@ Read so far:
 | `0x02065b04` | 30_MIXER | tables above |
 | `0x0204bff8` | 81_KEY | OCT- at (4,2), OCT+ at (0x23,2), both 0x1c x 0xe; synth selector at (0x42,4), 0x46 x 0xc |
 | `0x020594d4` | 62_DRUM_SEQ_GATE | four drum rows at y = 0x21 + 13*i, name at x = 3 and solo at x = 0x16, both 19 x 13; a 64-entry grid state, four drums by sixteen steps |
+| `0x0202e01c` | a shared widget helper, not a screen |
+| `0x02039e68` | a settings page: wide slider at (5,22) 246 x 12, three vertical sliders at (5,54), six buttons at x = 3 + 43*i, y = 164, 36 x 16 |
+| `0x020572b0` | 33_DRUM_SELECTER | four 117 x 76 panels at (7,25), (132,25), (7,110), (132,110), labelled DRUM1..DRUM4 (0x02086300) |
 | `0x02047384` | 61_SYN_EDIT | sixteen knobs (0x020851d4) and three switches (0x02085180), each knob a 40 x 40 box |
 | `0x0204e140` | 70_PATCH | six knobs at y = 93, x = 23 + 43*i (0x02085918); MG BPM slider at (11,38) |
 | `0x02049150` | 71_KAOSS | two knob assignments, three buttons at x = 4 + 21*i, y = 2 |
 | `0x02050108` | 60_SYN_SEQ_* | six page variants; two 16-step runs at x = 0x16 and 0x4a, y = 3 |
 | `0x020594d4` | 62_DRUM_SEQ_GATE | four drum rows at y = 0x21 + 13*i, name at x = 3 and solo at x = 0x16, both 19 x 13; a 64-entry grid state, four drums by sixteen steps |
+| `0x0202e01c` | a shared widget helper, not a screen |
+| `0x02039e68` | a settings page: wide slider at (5,22) 246 x 12, three vertical sliders at (5,54), six buttons at x = 3 + 43*i, y = 164, 36 x 16 |
+| `0x020572b0` | 33_DRUM_SELECTER | four 117 x 76 panels at (7,25), (132,25), (7,110), (132,110), labelled DRUM1..DRUM4 (0x02086300) |
 | `0x02047384` | 61_SYN_EDIT | sixteen knobs (0x020851d4) and three switches (0x02085180), each knob a 40 x 40 box |
 | `0x0204e140` | 70_PATCH | six knobs at y = 93, x = 23 + 43*i (0x02085918); MG BPM slider at (11,38) |
 | `0x02049150` | 71_KAOSS | pad at (0,20), 256 x 172; three buttons at x = 4 + 21*i, y = 2 |

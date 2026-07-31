@@ -41,6 +41,10 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Hit-test the drum selector's four panels. Returns 0..3, or -1.
+ * Decompiled from 0x020572b0. */
+int ds10_ui_drum_hit(int x, int y);
+
 /* Hit-test the modulation patch bay on 70_PATCH. Returns a synth knob id, or
  * -1. */
 int ds10_ui_patch_hit(int x, int y);

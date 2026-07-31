@@ -533,6 +533,18 @@ int ds10_web_page(const char *bottom, const char *top)
     return 0;
 }
 
+/* Which drum panel a touch is on, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_drum_hit(int x, int y) { return ds10_ui_drum_hit(x, y); }
+
+/* Trigger a drum, so the selector's panels make a sound. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_drum_hit_play(int n)
+{
+    if (!song_loaded || n < 0 || n >= NDRUM) return;
+    ds10_drum_note_on(&drum[n], DRUM_ROOT, tables.drum_pitch);
+}
+
 /* Which synth knob a touch on the patch bay drives, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_patch_hit(int x, int y) { return ds10_ui_patch_hit(x, y); }

@@ -175,6 +175,16 @@ function onDown(which, ev) {
     }
     return;
   }
+  if (page === "33_DRUM_SELECTER") {
+    startAudio();
+    const n = api.drumHit(x, y);
+    if (n >= 0) {
+      api.drumPlay(n);
+      status.textContent = "DRUM" + (n + 1)
+        + (api.songBars() ? "" : "  (load a song for drum patches)");
+    }
+    return;
+  }
   if (page === "70_PATCH") {
     startAudio();
     const id = api.patchHit(x, y);
@@ -308,6 +318,9 @@ Module.onRuntimeInitialized = () => {
                            ["number", "number"]),
     patchHit: Module.cwrap("ds10_web_patch_hit", "number",
                            ["number", "number"]),
+    drumHit: Module.cwrap("ds10_web_drum_hit", "number",
+                          ["number", "number"]),
+    drumPlay: Module.cwrap("ds10_web_drum_hit_play", null, ["number"]),
     factoryPatch: Module.cwrap("ds10_web_factory_patch", "number",
                                ["number"]),
     seqStep: Module.cwrap("ds10_web_seq_step", null,

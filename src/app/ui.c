@@ -929,6 +929,24 @@ static const struct { int x, y, id; } PATCH_KNOB[] = {
 };
 #define PATCH_KNOB_R 20
 
+/* 33_DRUM_SELECTER, from 0x020572b0 and its table at 0x02086300: four panels
+ * of 117 by 76 in a two-by-two grid, labelled DRUM1 to DRUM4. */
+static const struct { int x, y, w, h; } DRUM_PANEL[4] = {
+    {  7,  25, 117, 76}, {132,  25, 117, 76},
+    {  7, 110, 117, 76}, {132, 110, 117, 76},
+};
+
+int ds10_ui_drum_hit(int x, int y)
+{
+    int i;
+
+    for (i = 0; i < 4; i++)
+        if (x >= DRUM_PANEL[i].x && x < DRUM_PANEL[i].x + DRUM_PANEL[i].w &&
+            y >= DRUM_PANEL[i].y && y < DRUM_PANEL[i].y + DRUM_PANEL[i].h)
+            return i;
+    return -1;
+}
+
 int ds10_ui_patch_hit(int x, int y)
 {
     size_t i;
