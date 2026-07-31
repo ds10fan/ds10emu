@@ -9,11 +9,12 @@ enum {
     T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,
     T_MOD_A, T_MOD_B, T_COEF,
     T_FX_PHASE, T_FX_FLANGER_FB, T_FX_DEPTH, T_FX_DELAY_DIV, T_FX_LFO_RATE,
+    T_DRUM_PITCH,
     T_COUNT
 };
 
 static const int WIDE[T_COUNT] = {
-    4, 4, 4, 4, 4, 4, 4, 2, 2, 4, 4, 2, 2, 4, 4
+    4, 4, 4, 4, 4, 4, 4, 2, 2, 4, 4, 2, 2, 4, 4, 4
 };
 
 int ds10_tables_load(ds10_table_set *s, const char *path)
@@ -71,6 +72,24 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
         off += (size_t)cnt * WIDE[i];
     }
 
+    /* The voice-init block follows the tables. */
+    {
+        uint32_t cnt;
+
+        if (off + 4 > (size_t)size) {
+            free(blob);
+            return -1;
+        }
+        memcpy(&cnt, blob + off, 4);
+        off += 4;
+        if (cnt != DS10_VOICE_STATE_FIELDS ||
+            off + (size_t)cnt * 4 > (size_t)size) {
+            free(blob);
+            return -1;
+        }
+        s->voice_init = (const int32_t *)(blob + off);
+    }
+
     s->blob = blob;
     s->t.env_rate = ptr[T_ENV_RATE];
     s->t.lfo_bpm = ptr[T_LFO_BPM];
@@ -87,6 +106,7 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
     s->fx.depth = ptr[T_FX_DEPTH];
     s->fx.delay_div = ptr[T_FX_DELAY_DIV];
     s->fx.lfo_rate = ptr[T_FX_LFO_RATE];
+    s->drum_pitch = ptr[T_DRUM_PITCH];
     return 0;
 }
 

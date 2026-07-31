@@ -12,10 +12,18 @@
  *
  * What does NOT, and is therefore approximated here:
  *
- *   - Drums. Four of the six tracks are drums, and a drum voice plays back a
- *     buffer the drum synth renders; that synth is not decompiled, so the drum
- *     channels are silent. The demo songs lean on them, so this sounds thinner
- *     than the real thing.
+ *   - The one-second drum buffers. A drum patch is not played live: the engine
+ *     renders it once into a 0x8000-sample buffer (0x0206CE04 does this for all
+ *     four drums, then hands each buffer to its voice with root note 60) and the
+ *     voice resamples that. The render itself goes through an offline recorder
+ *     driven by the sequencer, which is not decompiled, so what is reproduced
+ *     here is the inference that the buffer is one second of the synth playing
+ *     the drum patch from a fresh voice at note 60. The buffer CONTENT is checked
+ *     against the original by make test-songrender; the driving conditions are
+ *     not.
+ *   - The nine extra bytes per drum at payload +0x2BA8. 0x0206B9DC pushes them
+ *     into a second parameter space whose meaning is not established, so they are
+ *     ignored.
  *   - The mixer and effect settings. The mixer takes 25 knobs and the pattern
  *     record has 98 bytes not yet named; until the mapping is known the mixer is
  *     set flat and the effect is bypassed.
@@ -34,12 +42,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../core/drum.h"
 #include "../core/event.h"
 #include "../core/mixer.h"
 #include "../core/seq.h"
 #include "../core/song.h"
 #include "../core/tables.h"
 #include "../core/voice.h"
+#include "../core/voice_state.h"
 
 #define RATE DS10_RATE
 #define FRAME DS10_FRAME
@@ -49,6 +59,9 @@
 #define TICK_DEN 4096           /* per sequencer tick */
 #define MAXEV 256
 #define MIX_ONE 0x7FFF
+#define NDRUM DS10_SONG_DRUMS
+#define DRUM_LEN 0x8000        /* one second at 32768 Hz */
+#define DRUM_ROOT 60
 
 typedef struct {
     ds10_song_player base;
@@ -147,6 +160,8 @@ int main(int argc, char **argv)
     static ds10_song song;
     static ds10_rt_pattern rt[DS10_SONG_PATTERNS];
     static ds10_voice voice[NSYN];
+    static ds10_drum drum[NDRUM];
+    static int16_t drumbuf[NDRUM][DRUM_LEN];
     static ds10_mixer mix;
     static int16_t buf[NTRK][FRAME], silence[FRAME];
     static int16_t dl[DS10_FX_BUFLEN], dr[DS10_FX_BUFLEN];
@@ -212,6 +227,24 @@ int main(int argc, char **argv)
     for (i = 0; i < DS10_SONG_PATTERNS; i++)
         build_pattern(&rt[i], &song.pattern[i]);
 
+    /* Render each drum patch into its one-second buffer, then hand it to the
+     * voice the way 0x02072268 does. */
+    for (i = 0; i < NDRUM; i++) {
+        ds10_voice v;
+        int j;
+
+        memset(&v, 0, sizeof v);
+        ds10_voice_state_load(&v, ts.voice_init);
+        ds10_patch_load(&v, ds10_song_drum_knobs(&song, i), &ts.t);
+        ds10_voice_note_on(&v, DRUM_ROOT, &ts.t);
+        for (j = 0; j < DRUM_LEN; j += FRAME)
+            ds10_voice_render(&v, &pt, &ft, drumbuf[i] + j, FRAME);
+        memset(&drum[i], 0, sizeof drum[i]);
+        drum[i].env.stage = DS10_DRUM_RELEASE;
+        drum[i].env.retrig = 1;
+        ds10_drum_set_sample(&drum[i], drumbuf[i], DRUM_LEN, DRUM_ROOT);
+    }
+
     if (bars <= 0)
         bars = only >= 0 ? 8 : ds10_song_bars(&song);
     if (bars <= 0) {
@@ -240,6 +273,9 @@ int main(int argc, char **argv)
     seq.starting = 1;
     for (i = 0; i < NTRK; i++)
         trk[i].live_note = -1;
+
+    for (i = 0; i < NSYN; i++)
+        ds10_voice_state_load(&voice[i], ts.voice_init);
 
     memset(&sp, 0, sizeof sp);
     sp.base.handle = player_handle;
@@ -275,10 +311,8 @@ int main(int argc, char **argv)
     ctx.max = MAXEV;
 
     memset(silence, 0, sizeof silence);
-    for (i = 0; i < NSYN; i++)
-        chp[i] = buf[i];
-    for (i = NSYN; i < DS10_MIX_CHANNELS; i++)
-        chp[i] = silence;
+    for (i = 0; i < DS10_MIX_CHANNELS; i++)
+        chp[i] = i < NTRK ? buf[i] : silence;
 
     f = fopen(out, "wb");
     if (!f) {
@@ -311,6 +345,13 @@ int main(int argc, char **argv)
                 if (dest < NSYN &&
                     (op == DS10_EV_NOTE_ON || op == DS10_EV_NOTE_OFF)) {
                     ds10_voice_event(&voice[dest], op, note, 0, &ts.t);
+                } else if (dest >= NSYN && dest < NTRK &&
+                           (op == DS10_EV_NOTE_ON || op == DS10_EV_NOTE_OFF)) {
+                    if (op == DS10_EV_NOTE_ON)
+                        ds10_drum_note_on(&drum[dest - NSYN], note,
+                                          ts.drum_pitch);
+                    else
+                        ds10_drum_note_off(&drum[dest - NSYN]);
                 } else if (dest == DS10_BUS1(NTRK) && op == 6) {
                     /* Channel volume (knob 7) and pan (knob 10). */
                     int ch = ev[k].channel, knob = ev[k].payload & 0xFF;
@@ -333,6 +374,10 @@ int main(int argc, char **argv)
 
         for (i = 0; i < NSYN; i++)
             ds10_voice_render(&voice[i], &pt, &ft, buf[i], FRAME);
+        for (i = 0; i < NDRUM; i++) {
+            memset(buf[NSYN + i], 0, sizeof buf[NSYN + i]);
+            ds10_drum_render(&drum[i], buf[NSYN + i], FRAME);
+        }
         ds10_mixer_render(&mix, chp, &ts.fx, l, r, FRAME);
         for (k = 0; k < FRAME; k++) {
             put16(f, (unsigned)(uint16_t)l[k]);

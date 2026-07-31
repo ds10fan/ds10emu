@@ -102,4 +102,16 @@ size_t ds10_song_write(const ds10_song *s, uint8_t *out);
 /* Bars in the arrangement, i.e. chain entries before the first 0xFFFF. */
 int ds10_song_bars(const ds10_song *s);
 
+/* The four drum patches, and a second nine-entry parameter set per drum whose
+ * meaning is not established. 0x0206B9DC reads them at song record +0x42AF4 and
+ * +0x42B70, which are these payload offsets, and pushes the 31 into a machine one
+ * knob at a time - the same 31-knob space as a synth patch. */
+#define DS10_SONG_DRUMS 4
+#define DS10_SONG_DRUM_OFF (0x2B2C - DS10_SONG_TAIL_OFF)
+#define DS10_SONG_DRUM_EXTRA_OFF (0x2BA8 - DS10_SONG_TAIL_OFF)
+#define DS10_SONG_DRUM_EXTRA 9
+
+const int8_t *ds10_song_drum_knobs(const ds10_song *s, int drum);
+const int8_t *ds10_song_drum_extra(const ds10_song *s, int drum);
+
 #endif /* DS10_SONG_H */

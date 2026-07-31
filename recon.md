@@ -1188,17 +1188,69 @@ musically correct tempo needs exactly **200 calls per second** whatever the BPM.
 64-sample frame against 4096 per tick. As a check, `ds10demo01` predicts 16560
 sub-ticks over its 90 bars, or 164.29 s; the renderer produces 164.30 s.
 
-What the render does NOT get from the song, and so approximates:
+### Drums
 
-- **Drums.** Four of the six tracks are drums, and a drum voice plays back a
-  buffer the drum synth renders. That synth is not decompiled, so those channels
-  are silent and the result is thinner than the real thing.
+There is no separate drum synth. `0x0206CE04` renders each of the four drum
+patches once into a 0x8000-sample buffer - one second at 32768 Hz - and hands it
+to the drum voice with root note 60 (`0x02072268`), which then resamples it. One
+engine, two playback paths.
+
+The drum patches are the last part of the song file's first tail block, and
+`0x0206B9DC` pins them exactly: it reads song record `+0x42AF4 + drum*31` and
+pushes those 31 bytes into a machine one knob at a time - the same 31-knob space
+as a synth patch - then reads nine more bytes at `+0x42B70 + drum*9` into a second
+parameter space. Those are payload `+0x2B2C` and `+0x2BA8`, so the 160-byte block
+is fully accounted for: `4*31 + 4*9 = 160`.
+
+The demo patches are unmistakably percussive: attack 0, decay 14..56, sustain
+mostly 0, level 127, and the snare-ish ones select the noise waveform.
+
+Playback trigger, from `0x020724E4`: `speed = drumpitch[clamp(note - root + 64,
+0, 127)]` over the table at `0x0207ED38`. Note-on also rewinds the sample to 0,
+and restarts the envelope only if a note-off has been seen - the same legato trick
+the synth envelope uses.
+
+**Verified bit-exact including drums**: `make test-songrender` renders each song's
+four drum patches through a real synth voice, hands each buffer to a real drum
+voice, and compares the buffers themselves as well as all six channels every
+frame. **7597568 samples over 19 cases, 0 mismatches.**
+
+Getting there turned up a real bug in `patch.c`. Mod-source **6 is the other
+oscillator** - audio-rate modulation the VCO, filter and amp do themselves rather
+than through the modulation matrix - so knobs 26..30 have a side effect on top of
+the routing:
+
+```
+dest 0..2 (pitch)  src 6 -> vco.xmod = dest + 1
+                   src 0 -> vco.xmod = 0, but ONLY if it already equals dest + 1
+dest 3 (filter)    vcf.osc_depth = (src == 6)
+dest 4 (amp)       amp.dist      = (src == 6)
+```
+
+The pitch case is the awkward one: one field says which destination is
+cross-modulated, so selecting an LFO on a cross-modulated destination leaves cross
+modulation running, and clearing a *different* destination does nothing. Getting
+that wrong silenced cross-modulation in four of the ROM's drum patches.
+
+The LFO's BPM-sync flag and tempo copy also had to join the captured voice state -
+the constructor leaves sync on at 120 BPM, and without them knob 24 picks the
+free-running rate table instead of the synced one.
+
+What the offline render does NOT reproduce: how the original drives it. That goes
+through a recorder the sequencer plays into (`0x0206EEA0`), which is not
+decompiled. Both sides here render one second from a freshly constructed voice at
+note 60, so the buffer *content* is checked against the original but the driving
+conditions are inferred.
+
+Still approximated:
+
 - **Mixer and effect settings.** The mixer reports 25 knobs and a pattern has 98
   bytes still unnamed at `+0x242`; until the knob map is established the mixer is
   set flat and the effect bypassed.
 - **Per-step velocity and pan** do come from the song, but the original posts them
   as mixer knobs 7 and 10 and that map is not established either, so they are
   applied as a plain channel gain and position.
+- **The nine extra bytes per drum** at payload `+0x2BA8`.
 
 Still decompiled but not verified, and all of it on the path to replaying a song
 as audio rather than as events:

@@ -15,7 +15,7 @@
 #include <string.h>
 
 #include "../src/core/voice.h"
-#include "voice_state.h"
+#include "../src/core/voice_state.h"
 
 #define MAGIC "VOI1"
 #define NDEPTH 128
@@ -91,10 +91,10 @@ int main(int argc, char **argv)
     ft.mod_b = mod_b;
     ft.coef = coef;
 
-    if (nfields != 90) {
-        fprintf(stderr, "vector file has %u state fields, expected 90 - "
+    if (nfields != DS10_VOICE_STATE_FIELDS) {
+        fprintf(stderr, "vector file has %u state fields, expected %d - "
                 "struct layout and the capture lists are out of sync\n",
-                nfields);
+                nfields, DS10_VOICE_STATE_FIELDS);
         return 2;
     }
 
@@ -104,7 +104,13 @@ int main(int argc, char **argv)
         int frame_bad = 0;
         int j;
 
-        voice_state_load(&v, s);
+        {
+            int32_t vf[DS10_VOICE_STATE_FIELDS];
+
+            for (k = 0; k < DS10_VOICE_STATE_FIELDS; k++)
+                vf[k] = s();
+            ds10_voice_state_load(&v, vf);
+        }
 
         for (j = 0; j < FRAME; j++)
             want[j] = rd16();

@@ -161,3 +161,15 @@ int ds10_song_bars(const ds10_song *s)
             return i;
     return DS10_SONG_CHAIN;
 }
+
+const int8_t *ds10_song_drum_knobs(const ds10_song *s, int drum)
+{
+    return (const int8_t *)s->tail + DS10_SONG_DRUM_OFF +
+           drum * DS10_SONG_KNOBS;
+}
+
+const int8_t *ds10_song_drum_extra(const ds10_song *s, int drum)
+{
+    return (const int8_t *)s->tail + DS10_SONG_DRUM_EXTRA_OFF +
+           drum * DS10_SONG_DRUM_EXTRA;
+}

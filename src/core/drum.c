@@ -40,3 +40,32 @@ void ds10_drum_render(ds10_drum *d, int16_t *out, int n)
         out[i] = (int16_t)(ds10_mul32(s, d->env.vol >> 9) >> 15);
     }
 }
+
+void ds10_drum_note_on(ds10_drum *d, int note, const uint32_t *pitch)
+{
+    int idx = note - d->root + 64;
+
+    if (idx < 0)
+        idx = 0;
+    else if (idx > 127)
+        idx = 127;
+    d->offset = 0;
+    d->speed = (int32_t)pitch[idx];
+    if (d->env.retrig)
+        d->env.stage = DS10_DRUM_ATTACK;
+    d->env.retrig = 0;
+}
+
+void ds10_drum_note_off(ds10_drum *d)
+{
+    d->env.stage = DS10_DRUM_RELEASE;
+    d->env.retrig = 1;
+}
+
+void ds10_drum_set_sample(ds10_drum *d, const int16_t *sample, int32_t length,
+                          int32_t root)
+{
+    d->sample = sample;
+    d->length = length;
+    d->root = root;
+}

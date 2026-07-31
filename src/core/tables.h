@@ -9,11 +9,16 @@
 
 #include "fx.h"
 #include "patch.h"
+#include "voice_state.h"
 
 typedef struct {
     ds10_tables t;
     ds10_fx_tables fx;
-    void *blob;          /* owns everything the two views point at */
+    /* Drum playback rates, indexed by note - root + 64. Entry 64 is unity. */
+    const uint32_t *drum_pitch;
+    /* The state the original's synth constructor leaves a voice in. */
+    const int32_t *voice_init;
+    void *blob;          /* owns everything the views point at */
 } ds10_table_set;
 
 /* Returns 0 on success. On failure `blob` is NULL and nothing was allocated. */

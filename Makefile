@@ -107,12 +107,12 @@ test-seq: out/test_seq tests/vectors/seq.bin
 SONG_SRC = src/core/seq.c src/core/song.c src/core/md5.c src/core/tables.c \
            src/core/patch.c src/core/event.c src/core/voice.c src/core/vco.c \
            src/core/vcf.c src/core/env.c src/core/lfo.c src/core/pitch.c \
-           src/core/amp.c src/core/fx.c
+           src/core/amp.c src/core/fx.c src/core/drum.c src/core/voice_state.c
 
 test-songrender: out/test_songrender tests/vectors/songrender.bin out/tables.bin
 	@./out/test_songrender
 
-out/test_songrender: tests/test_songrender.c tests/voice_state.h $(SONG_SRC)
+out/test_songrender: tests/test_songrender.c $(SONG_SRC)
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_songrender.c $(SONG_SRC)
 
@@ -123,7 +123,7 @@ out/songplay: src/app/songplay.c $(SONG_SRC) src/core/mixer.c
 	$(CC) $(CFLAGS) -o $@ src/app/songplay.c $(SONG_SRC) src/core/mixer.c
 
 tables: out/tables.bin
-out/tables.bin: extract tools/oracle.py
+out/tables.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py tables
 
 test-replay: out/test_replay tests/vectors/replay.bin
@@ -153,9 +153,10 @@ CORE_SRC = src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
 test-voice: out/test_voice tests/vectors/voice.bin
 	@./out/test_voice
 
-out/test_voice: tests/test_voice.c $(CORE_SRC) src/core/voice.h $(CORE_HDRS)
+out/test_voice: tests/test_voice.c $(CORE_SRC) src/core/voice_state.c \
+                src/core/voice.h $(CORE_HDRS)
 	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_voice.c $(CORE_SRC)
+	$(CC) $(CFLAGS) -o $@ tests/test_voice.c $(CORE_SRC) src/core/voice_state.c
 
 # Vectors are ROM-derived and never committed; regenerate them locally.
 tests/vectors/vcf.bin: extract tools/oracle.py tools/emu.py

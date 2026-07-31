@@ -989,7 +989,50 @@ def voice_snapshot(o, syn):
     return (read(ptr["lfo"], V_LFO, 0x34) + read(ptr["env"], V_ENV, 0x14) +
             read(envp, V_ENVP, 0x10) + read(ptr["nc"], V_NC, 0x14) +
             read(ptr["pc"], V_PC, 0x58) + read(ptr["vco"], V_VCO, 0xA0) +
-            read(ptr["vcf"], V_VCF, 0x64) + read(ptr["amp"], V_AMP, 0x40))
+            read(ptr["vcf"], V_VCF, 0x64) + read(ptr["amp"], V_AMP, 0x40) +
+            read(ptr["lfo"], V_LFO2, 0x34))
+
+
+DRUM_LEN = 0x8000            # one second at 32768 Hz
+DRUM_ROOT = 60
+_drumcache = {}
+
+
+def render_drum_buffers(o, payload):
+    """Render each of the four drum patches into a one-second buffer.
+
+    0x0206CE04 does this for all four drums and then hands each buffer to its
+    voice with root note 60 (0x02072268). The render itself runs through an
+    offline recorder the sequencer drives, which is not decompiled - what is
+    reproduced here is that the buffer is one second of the synth playing the
+    drum patch from a fresh voice at note 60.
+    """
+    out = []
+    for drum in range(4):
+        knobs = [_sb(payload[0x2B2C + drum * 31 + k]) for k in range(31)]
+        key = tuple(knobs)
+        if key in _drumcache:
+            out.append(_drumcache[key])
+            continue
+        v = _new_synth(o, SONGR_OUT[0], SONGR_SLOT[0])
+        for k, val in enumerate(knobs):
+            o.call(KNOB_SET, v, k, val)
+        o.call(EVENT_DISPATCH, v)          # drain anything the ctor queued
+        _post_note(o, v, NOTEON, DRUM_ROOT)
+        buf = bytearray()
+        for _ in range(DRUM_LEN // FRAME):
+            o.call(RENDER, v)
+            buf += bytes(o.uc.mem_read(SONGR_OUT[0], FRAME * 2))
+        _drumcache[key] = bytes(buf)
+        out.append(bytes(buf))
+    return out
+
+
+def _post_note(o, syn, opcode, note):
+    q = o.u32(syn + 0x04)
+    n = o.uc.mem_read(syn + 0x08, 1)[0]
+    o.uc.mem_write(q + 8 * n, struct.pack("<BBHi", opcode, 0, 0, note))
+    o.uc.mem_write(syn + 0x08, bytes([n + 1]))
 
 
 def capture_songrender(blob, pattern_idx, frames):
@@ -1008,8 +1051,27 @@ def capture_songrender(blob, pattern_idx, frames):
     syn = [_new_synth(o, SONGR_OUT[i], SONGR_SLOT[i]) for i in range(2)]
     vt = o.call(NEW_THUNK, 0x20)
     o.w32(vt + 0x18, BX_LR)
+    # Four real drum voices as machines 2..5, each over a buffer rendered from
+    # the song's drum patch. Only the two buses are stand-ins now.
+    drumbufs = render_drum_buffers(o, payload)
+    drum, drumout = [], []
+    for i in range(4):
+        dv = o.call(DRUM_NEW)
+        ob = o.call(NEW_THUNK, FRAME * 2)
+        slot = o.call(NEW_THUNK, 4)
+        o.w32(slot, ob)
+        o.w32(dv + 0x04, o.call(NEW_THUNK, 8 * 64))
+        o.uc.mem_write(dv + 0x08, b"\0")
+        o.w32(dv + 0x10, FRAME)
+        o.w32(dv + 0x1C, slot)
+        sb = o.call(NEW_THUNK, DRUM_LEN * 2 + 4)
+        o.uc.mem_write(sb, drumbufs[i])
+        dmt = o.u32(dv)
+        o.call(o.u32(dmt + 0x24), dv, sb, DRUM_LEN, DRUM_ROOT)
+        drum.append(dv)
+        drumout.append(ob)
     stub = []
-    for _ in range(NMACH - 2 + 2):
+    for _ in range(2):
         m = o.call(NEW_THUNK, 0x10)
         o.w32(m + 0x00, vt)
         o.w32(m + 0x04, o.call(NEW_THUNK, 8 * 64))
@@ -1018,12 +1080,12 @@ def capture_songrender(blob, pattern_idx, frames):
     arr = o.call(NEW_THUNK, 4 * NMACH)
     for i in range(2):
         o.w32(arr + 4 * i, syn[i])
-    for i in range(2, NMACH):
-        o.w32(arr + 4 * i, stub[i - 2])
+    for i in range(4):
+        o.w32(arr + 4 * (2 + i), drum[i])
     router = o.call(NEW_THUNK, 0x20)
     o.w32(router + 0x00, arr)
-    o.w32(router + 0x04, stub[NMACH - 2])
-    o.w32(router + 0x08, stub[NMACH - 1])
+    o.w32(router + 0x04, stub[0])
+    o.w32(router + 0x08, stub[1])
     o.w32(router + 0x14, NMACH)
 
     pvt = o.call(NEW_THUNK, 0x10)
@@ -1083,8 +1145,14 @@ def capture_songrender(blob, pattern_idx, frames):
             o.call(RENDER, syn[v])
             raw = bytes(o.uc.mem_read(SONGR_OUT[v], FRAME * 2))
             frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
+        for v in range(4):
+            o.uc.mem_write(drumout[v], b"\0" * (FRAME * 2))
+            o.call(DRUM_RENDER, drum[v])
+            raw = bytes(o.uc.mem_read(drumout[v], FRAME * 2))
+            frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
         out.append(frame)
-    return knobs, tempo, swing, steps, song_pat, vstate, sstate, out
+    return (knobs, tempo, swing, steps, song_pat, vstate, sstate, drumbufs,
+            out)
 
 
 def _sb(v):
@@ -1096,12 +1164,16 @@ def snapshot_seq(o, seq):
     return [_rdf(raw, off, sz) for off, sz in SEQ_FIELDS]
 
 
+def payload_of(blob):
+    return blob[16:]
+
+
 def cmd_songrender_vectors(path="tests/vectors/songrender.bin"):
     files = song_files()
     if not files:
         print("no song files - run `make extract` first")
         return
-    FRAMES = 900          # about 1.8 s, a bar or two
+    FRAMES = 700          # about 1.4 s, a bar or two
     cases = []
     for name, blob in files:
         payload = blob[16:]
@@ -1117,20 +1189,23 @@ def cmd_songrender_vectors(path="tests/vectors/songrender.bin"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         f.write(b"SRN1")
-        f.write(struct.pack("<3I", len(cases), FRAMES, FRAME))
+        f.write(struct.pack("<4I", len(cases), FRAMES, FRAME, DRUM_LEN))
         for name, blob, pidx in cases:
-            knobs, tempo, swing, steps, song_pat, vstate, sstate, out = \
-                capture_songrender(blob, pidx, FRAMES)
+            (knobs, tempo, swing, steps, song_pat, vstate, sstate, drumbufs,
+             out) = capture_songrender(blob, pidx, FRAMES)
             f.write(struct.pack("<I", len(name)))
             f.write(name.encode())
             f.write(struct.pack("<5I", pidx, tempo, swing, steps,
                                 len(vstate[0])))
             f.write(song_pat)
+            f.write(bytes(payload_of(blob)[0x2B2C:0x2B2C + 4 * 31]))
             f.write(struct.pack(f"<{len(SEQ_FIELDS)}i", *sstate))
             for v in range(2):
                 f.write(struct.pack(f"<{len(vstate[v])}i", *vstate[v]))
+            for b in drumbufs:
+                f.write(b)
             for frame in out:
-                for v in range(2):
+                for v in range(2 + 4):
                     f.write(struct.pack(f"<{FRAME}h", *frame[v]))
     print(f"{path}: {len(cases)} cases x {FRAMES} frames, "
           f"{len(cases) * FRAMES * FRAME * 2} samples")
@@ -1156,12 +1231,17 @@ TABLES = [
     ("fx_depth", 0x0207F044, 128, "h"),
     ("fx_delay_div", 0x0207F144, 12, "i"),
     ("fx_lfo_rate", 0x0207FFC4, 128, "i"),
+    ("drum_pitch", 0x0207ED38, 128, "i"),
 ]
 
 
 def cmd_tables(path="out/tables.bin"):
     b = open("out/arm9.bin", "rb").read()
     base = 0x02004000
+    # Plus the state the synth constructor leaves a voice in. It is not zero, and
+    # anything that has to match the original has to start from it.
+    o = Oracle()
+    init = voice_snapshot(o, o.syn)
     with open(path, "wb") as f:
         f.write(b"TBL1")
         f.write(struct.pack("<I", len(TABLES)))
@@ -1171,7 +1251,9 @@ def cmd_tables(path="out/tables.bin"):
                     for i in range(n)]
             f.write(struct.pack("<I", n))
             f.write(struct.pack(f"<{n}{kind}", *vals))
-    print(f"{path}: {len(TABLES)} tables")
+        f.write(struct.pack("<I", len(init)))
+        f.write(struct.pack(f"<{len(init)}i", *init))
+    print(f"{path}: {len(TABLES)} tables, {len(init)} voice-init fields")
 
 
 def cmd_song_vectors(path="tests/vectors/song.bin"):
@@ -1755,6 +1837,11 @@ def cmd_patch_vectors(path="tests/vectors/patch.bin"):
 V_LFO = [(0x00, 4), (0x04, 4), (0x08, 4), (0x0C, 4), (0x10, 4),
          (0x14, 4), (0x18, 4), (0x1C, 4), (0x24, 4)]
 V_ENV = [(0x04, 1), (0x05, 1), (0x08, 4), (0x0C, 4)]  # +0x05 is retrig
+# Appended at the END of a snapshot so the older field order is untouched:
+# the LFO's BPM-sync flag, tempo copy and stored rate knob. The constructor
+# leaves sync on and 120 BPM, and without them knob 24 picks the free-running
+# rate table instead of the synced one.
+V_LFO2 = [(0x28, 1), (0x2C, 4), (0x30, 2)]
 V_ENVP = [(0x00, 4), (0x04, 4), (0x08, 4), (0x0C, 4)]
 V_NC = [(0x00, 4), (0x04, 4), (0x0C, 4), (0x10, 1)]
 V_PC = [(0x20, 4), (0x24, 4), (0x28, 4), (0x2C, 4), (0x30, 4), (0x34, 2),
@@ -1786,11 +1873,7 @@ def capture_voice(params, note, frames=4):
         return [_rdf(raw, off, sz) for off, sz in fields]
 
     def snap():
-        envp = o.u32(ptr["env"])
-        return (read(ptr["lfo"], V_LFO, 0x34) + read(ptr["env"], V_ENV, 0x14) +
-                read(envp, V_ENVP, 0x10) + read(ptr["nc"], V_NC, 0x14) +
-                read(ptr["pc"], V_PC, 0x58) + read(ptr["vco"], V_VCO, 0xA0) +
-                read(ptr["vcf"], V_VCF, 0x64) + read(ptr["amp"], V_AMP, 0x40))
+        return voice_snapshot(o, o.syn)
 
     o.note_on(note)
     o.call(RENDER, o.syn)              # event frame, not measured

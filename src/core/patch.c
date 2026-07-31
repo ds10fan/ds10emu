@@ -42,21 +42,35 @@ static void set_mod_source(ds10_voice *v, int dest, int src)
     env = MOD_ROUTE[src].env;
 
     /* Destinations 0..2 drive both the pitch block and the oscillator; 3 is the
-     * filter and 4 the amp. */
+     * filter and 4 the amp.
+     *
+     * Source 6 is the other oscillator - audio-rate modulation, which the VCO,
+     * filter and amp do themselves rather than through the modulation matrix, so
+     * it has a side effect per destination on top of the routing above. */
     switch (dest) {
     case 0:
     case 1:
     case 2:
         v->pc.lfo_sel[dest] = (int16_t)lfo;
         v->pc.env_sel[dest] = env;
+        /* One shared field says WHICH pitch destination is cross-modulated, so
+         * only source 0 - "none" - on the destination that owns it clears it.
+         * Selecting an LFO on a cross-modulated destination leaves cross
+         * modulation running, and clearing a different destination does nothing. */
+        if (src == 6)
+            v->vco.xmod = dest + 1;
+        else if (src == 0 && v->vco.xmod == dest + 1)
+            v->vco.xmod = 0;
         break;
     case 3:
         v->vcf.lfo_sel = lfo;
         v->vcf.env_sel = env;
+        v->vcf.osc_depth = (src == 6);
         break;
     case 4:
         v->amp.lfo_sel = lfo;
         v->amp.env_sel = env;
+        v->amp.dist = (src == 6);
         break;
     default:
         break;
