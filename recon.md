@@ -1813,6 +1813,26 @@ Which is the same relation this reimplementation implements directly, with the
 name lookup collapsed out: a hit box gives a knob id, the id goes to the
 engine, and the widget redraws through the sweep or the span.
 
+### The screen vtable
+
+A screen is reached through a vtable, and the layout is the same for all of
+them - 81_KEY's is at `0x02085868`, 52_FX's at `0x020867e4`, 30_MIXER's at
+`0x0208758c`:
+
+```
++0x00  the per-frame update
++0x04  a short query on the same state field, 44 to 336 bytes
++0x08  0x0202222c   shared by every screen
++0x0c  0x02022420   shared
++0x10  another screen method
+```
+
+Slot 0 is the update, and every one of them reads the state field. The long
+ones lead with a lazy allocation of the screen's shared object, which is what
+makes them long: 81_KEY's 1984 bytes are mostly one `if (singleton == 0)`
+branch that builds the keyboard object and loads its nine `S_*` background
+overlays, with the state machine after it.
+
 ### Every screen's update, by address
 
 Each screen is a constructor plus an update, and the update is where its
