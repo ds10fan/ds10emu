@@ -68,7 +68,8 @@ static void parse_pattern(ds10_song_pattern *q, const uint8_t *p)
                 q->lane[t][s].knob[l] = (int8_t)r[2 + l];
             }
         }
-    memcpy(q->params, p + 0x242, sizeof q->params);
+    memcpy(q->mixer, p + 0x242, sizeof q->mixer);
+    memcpy(q->params, p + 0x25B, sizeof q->params);
 }
 
 static void write_pattern(const ds10_song_pattern *q, uint8_t *p)
@@ -95,7 +96,8 @@ static void write_pattern(const ds10_song_pattern *q, uint8_t *p)
                 r[2 + l] = (uint8_t)q->lane[t][s].knob[l];
             }
         }
-    memcpy(p + 0x242, q->params, sizeof q->params);
+    memcpy(p + 0x242, q->mixer, sizeof q->mixer);
+    memcpy(p + 0x25B, q->params, sizeof q->params);
 }
 
 int ds10_song_parse(ds10_song *s, const uint8_t *file, size_t len)

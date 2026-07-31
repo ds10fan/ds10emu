@@ -32,6 +32,7 @@
 #define DS10_SONG_TRACKS 6    /* 2 synth + 4 drum */
 #define DS10_SONG_STEPS 16
 #define DS10_SONG_LANES 2     /* automation lanes, synth tracks only */
+#define DS10_SONG_MIX_KNOBS 25
 
 #define DS10_SONG_PATTERN_SIZE 676
 #define DS10_SONG_PATTERN_OFF 0xEC
@@ -66,7 +67,10 @@ typedef struct {
     int8_t knobs[2][DS10_SONG_KNOBS];
     ds10_song_step step[DS10_SONG_TRACKS][DS10_SONG_STEPS];   /* +0x42 */
     ds10_song_auto lane[DS10_SONG_LANES][DS10_SONG_STEPS];    /* +0x1C2 */
-    uint8_t params[0x62];   /* +0x242  drum and mixer settings, not yet named */
+    /* +0x242  the mixer's 25 knobs, pushed in on a pattern change by 0x0206EC10.
+     * Signed, because that pusher reads them with ldrsb. */
+    int8_t mixer[DS10_SONG_MIX_KNOBS];
+    uint8_t params[0x62 - DS10_SONG_MIX_KNOBS];   /* +0x25B, not yet named */
 } ds10_song_pattern;
 
 typedef struct {

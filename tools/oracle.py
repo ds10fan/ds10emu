@@ -1051,8 +1051,31 @@ def capture_songrender(blob, pattern_idx, frames):
     syn = [_new_synth(o, SONGR_OUT[i], SONGR_SLOT[i]) for i in range(2)]
     vt = o.call(NEW_THUNK, 0x20)
     o.w32(vt + 0x18, BX_LR)
+    # A real mixer as bus 1, driven by the pattern's own 25 knobs.
+    mixer = o.call(MIXER_NEW)
+    mfx = o.u32(mixer + FX_PTR)
+    chbufs = [o.call(NEW_THUNK, FRAME * 2) for _ in range(6)]
+    charr = o.call(NEW_THUNK, 6 * 8)
+    for i, b in enumerate(chbufs):
+        o.w32(charr + 8 * i, b)
+    mixl = o.call(NEW_THUNK, FRAME * 2)
+    mixr = o.call(NEW_THUNK, FRAME * 2)
+    mpair = o.call(NEW_THUNK, 8)
+    o.w32(mpair, mixl)
+    o.w32(mpair + 4, mixr)
+    o.w32(mixer + 0x10, FRAME)
+    o.w32(mixer + 0x18, charr)
+    o.w32(mixer + 0x1C, mpair)
+    o.uc.mem_write(mixer + 0x08, b"\0")
+    o.w32(mixer + 0x04, o.call(NEW_THUNK, 8 * 64))
+    mix_knobs = [_sb(song_pat[0x242 + k]) for k in range(25)]
+    MIX_KNOB = o.u32(o.u32(mixer) + 0x18)
+    MIX_DISPATCH = o.u32(o.u32(mixer) + 0x28)
+    for k, val in enumerate(mix_knobs):
+        o.call(MIX_KNOB, mixer, k, val)
+
     # Four real drum voices as machines 2..5, each over a buffer rendered from
-    # the song's drum patch. Only the two buses are stand-ins now.
+    # the song's drum patch.
     drumbufs = render_drum_buffers(o, payload)
     drum, drumout = [], []
     for i in range(4):
@@ -1084,8 +1107,8 @@ def capture_songrender(blob, pattern_idx, frames):
         o.w32(arr + 4 * (2 + i), drum[i])
     router = o.call(NEW_THUNK, 0x20)
     o.w32(router + 0x00, arr)
-    o.w32(router + 0x04, stub[0])
-    o.w32(router + 0x08, stub[1])
+    o.w32(router + 0x04, mixer)
+    o.w32(router + 0x08, stub[0])
     o.w32(router + 0x14, NMACH)
 
     pvt = o.call(NEW_THUNK, 0x10)
@@ -1093,9 +1116,15 @@ def capture_songrender(blob, pattern_idx, frames):
     player = o.call(NEW_THUNK, 0x10)
     o.w32(player + 0x00, pvt)
 
+    # The sequencer reads per-channel volume and pan out of the mixer's own knob
+    # array, so it is the pattern's 25 bytes.
     chan_arr = o.call(NEW_THUNK, 0x40)
-    o.uc.mem_write(chan_arr, bytes([0x40] * 0x40))
-    o.uc.mem_write(CHAN_IDX_TABLE, bytes([0, 1] * 8))
+    o.uc.mem_write(chan_arr, bytes(song_pat[0x242:0x242 + 25]) + b"\0" * 0x27)
+    # Two bytes per track: which mixer knob the per-step volume and pan scale
+    # against. They are that channel's own volume and pan knobs, 17+t and 9+t,
+    # which is what makes velocity a scale factor on the pattern's mix.
+    o.uc.mem_write(CHAN_IDX_TABLE,
+                   bytes([v for t in range(8) for v in (17 + t, 9 + t)]))
 
     tempo = struct.unpack_from("<I", payload, 4)[0]
     swing = struct.unpack_from("<H", payload, 0x0A)[0]
@@ -1116,6 +1145,14 @@ def capture_songrender(blob, pattern_idx, frames):
         o.uc.mem_write(seq + 0x64 + t * 0x24 + 0x0D, bytes([0xFF]))
     o.uc.mem_write(seq + 0x0C, bytes([1, 1]))
 
+    # Opcode 4 carries the BPM to the mixer's effect; nothing the sequencer
+    # broadcasts does, so the transport must and so must we.
+    mq = o.u32(mixer + 0x04)
+    o.uc.mem_write(mq, struct.pack("<Ii", 4, tempo))
+    o.uc.mem_write(mixer + 0x08, bytes([1]))
+    o.call(MIX_DISPATCH, mixer)
+    o.uc.mem_write(mixer + 0x08, b"\0")
+
     # The patches the pattern carries, pushed knob by knob exactly as
     # 0x0206DFCC does on a pattern change.
     knobs = [[_sb(song_pat[4 + v * 31 + k]) for k in range(31)] for v in range(2)]
@@ -1127,6 +1164,10 @@ def capture_songrender(blob, pattern_idx, frames):
     # to start from the same state rather than from a memset.
     vstate = [voice_snapshot(o, syn[v]) for v in range(2)]
     sstate = snapshot_seq(o, seq)
+    mstate = [_rdf(bytes(o.uc.mem_read(mixer, 0x8C)), off, sz)
+              for off, sz in MX_FIELDS]
+    fstate = [_rdf(bytes(o.uc.mem_read(mfx, 0xB0)), off, sz)
+              for off, sz in FXS_FIELDS]
     out, acc = [], 0
     for _ in range(frames):
         acc += TICK_NUM
@@ -1150,9 +1191,24 @@ def capture_songrender(blob, pattern_idx, frames):
             o.call(DRUM_RENDER, drum[v])
             raw = bytes(o.uc.mem_read(drumout[v], FRAME * 2))
             frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
+        # Feed the six channels into the real mixer and take its stereo output.
+        # Its render does not drain its own queue, so dispatch first - which is
+        # how the per-step volume and pan events reach the mix at all.
+        for v in range(6):
+            o.uc.mem_write(chbufs[v], struct.pack(f"<{FRAME}h", *frame[v]))
+        # The mixer's render dispatches its own queue, so the events posted by
+        # this frame's ticks land before it mixes. Its dispatch does not clear the
+        # count though, so consume them afterwards - every event it acts on is an
+        # absolute setter, so a re-applied backlog would land on the same state,
+        # but the queue would eventually run off the end of the buffer.
+        o.call(MIXER_RENDER, mixer)
+        o.uc.mem_write(mixer + 0x08, b"\0")
+        for p in (mixl, mixr):
+            raw = bytes(o.uc.mem_read(p, FRAME * 2))
+            frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
         out.append(frame)
     return (knobs, tempo, swing, steps, song_pat, vstate, sstate, drumbufs,
-            out)
+            mix_knobs, mstate, fstate, out)
 
 
 def _sb(v):
@@ -1189,10 +1245,12 @@ def cmd_songrender_vectors(path="tests/vectors/songrender.bin"):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
         f.write(b"SRN1")
-        f.write(struct.pack("<4I", len(cases), FRAMES, FRAME, DRUM_LEN))
+        f.write(struct.pack("<6I", len(cases), FRAMES, FRAME, DRUM_LEN,
+                            len(MX_FIELDS), len(FXS_FIELDS)))
         for name, blob, pidx in cases:
             (knobs, tempo, swing, steps, song_pat, vstate, sstate, drumbufs,
-             out) = capture_songrender(blob, pidx, FRAMES)
+             mix_knobs, mstate, fstate, out) = capture_songrender(blob, pidx,
+                                                                 FRAMES)
             f.write(struct.pack("<I", len(name)))
             f.write(name.encode())
             f.write(struct.pack("<5I", pidx, tempo, swing, steps,
@@ -1202,10 +1260,12 @@ def cmd_songrender_vectors(path="tests/vectors/songrender.bin"):
             f.write(struct.pack(f"<{len(SEQ_FIELDS)}i", *sstate))
             for v in range(2):
                 f.write(struct.pack(f"<{len(vstate[v])}i", *vstate[v]))
+            f.write(struct.pack(f"<{len(mstate)}i", *mstate))
+            f.write(struct.pack(f"<{len(fstate)}i", *fstate))
             for b in drumbufs:
                 f.write(b)
             for frame in out:
-                for v in range(2 + 4):
+                for v in range(2 + 4 + 2):
                     f.write(struct.pack(f"<{FRAME}h", *frame[v]))
     print(f"{path}: {len(cases)} cases x {FRAMES} frames, "
           f"{len(cases) * FRAMES * FRAME * 2} samples")
@@ -1242,6 +1302,11 @@ def cmd_tables(path="out/tables.bin"):
     # anything that has to match the original has to start from it.
     o = Oracle()
     init = voice_snapshot(o, o.syn)
+    mx = o.call(MIXER_NEW)
+    mxfx = o.u32(mx + FX_PTR)
+    minit = [_rdf(bytes(o.uc.mem_read(mx, 0x8C)), off, sz) for off, sz in MX_FIELDS]
+    finit = [_rdf(bytes(o.uc.mem_read(mxfx, 0xB0)), off, sz)
+             for off, sz in FXS_FIELDS]
     with open(path, "wb") as f:
         f.write(b"TBL1")
         f.write(struct.pack("<I", len(TABLES)))
@@ -1253,7 +1318,11 @@ def cmd_tables(path="out/tables.bin"):
             f.write(struct.pack(f"<{n}{kind}", *vals))
         f.write(struct.pack("<I", len(init)))
         f.write(struct.pack(f"<{len(init)}i", *init))
-    print(f"{path}: {len(TABLES)} tables, {len(init)} voice-init fields")
+        f.write(struct.pack("<2I", len(minit), len(finit)))
+        f.write(struct.pack(f"<{len(minit)}i", *minit))
+        f.write(struct.pack(f"<{len(finit)}i", *finit))
+    print(f"{path}: {len(TABLES)} tables, {len(init)} voice-init fields, "
+          f"{len(minit)}+{len(finit)} mixer-init fields")
 
 
 def cmd_song_vectors(path="tests/vectors/song.bin"):

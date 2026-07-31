@@ -119,3 +119,58 @@ void ds10_mixer_render(ds10_mixer *m, const int16_t *const *in,
         out_r[i] = (int16_t)(ds10_mul32(shape(r), m->gain) >> 15);
     }
 }
+
+void ds10_mixer_set_knob(ds10_mixer *m, int knob, int value,
+                         const ds10_fx_tables *t)
+{
+    if (knob > 22)
+        return;
+    if (knob == 0) {
+        m->route = value;
+        ds10_fx_set(&m->fx, DS10_FX_P_DRYWET,
+                    value == DS10_ROUTE_OFF ? 0 : m->drywet, t);
+    } else if (knob == 8) {
+        m->drywet = value;
+        if (m->route != DS10_ROUTE_OFF)
+            ds10_fx_set(&m->fx, DS10_FX_P_DRYWET, value, t);
+    } else if (knob >= 9 && knob <= 14) {
+        m->pan[knob - 9] = value * DS10_MIX_PAN_STEP;
+    } else if (knob >= 17 && knob <= 22) {
+        m->vol[knob - 17] =
+            (int32_t)(((int32_t)value * value) * DS10_MIX_VOL_SCALE) >> 15;
+    } else {
+        ds10_fx_set(&m->fx, knob, value, t);
+    }
+}
+
+void ds10_mixer_event(ds10_mixer *m, int opcode, int channel, uint16_t payload,
+                      int32_t arg, const ds10_fx_tables *t)
+{
+    if (opcode > DS10_MIX_EV_MUTE_ON) {
+        return;
+    } else if (opcode == DS10_MIX_EV_MUTE_ON) {
+        m->mute = 1;
+        return;
+    } else if (opcode == DS10_MIX_EV_MUTE_OFF) {
+        m->mute = 0;
+        return;
+    } else if (opcode == DS10_MIX_EV_TEMPO) {
+        /* Retunes a tempo-synced delay, by way of re-applying the time knob. */
+        if (m->fx.tempo != arg) {
+            m->fx.tempo = arg;
+            ds10_fx_set(&m->fx, DS10_FX_P_TIME, m->fx.k_time, t);
+        }
+        return;
+    } else if (opcode != DS10_MIX_EV_KNOB) {
+        return;
+    }
+    {
+        int knob = (int8_t)(payload & 0xFF);
+        int value = (int8_t)(payload >> 8);
+
+        if (knob == DS10_MIX_EVK_VOL)
+            ds10_mixer_set_knob(m, channel + 17, value, t);
+        else if (knob == DS10_MIX_EVK_PAN)
+            ds10_mixer_set_knob(m, channel + 9, value, t);
+    }
+}

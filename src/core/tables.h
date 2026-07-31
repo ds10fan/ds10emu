@@ -16,8 +16,12 @@ typedef struct {
     ds10_fx_tables fx;
     /* Drum playback rates, indexed by note - root + 64. Entry 64 is unity. */
     const uint32_t *drum_pitch;
-    /* The state the original's synth constructor leaves a voice in. */
+    /* The state the original's constructors leave a voice, a mixer and an
+     * effect in. None of them is zero, and starting from a memset does not
+     * reproduce the original. */
     const int32_t *voice_init;
+    const int32_t *mixer_init;
+    const int32_t *fx_init;
     void *blob;          /* owns everything the views point at */
 } ds10_table_set;
 

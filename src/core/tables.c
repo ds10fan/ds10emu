@@ -88,6 +88,25 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
             return -1;
         }
         s->voice_init = (const int32_t *)(blob + off);
+        off += (size_t)cnt * 4;
+    }
+    /* Then the mixer and effect constructor states. */
+    {
+        uint32_t nm, nf;
+
+        if (off + 8 > (size_t)size) {
+            free(blob);
+            return -1;
+        }
+        memcpy(&nm, blob + off, 4);
+        memcpy(&nf, blob + off + 4, 4);
+        off += 8;
+        if (off + (size_t)(nm + nf) * 4 > (size_t)size) {
+            free(blob);
+            return -1;
+        }
+        s->mixer_init = (const int32_t *)(blob + off);
+        s->fx_init = (const int32_t *)(blob + off + (size_t)nm * 4);
     }
 
     s->blob = blob;

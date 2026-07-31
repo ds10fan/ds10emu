@@ -30,6 +30,7 @@
 #include "../src/core/event.h"
 #include "../src/core/seq.h"
 #include "../src/core/drum.h"
+#include "../src/core/mixer_state.h"
 #include "../src/core/song.h"
 #include "../src/core/tables.h"
 #include "../src/core/voice.h"
@@ -38,7 +39,7 @@
 #define MAGIC "SRN1"
 #define NSYN 2
 #define NDRUM DS10_SONG_DRUMS
-#define NCH (NSYN + NDRUM)
+#define NCH (NSYN + NDRUM + 2)   /* + the mixer's stereo pair */
 #define NTRK DS10_SONG_TRACKS
 #define MAXEV 256
 #define TICK_NUM 1600
@@ -107,6 +108,10 @@ int main(int argc, char **argv)
     frames = rd32();
     frame = rd32();
     drumlen = rd32();
+    if (rd32() != DS10_MIX_STATE_FIELDS || rd32() != DS10_FX_STATE_FIELDS) {
+        fprintf(stderr, "mixer state field counts out of sync\n");
+        return 2;
+    }
     if (frame != DS10_FRAME) {
         fprintf(stderr, "frame %u, expected %d\n", frame, DS10_FRAME);
         return 2;
@@ -119,6 +124,9 @@ int main(int argc, char **argv)
         static ds10_voice voice[NSYN];
         static ds10_drum drum[NDRUM];
         static int16_t dbuf[NDRUM][0x8000], want_buf[0x8000];
+        static ds10_mixer mix;
+        static int16_t delay_l[DS10_FX_BUFLEN], delay_r[DS10_FX_BUFLEN];
+        const int16_t *chp[DS10_MIX_CHANNELS];
         ds10_seq seq;
         ds10_seq_track trk[NTRK];
         ds10_seq_posted ev[MAXEV];
@@ -189,10 +197,14 @@ int main(int argc, char **argv)
 
         memset(&player, 0, sizeof player);
         player.handle = player_noop;
-        memset(chan, 0x40, sizeof chan);
+        /* The sequencer reads per-channel volume and pan out of the mixer's own
+         * knob array - the pattern's 25 bytes - indexed by that channel's own
+         * volume and pan knobs. Velocity is therefore a scale on the mix. */
+        memset(chan, 0, sizeof chan);
+        memcpy(chan, song_pat + 0x242, DS10_MIX_KNOBS);
         for (t = 0; t < NTRK; t++) {
-            chan_idx[2 * t] = 0;
-            chan_idx[2 * t + 1] = 1;
+            chan_idx[2 * t] = (uint8_t)(17 + t);
+            chan_idx[2 * t + 1] = (uint8_t)(9 + t);
         }
 
         memset(&ctx, 0, sizeof ctx);
@@ -221,6 +233,26 @@ int main(int argc, char **argv)
                     DS10_VOICE_STATE_FIELDS);
             return 2;
         }
+
+        /* The mixer and its effect, as the original left them after the
+         * pattern's own 25 knobs and the tempo event went in. */
+        {
+            int32_t mf[DS10_MIX_STATE_FIELDS], ff[DS10_FX_STATE_FIELDS];
+
+            for (v = 0; v < DS10_MIX_STATE_FIELDS; v++)
+                mf[v] = (int32_t)rd32();
+            for (v = 0; v < DS10_FX_STATE_FIELDS; v++)
+                ff[v] = (int32_t)rd32();
+            memset(&mix, 0, sizeof mix);
+            memset(delay_l, 0, sizeof delay_l);
+            memset(delay_r, 0, sizeof delay_r);
+            ds10_mixer_state_load(&mix, mf);
+            ds10_fx_state_load(&mix.fx, ff);
+            mix.fx.buf_l = delay_l;
+            mix.fx.buf_r = delay_r;
+        }
+        for (v = 0; v < DS10_MIX_CHANNELS; v++)
+            chp[v] = 0;
 
         /* Render the four drum buffers, then check them against the original's
          * before using them. */
@@ -260,6 +292,7 @@ int main(int argc, char **argv)
         if (bad)
             case_bad = 1;
 
+
         for (k = 0; k < frames; k++) {
             int16_t got[NCH][DS10_FRAME], want[DS10_FRAME];
             int n, j;
@@ -284,6 +317,10 @@ int main(int argc, char **argv)
                             ds10_drum_note_off(&drum[dst - NSYN]);
                     }
                 }
+                for (j = 0; j < n; j++)
+                    if (ev[j].dest == DS10_BUS1(NTRK))
+                        ds10_mixer_event(&mix, ev[j].opcode, ev[j].channel,
+                                         ev[j].payload, 0, &ts.fx);
                 if (ctx.pat == 0) {
                     ctx.pat = &pat;
                     seq.pattern = 1;
@@ -296,6 +333,10 @@ int main(int argc, char **argv)
                 memset(got[NSYN + v], 0, sizeof got[NSYN + v]);
                 ds10_drum_render(&drum[v], got[NSYN + v], DS10_FRAME);
             }
+            for (v = 0; v < DS10_MIX_CHANNELS; v++)
+                chp[v] = got[v];
+            ds10_mixer_render(&mix, chp, &ts.fx, got[NSYN + NDRUM],
+                              got[NSYN + NDRUM + 1], DS10_FRAME);
 
             for (v = 0; v < NCH; v++) {
                 for (s = 0; s < DS10_FRAME; s++) {

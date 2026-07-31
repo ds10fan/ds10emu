@@ -24,12 +24,8 @@
  *   - The nine extra bytes per drum at payload +0x2BA8. 0x0206B9DC pushes them
  *     into a second parameter space whose meaning is not established, so they are
  *     ignored.
- *   - The mixer and effect settings. The mixer takes 25 knobs and the pattern
- *     record has 98 bytes not yet named; until the mapping is known the mixer is
- *     set flat and the effect is bypassed.
- *   - Per-step velocity and pan DO come from the song, but the original sends
- *     them to the mixer as knobs 7 and 10, and that knob map is not established
- *     either. They are applied here as a straight channel gain and position.
+ *   - The 73 bytes of a pattern after its 25 mixer knobs, at payload +0x25B.
+ *     Nothing here reads them.
  *
  * Tick rate. The sequencer's accumulator advances 240000 per call against a
  * period of 60000000/BPM, and 24 sub-ticks make a step pair, which works out at
@@ -44,7 +40,7 @@
 
 #include "../core/drum.h"
 #include "../core/event.h"
-#include "../core/mixer.h"
+#include "../core/mixer_state.h"
 #include "../core/seq.h"
 #include "../core/song.h"
 #include "../core/tables.h"
@@ -58,7 +54,6 @@
 #define TICK_NUM 1600           /* per 64-sample frame */
 #define TICK_DEN 4096           /* per sequencer tick */
 #define MAXEV 256
-#define MIX_ONE 0x7FFF
 #define NDRUM DS10_SONG_DRUMS
 #define DRUM_LEN 0x8000        /* one second at 32768 Hz */
 #define DRUM_ROOT 60
@@ -171,7 +166,7 @@ int main(int argc, char **argv)
     ds10_seq_ctx ctx;
     song_player sp;
     const int8_t *chan_vals;
-    static int8_t chan[32];
+    static int8_t chan[64];
     static uint8_t chan_idx[2 * NTRK];
     const int16_t *chp[DS10_MIX_CHANNELS];
     unsigned char *blob;
@@ -283,20 +278,22 @@ int main(int argc, char **argv)
     sp.rt = rt;
     sp.last = -1;
 
-    /* The mixer's knob map is unknown, so set its fields directly: flat levels,
-     * centre pan, effect bypassed. */
+        /* The mixer starts from its constructor's state; each pattern's own 25 knobs
+     * go in when it is installed. The tempo event is the only way a synced delay
+     * learns the BPM - nothing the sequencer broadcasts carries it. */
     memset(&mix, 0, sizeof mix);
-    for (i = 0; i < DS10_MIX_CHANNELS; i++) {
-        mix.vol[i] = MIX_ONE;
-        mix.pan[i] = MIX_ONE / 2;
-    }
-    mix.route = DS10_ROUTE_OFF;
+    ds10_mixer_state_load(&mix, ts.mixer_init);
+    ds10_fx_state_load(&mix.fx, ts.fx_init);
     mix.fx.buf_l = dl;
     mix.fx.buf_r = dr;
-    memset(chan, 0x40, sizeof chan);
+    ds10_mixer_event(&mix, DS10_MIX_EV_TEMPO, 0, 0, (int32_t)song.tempo,
+                     &ts.fx);
+    /* The array the sequencer reads per-channel volume and pan defaults from,
+     * indexed through a two-byte-per-track table. It is the mixer's own knob
+     * array, so it tracks the pattern. */
     for (i = 0; i < NTRK; i++) {
-        chan_idx[2 * i] = 0;
-        chan_idx[2 * i + 1] = 1;
+        chan_idx[2 * i] = (uint8_t)(17 + i);
+        chan_idx[2 * i + 1] = (uint8_t)(9 + i);
     }
     chan_vals = chan;
 
@@ -337,6 +334,11 @@ int main(int argc, char **argv)
                 for (i = 0; i < NSYN; i++)
                     ds10_patch_load(&voice[i], song.pattern[sp.last].knobs[i],
                                     &ts.t);
+                /* 0x0206EC10 pushes all 25 mixer knobs on a pattern change. */
+                for (i = 0; i < DS10_MIX_KNOBS; i++)
+                    ds10_mixer_set_knob(&mix, i,
+                                        song.pattern[sp.last].mixer[i], &ts.fx);
+                memcpy(chan, song.pattern[sp.last].mixer, DS10_MIX_KNOBS);
             }
             for (k = 0; k < n; k++) {
                 int dest = ev[k].dest, op = ev[k].opcode;
@@ -352,17 +354,9 @@ int main(int argc, char **argv)
                                           ts.drum_pitch);
                     else
                         ds10_drum_note_off(&drum[dest - NSYN]);
-                } else if (dest == DS10_BUS1(NTRK) && op == 6) {
-                    /* Channel volume (knob 7) and pan (knob 10). */
-                    int ch = ev[k].channel, knob = ev[k].payload & 0xFF;
-                    int val = (int8_t)(ev[k].payload >> 8);
-
-                    if (ch < DS10_MIX_CHANNELS && val >= 0) {
-                        if (knob == DS10_KNOB_CHAN_VOL)
-                            mix.vol[ch] = val * MIX_ONE / 127;
-                        else if (knob == DS10_KNOB_CHAN_PAN)
-                            mix.pan[ch] = val * MIX_ONE / 127;
-                    }
+                } else if (dest == DS10_BUS1(NTRK)) {
+                    ds10_mixer_event(&mix, op, ev[k].channel, ev[k].payload, 0,
+                                     &ts.fx);
                 } else if (op == DS10_EV_BAR_START ||
                            op == DS10_EV_PATTERN_CHANGE) {
                     if (dest < NSYN)

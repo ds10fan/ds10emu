@@ -79,9 +79,10 @@ test-mixer: out/test_mixer tests/vectors/mixer.bin
 	@./out/test_mixer
 
 out/test_mixer: tests/test_mixer.c src/core/mixer.c src/core/fx.c \
-                src/core/mixer.h src/core/fx.h $(CORE_HDRS)
+                src/core/mixer_state.c src/core/mixer.h src/core/fx.h $(CORE_HDRS)
 	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_mixer.c src/core/mixer.c src/core/fx.c
+	$(CC) $(CFLAGS) -o $@ tests/test_mixer.c src/core/mixer.c src/core/fx.c \
+	    src/core/mixer_state.c
 
 test-drum: out/test_drum tests/vectors/drum.bin
 	@./out/test_drum
@@ -107,7 +108,8 @@ test-seq: out/test_seq tests/vectors/seq.bin
 SONG_SRC = src/core/seq.c src/core/song.c src/core/md5.c src/core/tables.c \
            src/core/patch.c src/core/event.c src/core/voice.c src/core/vco.c \
            src/core/vcf.c src/core/env.c src/core/lfo.c src/core/pitch.c \
-           src/core/amp.c src/core/fx.c src/core/drum.c src/core/voice_state.c
+           src/core/amp.c src/core/fx.c src/core/drum.c src/core/voice_state.c \
+           src/core/mixer.c src/core/mixer_state.c
 
 test-songrender: out/test_songrender tests/vectors/songrender.bin out/tables.bin
 	@./out/test_songrender
@@ -118,9 +120,9 @@ out/test_songrender: tests/test_songrender.c $(SONG_SRC)
 
 # Render a song file to a WAV with nothing but the reimplementation.
 songplay: out/songplay
-out/songplay: src/app/songplay.c $(SONG_SRC) src/core/mixer.c
+out/songplay: src/app/songplay.c $(SONG_SRC)
 	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ src/app/songplay.c $(SONG_SRC) src/core/mixer.c
+	$(CC) $(CFLAGS) -o $@ src/app/songplay.c $(SONG_SRC)
 
 tables: out/tables.bin
 out/tables.bin: extract tools/oracle.py tools/emu.py
