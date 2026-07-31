@@ -82,11 +82,29 @@ Everything round-trips, so nothing is lost - these are just not understood:
   which are that track's two automation lane knob ids;
 - a pattern's `+0x004..0x041` beyond the two 31-knob synth patches.
 
-## 6. Longer term
+## 6. GUI
+
+Done: the 2D hardware model, pixel-exact against melonDS over 29 screens
+(`make test-2d`); the asset containers; the pages drawing natively and in the
+browser; six of them pixel-exact against the real thing (`make test-page`).
+
+Remaining, roughly in order:
+
+- **The widget constructors.** Each screen is a constructor that places widgets
+  at fixed coordinates - `0x02039e68` is one, and `0x0202e750` is the widget
+  that builds OAM. Decompiling those replaces `data/pages.bin`, which is
+  currently a captured frame of sprites per page, and is what turns a page that
+  draws into a page that responds.
+- **The 3D text layer.** Captions are textured quads through the geometry
+  engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
+  small textured-quad rasteriser, not a polygon pipeline.
+- **Touch.** The map's boxes are hit-tested from coordinates read off the
+  rendered screen, not from the game's own hit-test code. Everything else is
+  unwired.
+- **Wiring the UI to the synth**, which is already decompiled and verified.
+
+## 7. Longer term
 
 - **Fuzz the vector corpus.** Coverage is only what I sweep, and the inputs are
   chosen by my understanding of the code. Random patches, notes and timings would
   attack that bias. Offered several times, never done.
-- **GUI.** Untouched. Needs a NitroFS asset pipeline (NCGR/NCLR/NSCR/NCER/NANR/
-  NCBR/NFTR) and roughly twenty screens; some are 3D-composited and will not
-  pixel-match in SDL 1.2.

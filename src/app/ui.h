@@ -27,6 +27,11 @@ int ds10_ui_page(ds10_ui *u, const char *bottom, const char *top);
 /* Render one frame. Both buffers are 256x192 of 0xAARRGGBB. */
 void ds10_ui_frame(ds10_ui *u, uint32_t *top, uint32_t *bottom);
 
+/* Hit-test a touch on the navigation map. Returns the name of the page that
+ * box opens, or NULL if the touch is not on one. The map is the only screen
+ * whose behaviour is wired up so far. */
+const char *ds10_ui_map_hit(int x, int y);
+
 /* The GPU state, for tests that compare it against a captured frame. */
 ds10_gpu *ds10_ui_gpu(ds10_ui *u);
 

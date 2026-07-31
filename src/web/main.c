@@ -61,6 +61,15 @@ int ds10_web_page(const char *bottom, const char *top)
     return 0;
 }
 
+/* Which page a touch on the navigation map opens, or "" for none. */
+EMSCRIPTEN_KEEPALIVE
+const char *ds10_web_map_hit(int x, int y)
+{
+    const char *p = ds10_ui_map_hit(x, y);
+
+    return p ? p : "";
+}
+
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_render(void)
 {

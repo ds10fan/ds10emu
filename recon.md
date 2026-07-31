@@ -1521,3 +1521,117 @@ survives it.
 Not verified: the meaning of the unnamed regions (pattern header, pattern
 parameters, the three trailing blocks). They round-trip, but nothing here says
 what they are.
+
+---
+
+## 16. GUI — the graphics path
+
+### The reference oracle changes for graphics
+
+Unicorn runs the CPU and stops at the hardware, so it cannot produce pixels.
+`tools/ndsref/` builds the melonDS core headless and dumps, per frame, the whole
+2D state - the nine VRAM banks and their VRAMCNT mapping, palette, OAM, both
+engines' registers, the 3D engine's output plane - alongside the two
+framebuffers melonDS composited from it. Scripted touch and key input reaches
+any screen deterministically (`tools/sweep.py` walks the whole interface).
+
+That gives two separable checks, which `make test-2d` runs:
+
+- our VRAM bank mapper against melonDS's flattened buffers;
+- our renderer, fed those buffers, against melonDS's pixels.
+
+**72 frames over 29 distinct screens, 0 mismatches on both.**
+
+### What the hardware is actually asked to do
+
+Across that whole sweep the game only ever uses **BG mode 0 and display mode 1**.
+No affine, extended or bitmap background is ever selected, so `src/gfx/nds2d.c`
+does not implement them; `ds10_2d_unsupported` reports it if one is reached.
+
+```
+POWCNT1 0x020f   both engines on, no screen swap (L toggles the swap)
+engine A -> the touch screen, engine B -> the top screen
+```
+
+| engine | layer | contents | tiles | tilemap |
+|---|---|---|---|---|
+| A | BG0 | the 3D layer | - | - |
+| A | BG1 | the page, 256 colour | 0x04000 | 0x0800 |
+| A | BG2 | `S_bg`, 512x512 | 0x10000 | 0x1000 |
+| B | BG0 | the page | 0x04000 | 0x0800 |
+| B | BG1 | `S_bg` | 0x10000 | 0x1000 |
+
+Banks: B is BG-A, C is BG-B, E is OBJ-A, I is OBJ-B, G and H hold the extended
+palettes, A and F belong to the 3D engine.
+
+The pages are 256-colour **with extended palettes enabled**, so what they read is
+palette 0 of an extended slot in bank G (engine A) or H (engine B), not palette
+RAM. The same 252 colours from `PALETTE.NCLR` go into palette RAM at entry 4 and
+into each 8 KB extended slot at the same offset.
+
+### Sprites
+
+```
+OBJ-A   0x0000  DS10FONT       (32 KB)
+        0x8000  CHARACTER_c    (29824 bytes)
+OBJ-B   0x0000  CHARACTER_S    (13600 bytes)
+palette CHARACTER_c at 0x208, CHARACTER_S at 0x608, both at entry 4
+```
+
+`CHARACTER_c` is one combined sheet: the per-screen `*_c` files and `FONT` all
+appear inside it at fixed offsets, and only the combined file is loaded. No OBJ
+extended palettes are used.
+
+The game's own OAM builder (`0x0202e750`) adds **0x200** to a cell's tile number,
+which is exactly `CHARACTER_c`'s base in the 64-byte tile units DISPCNT selects -
+that is what confirmed the layout. The same function shows the whole widget-to-
+OAM path: a widget holds x, y, priority, palette and an affine index, and writes
+attr0/attr1 as one u32 and attr2 as a u16 into a software OAM buffer.
+
+### The "3D" layer
+
+The 3D engine is used as a textured-quad blitter, not for geometry: the register
+census finds `MTX_SCALE` and `MTX_TRANS` but no perspective setup, and the only
+textures are `3D_TEX`, `3D_MESS_TEX` and `UNFONT`, loaded at texture VRAM 0,
+0x8000 and 0x10000 by `0x0202320c`. That function also builds a **dimmed copy**
+of each palette at +0x200 by shifting each channel down, which is how inactive
+captions are drawn. Not implemented yet.
+
+### Asset containers
+
+Stock NITRO: a 16-byte header then blocks, magics stored byte-reversed. `NCLR`
+palettes, `NCGR`/`NCBR` tiles or linear bitmaps, `NSCR` tilemaps, `NCER` cells,
+`NANR` animations, `NFTR` fonts. `src/gfx/nitro.c` reads them; the parse is
+checked against reality rather than the docs - `61_SYN_EDIT`'s tiles and tilemap
+appear byte for byte in captured VRAM at the addresses its BGCNT points to.
+
+The cell banks are not individually named: `CHARACTER_c.NCER`'s LABL holds one
+label for 165 cells. The widget names in the string pool (`octUp`, `seqBank`,
+`mxp_%d`) are the game's own identifiers, paired with the caption to draw
+(`OCT+`, `SWING`), not asset labels.
+
+### The screen table
+
+Twenty entries at `0x02085f80`, `{u32, u32 index, char name[32]}`, read by
+`0x02056ff4` into a name-to-index map. This is the navigation map's list:
+
+```
+ 0 60_SYN_SEQ_PIANO   5 70_PATCH       10 52_FX          15 TARGET_PATTERN
+ 1 60_SYN_SEQ_PIANO   6 71_KAOSS       11 30_MIXER       16 54_DRUM_FX
+ 2 61_SYN_EDIT        7 71_KAOSS       12 51_ALL_DRUMS   17 53_DRUMEDIT
+ 3 61_SYN_EDIT        8 81_KEY_i       13 32_PATTERN     18 33_DRUM_SELECTER
+ 4 70_PATCH           9 81_KEY_i       14 01_MAIN_MENU   19 63_DRUM_EDIT_PATCH
+```
+
+Pairs are the synth 1 and synth 2 variants of the same page.
+
+### Status
+
+Reproduced from the asset files alone, and pixel-exact against melonDS for the
+same page (`make test-page`): `61_SYN_EDIT`, `70_PATCH`, `30_MIXER`, `81_KEY_i`,
+`60_SYN_SEQ_PIANO`, `01_UNMAIN_MENU`. `71_KAOSS` differs only by its moving
+cursor and `90_MAP` by the live values it displays.
+
+Not decompiled: the widget constructors that place the sprites. The OAM in
+`data/pages.bin` is captured, one frame per page, standing in until they are.
+That is the difference between a page that draws and a page that responds.

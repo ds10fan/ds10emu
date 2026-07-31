@@ -62,6 +62,22 @@ function show() {
   status.textContent = bottom + "  /  " + top;
 }
 
+/* The map is drawn on whichever screen is showing it; a click there opens the
+ * page that box leads to. */
+function onTouch(which, ev) {
+  const sel = document.getElementById(
+    which === "bottom" ? "pick-bottom" : "pick-top");
+  if (sel.value !== "90_MAP") return;
+  const r = ev.target.getBoundingClientRect();
+  const x = Math.floor((ev.clientX - r.left) * 256 / r.width);
+  const y = Math.floor((ev.clientY - r.top) * 192 / r.height);
+  const page = api.mapHit(x, y);
+  if (!page) return;
+  document.getElementById("pick-bottom").value = page;
+  if (which === "bottom") sel.value = "90_MAP";
+  show();
+}
+
 Module.onRuntimeInitialized = () => {
   api = {
     init: Module.cwrap("ds10_web_init", "number", []),
@@ -72,6 +88,7 @@ Module.onRuntimeInitialized = () => {
     width: Module.cwrap("ds10_web_width", "number", []),
     height: Module.cwrap("ds10_web_height", "number", []),
     error: Module.cwrap("ds10_web_error", "string", []),
+    mapHit: Module.cwrap("ds10_web_map_hit", "string", ["number", "number"]),
   };
   if (api.init() < 0) {
     status.textContent = "error: " + api.error();
@@ -81,5 +98,7 @@ Module.onRuntimeInitialized = () => {
   fill(document.getElementById("pick-top"), TOP_PAGES, "90_MAP");
   for (const id of ["pick-bottom", "pick-top"])
     document.getElementById(id).addEventListener("change", show);
+  for (const which of ["top", "bottom"])
+    canvases[which].addEventListener("click", (e) => onTouch(which, e));
   show();
 };
