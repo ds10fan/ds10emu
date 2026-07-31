@@ -449,6 +449,96 @@ def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
     print(f"{path}: {len(cases)} frame transitions")
 
 
+# --- sequencer capture ------------------------------------------------------
+SEQ_ALLOC = 0x0202927C     # the sequencer is plain alloc + ctor, no factory
+SEQ_CTOR = 0x0206D79C
+SEQ_CONFIG = 0x0206D830    # (seq, nsynths, ndrums)
+SEQ_SET_SWING = 0x0206DB14 # (seq, swing_percent)
+SEQ_TICK = 0x0206E5AC
+DIVIDE = 0x0200C158        # (a, b) -> a/b in r0
+SEQ_SIZE = 0x214
+
+# ds10_seq compare order.
+SEQ_FIELDS = [(0x0C, 1), (0x0D, 1), (0x10, 1), (0x14, 4), (0x18, 4), (0x1C, 4),
+              (0x20, 4), (0x24, 1), (0x28, 4), (0x2C, 1), (0x2D, 1),
+              (0x2E, 1), (0x30, 1), (0x31, 1), (0x32, 1), (0x33, 1),
+              (0x40, 4), (0x48, 4), (0x54, 4)]
+
+
+def _new_seq(o, nsyn=2, ndrum=4):
+    seq = o.call(SEQ_ALLOC, SEQ_SIZE)
+    o.call(SEQ_CTOR, seq)
+    o.call(SEQ_CONFIG, seq, nsyn, ndrum)
+    return seq
+
+
+def capture_seq_maps():
+    """Tempo and swing mappings, straight off the original's own routines."""
+    o = Oracle()
+    seq = _new_seq(o)
+    tempo = []
+    for t in range(1, 301):
+        v = o.call(DIVIDE, DS10_SEQ_TEMPO_NUM, t)
+        tempo.append((t, _s32(v)))
+    swing = []
+    for w in range(0, 101):
+        o.call(SEQ_SET_SWING, seq, w)
+        raw = bytes(o.uc.mem_read(seq + 0x30, 2))
+        swing.append((w, raw[0], raw[1]))
+    return tempo, swing
+
+
+def capture_seq_ticks(tempo, swing, ticks=400):
+    """Run the real tick with no pattern loaded, which exercises the transport,
+    the accumulator, step advance and bar counting in isolation."""
+    o = Oracle()
+    seq = _new_seq(o)
+    o.call(SEQ_SET_SWING, seq, swing)
+    period = _s32(o.call(DIVIDE, DS10_SEQ_TEMPO_NUM, tempo))
+    o.uc.mem_write(seq + 0x10, bytes([tempo & 0xFF]))
+    o.w32(seq + 0x14, period)
+    o.w32(seq + 0x40, 0)              # no pattern
+    o.uc.mem_write(seq + 0x0C, bytes([1, 1]))   # playing, starting
+
+    def snap():
+        raw = bytes(o.uc.mem_read(seq, SEQ_SIZE))
+        return [_rdf(raw, off, sz) for off, sz in SEQ_FIELDS]
+
+    steps = []
+    for _ in range(ticks):
+        before = snap()
+        o.call(SEQ_TICK, seq)
+        steps.append((before, snap()))
+    return steps
+
+
+DS10_SEQ_TEMPO_NUM = 60000000
+
+
+def cmd_seq_vectors(path="tests/vectors/seq.bin"):
+    tempo, swing = capture_seq_maps()
+    runs = []
+    for t in (60, 120, 180, 240):
+        for w in (0, 25, 50, 75, 100):
+            runs.append((t, w, capture_seq_ticks(t, w)))
+    nf = len(SEQ_FIELDS)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"SEQ1" + struct.pack("<III", len(tempo), len(swing), nf))
+        for t, v in tempo:
+            f.write(struct.pack("<ii", t, v))
+        for w, a, b in swing:
+            f.write(struct.pack("<iii", w, a, b))
+        f.write(struct.pack("<i", len(runs)))
+        for t, w, steps in runs:
+            f.write(struct.pack("<iii", t, w, len(steps)))
+            for before, after in steps:
+                f.write(struct.pack(f"<{nf}i", *before))
+                f.write(struct.pack(f"<{nf}i", *after))
+    print(f"{path}: {len(tempo)} tempos, {len(swing)} swings, "
+          f"{len(runs)} runs x {len(runs[0][2])} ticks")
+
+
 # --- synth event handling capture -------------------------------------------
 # (object, offset, size) for everything the event dispatcher can touch.
 EV_FIELDS = [("env", 0x04, 1), ("env", 0x05, 1), ("env", 0x08, 4),
@@ -1475,7 +1565,8 @@ def main():
             "fx-vectors": cmd_fx_vectors,
             "mixer-vectors": cmd_mixer_vectors,
             "drum-vectors": cmd_drum_vectors,
-            "event-vectors": cmd_event_vectors}
+            "event-vectors": cmd_event_vectors,
+            "seq-vectors": cmd_seq_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1

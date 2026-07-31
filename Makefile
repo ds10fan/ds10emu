@@ -6,10 +6,10 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event clean
+.PHONY: recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-voice test-patch test-event test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-voice test-patch test-event test-seq test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -99,6 +99,13 @@ out/test_event: tests/test_event.c src/core/event.c src/core/patch.c \
 	$(CC) $(CFLAGS) -o $@ tests/test_event.c src/core/event.c \
 	    src/core/patch.c src/core/vcf.c
 
+test-seq: out/test_seq tests/vectors/seq.bin
+	@./out/test_seq
+
+out/test_seq: tests/test_seq.c src/core/seq.c src/core/seq.h
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_seq.c src/core/seq.c
+
 # End-to-end: a whole voice, which subsumes the per-stage tests above. Those
 # stay because they localise a failure that this one only reports.
 CORE_SRC = src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
@@ -150,6 +157,9 @@ tests/vectors/drum.bin: extract tools/oracle.py tools/emu.py
 
 tests/vectors/event.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py event-vectors
+
+tests/vectors/seq.bin: extract tools/oracle.py tools/emu.py
+	@$(PY) tools/oracle.py seq-vectors
 
 # Reproduce every artifact recon.md refers to, from the ROM alone.
 recon: extract

@@ -877,3 +877,115 @@ work, and they are all small.
 
 A test will not need the 256 KB of delay memory in its vectors — zeroing both
 ring buffers on both sides and running N frames keeps them in lockstep.
+
+---
+
+## 13. Sequencer — decompiled
+
+Prior art skipped this entirely ("sequencer - don't care"). Decompiled from
+`0x0206D79C` (ctor), `0x0206D830` (config), `0x0206DB14` (swing),
+`0x0206E5AC` (tick), `0x0206E8C8` (gate/note emission), `0x0206E1EC`
+(automation lanes) and `0x0207025C` (event router).
+
+### The machine graph
+
+`0x0203235C` builds everything into one context object and wires it up:
+
+```
+context +0x274 + 4*i   synth voices   (count at +0x33C)
+        +0x284 + 4*i   drum voices    (count at +0x340)
+        +0x2A8 / +0x2AC  two mixers; +0x2A4 is the active one
+        +0x2B0         effect front end
+        +0x26C         SEQUENCER, 0x214 bytes
+        +0x144 / +0x1D8  two event routers
+```
+
+### Event router, `0x0207025C`
+
+The single path from sequencer to machines, and it confirms the queue layout
+from the other side: queue pointer at machine `+0x04`, pending count byte at
+`+0x08`, 8-byte events appended at `queue + count*8`.
+
+The target byte is a bitmask, not an index:
+
+```
+0x20  route into the machine array
+0x10  ...and broadcast to all of them rather than one
+0x40  also route to router[1] (the mixer)
+0x80  also route to router[2] (second bus)
+0x0F  channel index - also written into event byte 1
+```
+
+Event layout: byte 0 opcode, byte 1 channel (filled in by the router), bytes
+4..7 the payload. So `0x70` means "all machines plus the mixer", which is how
+transport events reach everything.
+
+### Sequencer object, 532 bytes
+
+```
++0x0C  transport: 1 = running        +0x0D  start latch
++0x10  tempo BPM                     +0x14  period = 60000000 / tempo
++0x18  accumulator                   +0x1C  increment (240000)
++0x20  sub-tick counter              +0x24  swing percent (50 = straight)
++0x28  monotonic step counter        +0x2C  steps per pattern (16)
++0x2D  current step                  +0x2E  countdown to next step
++0x30 / +0x31  sub-ticks for even / odd steps
++0x32  current step's count          +0x33  automation sub-step
++0x34  event router                  +0x3C  song-player callback (self by default)
++0x40  current pattern (0 = none)    +0x44  previous pattern
++0x48  bar counter                   +0x4C / +0x50  synth / drum counts
++0x54  total tracks                  +0x64 + 0x24*i  per-track state, 36 bytes
+```
+
+**Timing.** `period = 60000000 / tempo`. Each tick call adds `incr` to the
+accumulator and fires a sub-tick per `period` crossed, so one call can produce
+several sub-ticks. **24 sub-ticks per step pair**, split by swing as
+`even = (swing*24 + 50)/100`, `odd = 24 - even` — 50% gives 12/12, and the
+extremes give 0/24 and 24/0. Verified for all 300 tempos and all 101 swing
+values (`src/core/seq.c`, `make test-seq`).
+
+**Song-player callback.** The tick does not know about song structure. It writes
+a message id and argument into the callback object and calls its vtable slot 1.
+The ids are readable FourCCs: `"step"`, `"edtp"` (end of pattern), `"stpt"` (bar
+— the song player answers with the next pattern), `"rntp"` (end of song). If the
+bar callback returns non-zero the transport stops and a bar-start event
+(`0x1C`) is broadcast. That is the seam between sequencer and song format.
+
+### Pattern data
+
+Per track, stride `0x68`. Step records are 4 bytes at `pattern + track*0x68 +
+step*4 + 0x24`:
+
+```
+byte 0  note, negative means no note
+byte 1  gate length
+bytes 2..3  a 16-bit per-step value
+```
+
+Automation lanes are read at `pattern + track*0x68 + step*2 + 0x64`, two bytes
+per step. Note that overlaps the next track's block at stride `0x68`, so either
+the automation array is stored separately or the stride differs there — **not
+yet resolved**, and it needs the ARM rather than the decompiler output.
+
+### Note emission, `0x0206E8C8`
+
+Per track, a gate countdown (`0x0206EABC`) returns 1 (note off), 2 (note on) or
+3 (both, i.e. retrigger). Targets are `track | 0x20` for note-off and
+`track | 0xA0` for note-on — so note-ons also go to the second bus. The payload
+is the note in the low byte with `0x7F` above it.
+
+### Automation lanes, `0x0206E1EC`
+
+Two lanes per track, 8 bytes each at `track + 0x10 + lane*8`: knob id, value
+(`-1` means take the pattern default), offset, scale, then a current value and a
+per-sub-tick delta. These do **not** post events — they call the machine's knob
+handler directly through vtable slot `+0x18`, which for a synth is the same
+`0x02075648` the patch loader uses. Track mode `+0x20` selects between held and
+interpolated, and `+0x22` selects between play, record and overdub.
+
+### Status
+
+Verified bit-exact: transport, tempo mapping, swing mapping, accumulator, step
+advance and bar counting (8401 checks). Decompiled and documented above but not
+yet implemented: note/gate emission, the automation lanes, the song-player
+callback protocol and the song file format.
