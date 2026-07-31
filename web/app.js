@@ -34,6 +34,7 @@ let audio = null;      /* AudioContext, once the user has interacted */
 let octave = 0;
 let held = null;       /* the note currently sounding, if any */
 let drag = null;       /* {id, value, y} while a knob is being turned */
+let playing = false;
 
 function fill(select, names, initial) {
   for (const n of names) {
@@ -156,6 +157,20 @@ function onDown(which, ev) {
     }
     return;
   }
+  if (page === "60_SYN_SEQ_PIANO") {
+    startAudio();
+    const h = api.seqHit(x, y);
+    if (h < 0) return;
+    const step = h & 0xFF, row = h >> 8;
+    /* Twelve rows, top is the highest note. C4 sits at the bottom. */
+    const note = 60 + (11 - row);
+    const cur = api.seqNote(0, step);
+    api.seqStep(0, step, cur === note ? -1 : note);
+    if (!playing) { playing = true; api.seqPlay(1); }
+    status.textContent = "step " + (step + 1)
+      + (cur === note ? "  cleared" : "  note " + note);
+    return;
+  }
   if (page === "52_FX") {
     startAudio();
     const id = api.fxHit(x, y, 0);   /* delay; the type selector is unwired */
@@ -245,6 +260,13 @@ Module.onRuntimeInitialized = () => {
     mixerSet: Module.cwrap("ds10_web_mixer_set", null, ["number", "number"]),
     fxHit: Module.cwrap("ds10_web_fx_hit", "number",
                         ["number", "number", "number"]),
+    seqHit: Module.cwrap("ds10_web_seq_hit", "number", ["number", "number"]),
+    seqStep: Module.cwrap("ds10_web_seq_step", null,
+                          ["number", "number", "number"]),
+    seqNote: Module.cwrap("ds10_web_seq_note", "number",
+                          ["number", "number"]),
+    seqPlay: Module.cwrap("ds10_web_seq_play", null, ["number"]),
+    seqTempo: Module.cwrap("ds10_web_seq_tempo", null, ["number"]),
   };
   if (api.init() < 0) {
     status.textContent = "error: " + api.error();
@@ -260,10 +282,18 @@ Module.onRuntimeInitialized = () => {
     canvases[which].addEventListener("pointerup", () => { noteOff(); drag = null; });
     canvases[which].addEventListener("pointerleave", () => { noteOff(); drag = null; });
   }
-  /* z and x shift the keyboard by an octave, as the OCT buttons do. */
+  /* Space starts and stops the sequencer; z and x shift the keyboard by an
+   * octave, as the OCT buttons do. */
   document.addEventListener("keydown", (e) => {
     if (e.key === "z") { octave--; status.textContent = "octave " + octave; }
     if (e.key === "x") { octave++; status.textContent = "octave " + octave; }
+    if (e.key === " ") {
+      e.preventDefault();
+      startAudio();
+      playing = !playing;
+      api.seqPlay(playing ? 1 : 0);
+      status.textContent = playing ? "playing" : "stopped";
+    }
   });
   show();
 };

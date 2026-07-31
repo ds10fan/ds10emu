@@ -1712,6 +1712,7 @@ Read so far:
 | `0x0204bff8` | 81_KEY | OCT- at (4,2), OCT+ at (0x23,2), both 0x1c x 0xe; synth selector at (0x42,4), 0x46 x 0xc |
 | `0x02049150` | 71_KAOSS | two knob assignments, three buttons at x = 4 + 21*i, y = 2 |
 | `0x02050108` | 60_SYN_SEQ_* | six page variants; two 16-step runs at x = 0x16 and 0x4a, y = 3 |
+| `0x02062914` | 31_SONG | fifteen buttons from a 0x44-stride table, four more from a second |
 | `0x0205e1e4` | 52_FX | thirteen knobs sharing four positions at y = 161, x = 64/118/172/226; slider at (8,146); nine route buttons 66 x 14 |
 
 52_FX's table at `0x02086874` carries each knob's caption inline and its
@@ -1725,6 +1726,11 @@ flanger  LFO FREQ   4   DEPTH     5   -
 chorus   LFO FREQ   4   DEPTH     5   FEEDBACK 7
 always   DRY/WET    8                 slider 6
 ```
+
+60_SYN_SEQ_PIANO's grid is 13 by 13 with its origin at (42,32), measured off
+the rendered page - and the constructor agrees: it holds `0x9c` = 156 = twelve
+rows of 13 for the visible height and `0x138` = 312 = twenty-four rows for the
+whole note range, which is what the scrollbar down the left is for.
 
 ### Status
 

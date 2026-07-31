@@ -21,6 +21,7 @@
 #include "../core/tables.h"
 #include "../core/voice.h"
 #include "../core/voice_state.h"
+#include "../core/seq.h"
 
 #define FB (DS10_SCR_W * DS10_SCR_H)
 
@@ -39,6 +40,31 @@ static ds10_mixer mixer;
 /* The effect's delay lines. The mixer renders through the effect whatever the
  * route is set to, so these have to exist even with it switched off. */
 static int16_t delay_l[DS10_FX_BUFLEN], delay_r[DS10_FX_BUFLEN];
+
+/* The sequencer, verified against the original, driven from the audio loop.
+ * One pattern of sixteen steps on synth 1 - enough to be a step sequencer,
+ * and every event goes through the same tick the ROM runs. */
+#define SEQ_TICK_NUM 1600   /* per 64-sample frame */
+#define SEQ_TICK_DEN 4096   /* per sequencer tick */
+#define SEQ_MAXEV 64
+
+static ds10_seq seq;
+static ds10_seq_track seq_track[DS10_SEQ_MAXTRACKS];
+static ds10_seq_ctx seq_ctx;
+static ds10_rt_pattern seq_pat;
+static ds10_seq_posted seq_ev[SEQ_MAXEV];
+static int8_t seq_chan[DS10_MIX_KNOBS];
+static uint8_t seq_chan_idx[2 * DS10_SEQ_MAXTRACKS];
+static int seq_acc, seq_playing;
+static ds10_song_player seq_player;
+
+/* The tick asks the song player what to do at a bar line. Ours always answers
+ * with the one pattern, so it loops. */
+static void seq_handle(ds10_song_player *p, ds10_seq *s)
+{
+    (void)s;
+    if (p->msg == DS10_MSG_BAR) p->answer = &seq_pat;
+}
 static int audio_ready;
 static float audio_out[4096 * 2];
 static uint32_t fb_top[FB], fb_bottom[FB];
@@ -115,9 +141,93 @@ int ds10_web_audio_init(void)
         ds10_mixer_set_knob(&mixer, 9 + i, 64, &tables.fx);   /* centre */
         ds10_mixer_set_knob(&mixer, 17 + i, 127, &tables.fx); /* full */
     }
+    /* The sequencer starts with every step empty: gate 0, note 0xFF. */
+    /* The transport fields the constructor does not set. `starting` makes the
+     * first tick reset the counters, and the accumulator starts one increment
+     * short of the period so the first step lands immediately - both taken
+     * from what the original leaves behind. */
+    memset(&seq, 0, sizeof seq);
+    seq.incr = DS10_SEQ_INCR;
+    seq.ntracks = DS10_SEQ_MAXTRACKS;
+    seq.steps = DS10_SEQ_STEPS;
+    seq.accum = DS10_SEQ_TEMPO_NUM / 120 - DS10_SEQ_INCR + 1;
+    seq.playing = 1;
+    seq.starting = 1;
+    memset(seq_track, 0, sizeof seq_track);
+    memset(&seq_pat, 0, sizeof seq_pat);
+    seq_pat.steps = DS10_SEQ_STEPS;
+    for (i = 0; i < DS10_SEQ_MAXTRACKS; i++) {
+        int k;
+
+        /* The runtime pattern's record is note, gate, velocity, pan - the
+         * reverse of the song file's first two, which is the same trap that
+         * once turned every rest into a tie. 0xFF is no note. */
+        for (k = 0; k < DS10_SEQ_STEPS; k++) {
+            seq_pat.step[i][k][0] = -1;    /* note 0xFF: nothing here */
+            seq_pat.step[i][k][1] = 0;     /* gate */
+            seq_pat.step[i][k][2] = 127;   /* velocity */
+            seq_pat.step[i][k][3] = 64;    /* pan, centre */
+        }
+    }
+    for (i = 0; i < DS10_SEQ_MAXTRACKS; i++) {
+        seq_chan_idx[2 * i] = (uint8_t)(17 + i);
+        seq_chan_idx[2 * i + 1] = (uint8_t)(9 + i);
+    }
+    for (i = 0; i < DS10_MIX_KNOBS; i++) seq_chan[i] = 100;
+    memset(&seq_ctx, 0, sizeof seq_ctx);
+    seq_ctx.s = &seq;
+    seq_ctx.trk = seq_track;
+    seq_ctx.pat = &seq_pat;
+    seq_ctx.prev = &seq_pat;
+    seq_ctx.chan = seq_chan;
+    seq_ctx.chan_idx = seq_chan_idx;
+    seq_player.handle = seq_handle;
+    seq_ctx.player = &seq_player;
+    seq_ctx.out = seq_ev;
+    seq_ctx.max = SEQ_MAXEV;
+    ds10_seq_set_swing(&seq, 50);
+    ds10_seq_tempo(&seq_ctx, 120);
+
     audio_ready = 1;
     return 0;
 }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_seq_play(int on)
+{
+    int i;
+
+    seq_playing = on;
+    if (!on)
+        for (i = 0; i < NSYN; i++)
+            ds10_voice_event(&voice[i], DS10_EV_NOTE_OFF, 0, 0, &tables.t);
+}
+
+/* Set or clear one step. `note` below zero clears it; gate 4 is a full step,
+ * which is what tapping a cell means. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_seq_step(int track, int step, int note)
+{
+    if (track < 0 || track >= DS10_SEQ_MAXTRACKS) return;
+    if (step < 0 || step >= DS10_SEQ_STEPS) return;
+    seq_pat.step[track][step][0] = (int8_t)(note < 0 ? -1 : note);
+    seq_pat.step[track][step][1] = (int8_t)(note < 0 ? 0 : 4);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_seq_note(int track, int step)
+{
+    if (track < 0 || track >= DS10_SEQ_MAXTRACKS) return -1;
+    if (step < 0 || step >= DS10_SEQ_STEPS) return -1;
+    if (!seq_pat.step[track][step][1]) return -1;
+    return (uint8_t)seq_pat.step[track][step][0];
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_seq_tempo(int bpm) { if (audio_ready) ds10_seq_tempo(&seq_ctx, bpm); }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_seq_pos(void) { return seq.step; }
 
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_note(int v, int note, int on)
@@ -141,6 +251,25 @@ int ds10_web_audio(int frames)
     if (frames > 4096) frames = 4096;
     for (i = 0; i < 6; i++) chp[i] = buf[i];
     while (done + WEB_FRAME <= frames) {
+        /* Sequencer ticks landing in this frame, at the rate the accumulator
+         * arithmetic implies: 1600 per frame against 4096 per tick. */
+        if (seq_playing) {
+            seq_acc += SEQ_TICK_NUM;
+            while (seq_acc >= SEQ_TICK_DEN) {
+                int n, k;
+
+                seq_acc -= SEQ_TICK_DEN;
+                n = ds10_seq_run(&seq_ctx);
+                for (k = 0; k < n; k++) {
+                    int dest = seq_ev[k].dest, op = seq_ev[k].opcode;
+                    int note = (int8_t)(seq_ev[k].payload & 0xFF);
+
+                    if (dest < NSYN && (op == DS10_EV_NOTE_ON ||
+                                        op == DS10_EV_NOTE_OFF))
+                        ds10_voice_event(&voice[dest], op, note, 0, &tables.t);
+                }
+            }
+        }
         for (i = 0; i < NSYN; i++)
             ds10_voice_render(&voice[i], &pitch_tables, &vcf_tables,
                               buf[i], WEB_FRAME);
@@ -171,6 +300,16 @@ int ds10_web_page(const char *bottom, const char *top)
         return -1;
     }
     return 0;
+}
+
+/* A touch on the step grid: returns step | (row << 8), or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_seq_hit(int x, int y)
+{
+    int step, row;
+
+    if (ds10_ui_seq_hit(x, y, &step, &row) < 0) return -1;
+    return step | (row << 8);
 }
 
 /* Which mixer knob an FX-page touch drives, or -1. */

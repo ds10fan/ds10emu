@@ -41,6 +41,10 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Hit-test the step grid on 60_SYN_SEQ_PIANO. Writes the step and the row
+ * (0 at the top of the twelve visible), returns 0 on a hit. */
+int ds10_ui_seq_hit(int x, int y, int *step, int *row);
+
 /* Hit-test the FX page. Returns the mixer knob id the control drives, or -1.
  * `type` picks which set of three knobs is showing: 0 delay, 1 flanger,
  * 2 chorus. Decompiled from 0x0205e1e4. */

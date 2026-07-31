@@ -881,6 +881,27 @@ static const int FX_PARAM[3][3] = {
 };
 static const int FX_KNOB_X[4] = {64, 118, 172, 226};
 
+/* 60_SYN_SEQ_PIANO's grid. The cell is 13 by 13 with its origin at (42,32),
+ * measured off the rendered page - and the constructor at 0x02050108 agrees:
+ * it carries 0x9c = 156 = 12 rows of 13 for the visible height and 0x138 = 312
+ * = 24 rows for the whole note range, which is why there is a scrollbar.
+ */
+#define SEQ_CELL 13
+#define SEQ_X0 42
+#define SEQ_Y0 32
+#define SEQ_COLS 16
+#define SEQ_ROWS 12
+
+int ds10_ui_seq_hit(int x, int y, int *step, int *row)
+{
+    int c = (x - SEQ_X0) / SEQ_CELL, r = (y - SEQ_Y0) / SEQ_CELL;
+
+    if (x < SEQ_X0 || y < SEQ_Y0 || c >= SEQ_COLS || r >= SEQ_ROWS) return -1;
+    *step = c;
+    *row = r;
+    return 0;
+}
+
 int ds10_ui_fx_hit(int x, int y, int type)
 {
     int i;

@@ -309,7 +309,8 @@ WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
           src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
           src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
           src/core/mixer.c src/core/patch.c src/core/event.c \
-          src/core/tables.c src/core/voice_state.c src/core/mixer_state.c
+          src/core/tables.c src/core/voice_state.c src/core/mixer_state.c \
+          src/core/seq.c
 WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             --preload-file data/nitrofs@/data/nitrofs \
             --preload-file data/pages.bin@/data/pages.bin \
