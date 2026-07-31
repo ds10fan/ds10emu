@@ -1,6 +1,8 @@
-# Nothing derived from the ROM is committed.
+# Nothing derived from the ROM is committed. Test vectors are generated from
+# the user's own ROM by `make test`; only the generator is version-controlled.
 out/
 assets/
+tests/vectors/
 *.nds
 *.bin
 *.asm

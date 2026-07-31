@@ -24,10 +24,20 @@ import struct
 import sys
 import wave
 
-from unicorn import UC_HOOK_MEM_WRITE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.arm_const import UC_ARM_REG_PC
 
 import emu
+
+REG = {f"r{i}": getattr(__import__("unicorn.arm_const", fromlist=["x"]),
+                        f"UC_ARM_REG_R{i}") for i in range(13)}
+
+# --- probe points inside the per-sample loop of the render handler -----------
+# Hooks fire before the instruction at that address executes, so each probe
+# reads the register after the producing instruction has already run.
+VCF_IN = (0x02075254, "r2")    # filter input  = (vco1*vol1 + vco2*vol2) >> 15
+VCF_OUT = (0x02075334, "r5")   # filter output = selected node, already >> 9
+LOOP_HEAD = 0x02074F98
 
 # --- ARM9 code addresses -----------------------------------------------------
 SYNTH_NEW = 0x02075FF8      # alloc(0x54) + ctor; returns object in r0
@@ -105,7 +115,31 @@ class Oracle:
                 self.writes.append((u.reg_read(UC_ARM_REG_PC), addr, size, val))
             uc.hook_add(UC_HOOK_MEM_WRITE, on_write)
 
+        self._probes = {}
+        self._probe_hooked = False
+        self.probed = collections.defaultdict(list)
         self.syn = self._construct()
+
+    # -- probes -------------------------------------------------------------
+    def add_probe(self, name, pc, reg):
+        """Log `reg` every time execution reaches `pc`, into self.probed[name]."""
+        self._probes.setdefault(pc, []).append((name, REG[reg]))
+        if not self._probe_hooked:
+            def on_code(u, addr, _size, _x):
+                for name_, rid in self._probes.get(addr, ()):
+                    v = u.reg_read(rid)
+                    self.probed[name_].append(v - (1 << 32) if v >> 31 else v)
+            self.uc.hook_add(UC_HOOK_CODE, on_code)
+            self._probe_hooked = True
+
+    def add_snapshot(self, name, pc, addr, size):
+        """Record a memory region the first time execution reaches `pc`."""
+        def on_code(u, a, _size, _x):
+            if a == pc and name not in self.snapshots:
+                self.snapshots[name] = bytes(u.mem_read(addr, size))
+        if not hasattr(self, "snapshots"):
+            self.snapshots = {}
+        self.uc.hook_add(UC_HOOK_CODE, on_code, begin=pc, end=pc)
 
     # -- low level ----------------------------------------------------------
     @staticmethod
@@ -230,6 +264,99 @@ def cmd_wav(path, idx="1", note="60", frames="64"):
           f"({len(s) / RATE:.2f}s @ {RATE} Hz)")
 
 
+# FILTER object field offsets, from the decompiled render loop. The signal
+# format is Q24 clamped to +-(2^24-1); `f` and `damp` are the two state-variable
+# coefficients, each linearly ramped across the frame by its *_delta.
+VCF = {"q": 0x24, "band": 0x34, "low": 0x38, "type": 0x40,
+       "f": 0x50, "f_delta": 0x54, "damp": 0x5C, "damp_delta": 0x60}
+VCF_ORDER = ["q", "band", "low", "type", "f", "f_delta", "damp", "damp_delta"]
+FILTER_PTR = 0x44          # synth + 0x44
+VEC_MAGIC = b"VCF1"
+
+
+def _s32(v):
+    return v - (1 << 32) if v >> 31 else v
+
+
+def capture_vcf(params, note, frames=4):
+    """Per-sample filter input/output plus the filter state at each frame start.
+
+    The state must be sampled at the loop head, not before RENDER: the
+    per-frame preamble recomputes f/damp and their ramp deltas before the
+    sample loop runs, so a snapshot taken earlier is one frame stale.
+    """
+    o = Oracle()
+    fobj = o.u32(o.syn + FILTER_PTR)
+    o.add_probe("in", *VCF_IN)
+    o.add_probe("out", *VCF_OUT)
+
+    snap = {"armed": False, "state": None}
+
+    def on_loop_head(u, _a, _s, _x):
+        if snap["armed"]:
+            raw = bytes(u.mem_read(fobj, 0x64))
+            snap["state"] = [_s32(struct.unpack_from("<I", raw, VCF[k])[0])
+                             for k in VCF_ORDER]
+            snap["armed"] = False
+    o.uc.hook_add(UC_HOOK_CODE, on_loop_head, begin=LOOP_HEAD, end=LOOP_HEAD)
+
+    o.load_patch(params)
+    o.note_on(note)
+
+    cases = []
+    for _ in range(frames):
+        o.probed["in"].clear()
+        o.probed["out"].clear()
+        snap["armed"] = True
+        snap["state"] = None
+        o.call(RENDER, o.syn)
+        if snap["state"] is None:
+            continue                        # loop did not run this frame
+        cases.append((snap["state"], list(o.probed["in"]),
+                      list(o.probed["out"])))
+    return cases
+
+
+def cmd_vectors(path="tests/vectors/vcf.bin"):
+    """Sweep cutoff, peak, type and the factory patches; write test vectors."""
+    _n, init = factory_patch(0)
+    cases = []
+
+    def add(params, note, tag):
+        got = capture_vcf(params, note)
+        n = sum(len(c[1]) for c in got)
+        if n == 0:
+            print(f"  {tag}: no samples captured - skipped")
+            return
+        cases.extend(got)
+
+    for cutoff in (0, 16, 32, 48, 64, 80, 96, 112, 127):
+        for peak in (0, 40, 80, 110, 127):
+            p = list(init)
+            p[11], p[12] = cutoff, peak
+            add(p, 60, f"cutoff={cutoff} peak={peak}")
+    for ftype in (0, 1, 2):
+        for note in (36, 60, 84):
+            p = list(init)
+            p[11], p[12], p[13] = 70, 90, ftype
+            add(p, note, f"type={ftype} note={note}")
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        add(p, 60, f"patch{idx}")
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(VEC_MAGIC + struct.pack("<I", len(cases)))
+        for state, ins, outs in cases:
+            f.write(struct.pack("<8i", *state))
+            f.write(struct.pack("<I", len(ins)))
+            f.write(struct.pack(f"<{len(ins)}i", *ins))
+            f.write(struct.pack(f"<{len(outs)}i", *outs))
+    total = sum(len(c[1]) for c in cases)
+    print(f"{path}: {len(cases)} frames, {total} samples")
+    print("state field order: " + ", ".join(VCF_ORDER))
+
+
 def cmd_waves(note="60"):
     """Sweep the vco1 waveform selector with everything else neutral."""
     _n, base = factory_patch(0)                    # INIT
@@ -249,7 +376,7 @@ def cmd_waves(note="60"):
 
 def main():
     cmds = {"probe": cmd_probe, "render": cmd_render, "wav": cmd_wav,
-            "waves": cmd_waves}
+            "waves": cmd_waves, "vectors": cmd_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
