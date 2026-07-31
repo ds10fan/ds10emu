@@ -21,8 +21,36 @@ supplies their own ROM; `tools/` regenerates everything from it, and test vector
 are committed as hashes plus a generator, never as data.
 
 The established facts this plan builds on are in [`recon.md`](recon.md). Read
-that first; in particular the memory map in §2, which is the difference between a
-usable disassembly and a 99%-wrong one.
+that first; in particular §0 (prior art), §2 (the memory map, which is the
+difference between a usable disassembly and a 99%-wrong one) and §10 (the address
+and structure reference).
+
+### Which road: translation or reimplementation
+
+Prior art matters here. thement's [`ds10-vst`](https://github.com/thement/ds10-vst)
+already produces correct DS-10 audio — by **mechanically translating the original
+ARM code to C** and embedding the ROM image in the binary. Two roads exist and
+they are not the same project:
+
+| | Road A — translate | Road B — reimplement |
+|---|---|---|
+| method | ARM→C transpile, `R5 = R2 + R1; goto lab...` | understand each stage, write idiomatic C |
+| correctness | by construction | by differential testing |
+| time to first sound | short | long |
+| readable / extensible | no | yes |
+| polyphony, more voices, new features | needs N emulator contexts | natural |
+| carries original code | yes (image embedded) | no |
+
+**This plan takes Road B.** It is what "a C application" and "verification is a
+must" imply, and Road A is already done by someone else — redoing it adds
+nothing. Road B was previously the expensive option; it is now much cheaper,
+because thement published the struct layouts, knob table, event encoding and
+function addresses (recon §10), so the *discovery* cost is largely paid and what
+remains is understanding the arithmetic in each stage.
+
+Road A stays useful as a **fallback and a cross-check**: `ds10-vst` is an
+independent implementation to compare against when our output and the oracle
+disagree in a way we cannot explain.
 
 ## 2. Target
 
@@ -157,38 +185,44 @@ Remaining:
 Exit: `make recon` reproduces every recon artifact from the ROM; Ghidra database
 with correctly-based blocks, analyzed.
 
-### P1 — Locate the audio path (blocking; do this first)
+### P1 — Stand up the oracle (was: locate the audio path)
 
-The open question from recon §5: **is the render loop on the ARM9 or the ARM7?**
-The table cluster and multiply density point at ARM9, but the sound hardware is
-ARM7-only, so a buffer handoff exists either way. Nothing else can start until
-this is settled.
+The original blocking question — ARM9 or ARM7 — **is answered: ARM9**, at 32768 Hz
+in 64-sample frames, six voices (recon §5). So P1 is no longer discovery; it is
+getting the harness to actually drive the published entry points.
 
-Four independent approaches, cheapest first:
+1. Import the six blobs into Ghidra at the recon §2 addresses; import thement's
+   symbol map from recon §10 as labels so the database is readable immediately.
+2. Extend `tools/emu.py` with what the engine needs and the current stub lacks:
+   - **`DIVCNT` hardware divider** at `0x04000280` and the square-root
+     accelerator. The engine uses both; thement hit this twice and got wrong
+     output until it was implemented. This is the single most likely reason a
+     first attempt produces garbage.
+   - IPC FIFO stubs for `0x00004007` (render frame) and `0x00004047` (sequencer
+     tick).
+3. Reproduce a note: write the event pair into a synth's event area at `+0x80`
+   and bump the count at `+0x08`, then call the render handler and read the
+   64-sample buffer out of ITCM.
 
-1. Ghidra: xref the function at `0x02075454`/`0x02075458` that references both
-   resolutions of the `0x02080400` curve table.
-2. Unicorn: hook all memory writes and find the routine that writes ≥256
-   sequential 16-bit values — that is the render target buffer, whichever CPU
-   it is on.
-3. ARM7: trace the IPC FIFO handler and the `SOUNDCNT`/`SNDCAP` setup back to
-   whoever supplies its samples.
-4. Xref the remaining curve tables and see which are read in tight loops
-   (waveform / phase-accumulator indexed) versus once per note (parameter
-   curves). This also answers recon open question 2.
-
-Exit: a named render entry point plus a Unicorn harness that calls it with a
-factory patch and a note, and produces plausible non-silent audio. Also
-recorded: sample rate, block size, buffer format, voice count.
+Exit: `tools/emu.py` renders a frame for a named factory patch and a given note,
+deterministically, and the output is non-silent and stable across runs. **That
+artifact is the oracle every later phase depends on.**
 
 ### P2 — Data formats
 
-- Patch, 63 bytes: complete the field map from recon §4. Resolve whether
-  `0x00..0x0F` is a checksum, and if so which algorithm — needed only to write
-  patches the original will accept, not for playback.
+The patch parameter block is **already done** — bytes `0x20..0x3E` are knobs 0..30,
+verified against all 24 factory patches (recon §4). Remaining:
+
+- Patch bytes `0x00..0x0F`: determine whether it is a checksum. Needed only to
+  write patches the original will accept, not for playback — so this is
+  low-priority, not blocking.
 - Song, 12044 bytes: diff `ds10init.dat` against the 13 demo songs to expose
-  pattern/step/track layout.
-- UI strings, and the `ds10backup_080425.bin` save image layout.
+  pattern/step/track layout. Not covered by prior art.
+- The `ds10backup_080425.bin` save image. thement located patches at about
+  `0x38000` with the same `+0x20` parameter offset; the rest is unmapped, and
+  their own open question was "what is stored in patch saves other than the synth
+  configuration?"
+- UI string tables.
 
 Exit: Tier 0 green on all 24 patches and all 13 songs.
 
@@ -208,10 +242,27 @@ treat as **hypothesis to confirm, not as a specification**: 2 VCOs, 24 dB
 low-pass VCF with cutoff and peak, ADSR envelope, LFO, portamento, 4 drum parts,
 and a delay/chorus/flanger send.
 
-Recon §4 removes work here: the factory drum patches (`KICK1`, `SNARE1`, `HIHAT`,
-…) use the **same 63-byte patch format** as the tonal ones, so the drum parts are
-the same voice with different parameters. There is one engine to reverse, not
-two, and `drum.c` is parameter plumbing rather than a second DSP path.
+Recon §4/§10 reshape this phase considerably:
+
+- The topology is no longer hypothetical. Knob names give the actual module set:
+  2 VCOs with 4 waveforms and sync, VCF with **three types** (LP/BP/HP, not just
+  low-pass), ADSR, LFO with optional BPM sync, portamento, a **drive/distortion
+  stage** in the AMP, and a 5-input modulation matrix with 7 sources.
+- The drum path is **resampled playback**, not a live voice: a drum patch is
+  rendered once into a `0x8000`-sample buffer and then pitched by play-speed with
+  linear interpolation (`0x02072354`). So `drum.c` is a resampler plus the shared
+  voice renderer, not a second DSP path.
+- **Envelopes update once per frame, not per sample.** Getting this wrong is a
+  silent, plausible-sounding bug that Tier 1 would catch but that is much cheaper
+  to just implement correctly.
+- Known arithmetic traps, from thement's own translator bugs: ASR sign extension,
+  `SMULL` sign extension on the second operand, and post- vs pre-increment on
+  `STRH Rn, [Rm], #2`.
+
+The genuinely unreversed parts — and therefore the real risk in this phase — are
+the **effects block and the mixer** (recon §9). Prior art has their struct offsets
+but not their algorithms, and the pan law contains an unexplained `0x4444` scaling
+factor. Budget accordingly: the synth voice is well-mapped, the FX are not.
 
 Exit: Tier 1 green — zero mismatches across the full corpus.
 
@@ -254,7 +305,8 @@ audio back.
 | risk | mitigation |
 |---|---|
 | Engine not cleanly decomposable into per-stage functions | Block-level oracle works regardless; bisect by parameter sweep |
-| DSP split across both CPUs with tight IPC coupling | `emu.py` already models CPUs separately; add a FIFO bridge between two instances |
+| **Effects and mixer are unreversed even in prior art** | Highest-risk item. Oracle-driven probing: sweep one FX parameter, diff output. Fall back to comparing against `ds10-vst`, which runs the real code |
+| Harness produces garbage because the hardware divider is missing | Implement `DIVCNT` and the sqrt accelerator in P1, before trusting any output |
 | Original is C++ with virtual dispatch, hard to follow statically | Lean on the oracle: probe behaviour empirically instead of reading every branch |
 | The 16-byte patch header is a hash we cannot reproduce | Only blocks *writing* patches the original accepts; playback and Tier 1 unaffected |
 | 3D-composited UI cannot be pixel-matched in SDL 1.2 | Accept and document; do not pretend Tier 3 is exact everywhere |
@@ -262,9 +314,16 @@ audio back.
 
 ## 7. Rough sizing
 
-P1 days · P2 days · **P3 weeks — the bulk** · P4 about a week · P5 two to three
-weeks · P6 about a week.
+P1 days · P2 days · **P3 weeks — the bulk, and now concentrated in the FX/mixer
+rather than the voice** · P4 about a week · P5 two to three weeks · P6 about a
+week.
 
-P1 is the gate. If it lands cleanly, P3 becomes a grind against a fast, exact
-oracle rather than an open-ended research problem, and that is the whole point of
-front-loading the emulation harness.
+P1 is still the gate, but it is now a plumbing task rather than a research one:
+the render entry points are published, so the work is implementing the hardware
+divider and driving the event queue. Once `emu.py` renders one frame
+deterministically, P3 becomes a grind against a fast exact oracle instead of an
+open-ended research problem — which is the whole reason for front-loading the
+harness.
+
+The one part where prior art does not help is the effects and mixer. Expect that
+to dominate P3's tail.

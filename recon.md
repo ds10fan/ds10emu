@@ -16,6 +16,41 @@ The ROM is padded to 32 MB; the DS-mode payload ends at `0x71A400`.
 
 ---
 
+## 0. Prior art — substantial, and for the identical ROM
+
+There is an existing DS-10 reverse-engineering effort by **thement**:
+
+- Project log: <http://ibawizard.net/~thement/ds10rev.html> (plain HTTP only —
+  the host refuses TLS, so tools that force HTTPS cannot fetch it)
+- Code: <https://github.com/thement/ds10-vst>
+
+**Their ROM is byte-identical to ours** — `md5 70474bb824b56912cc419221aa8ae015`
+matches — so every address they publish applies directly to our extraction
+without rebasing. Their findings are integrated into the sections below and
+attributed as *(thement)*. Where our independent work agrees, that is noted,
+because two derivations from opposite directions agreeing is much stronger than
+either alone.
+
+What they established: the synth runs on **ARM9**, at **32768 Hz**, in frames of
+**64 samples**; six voices (2 synth + 4 drum) plus mixer and effects; the struct
+layouts; the 31-knob parameter table; the event encoding; and the key function
+addresses. See §5 and §10.
+
+What they did **not** finish, which is where the real work remains: the effects
+block ("attempt to make effects work didn't work very well"), the mixer, the
+drum knob handlers, and the save-file contents beyond the patch parameters.
+
+Important about the nature of their deliverable: `ds10-vst` is **not a
+reimplementation**. It is a mechanical ARM-to-C translation of the original code
+(`R5 = R2 + R1; goto lab0204720;`) with the DS-10 image embedded in the DLL,
+plus a hand-written VST wrapper. The author's own assessment of the translator
+was that it "works only by chance" and needed a rewrite. It is accurate by
+construction and it proves the engine's behaviour is reproducible — but it is not
+readable, portable, or cleanly distributable C. That distinction drives the road
+choice in `PLAN.md` §1.
+
+---
+
 ## 1. Container — confirmed
 
 ```
@@ -272,18 +307,72 @@ n     5  5  2  7  3  7  4  4 14 13  2 15 18  2 15  2  2  4 15 11  4 21 15 19 13 
   set exercises only a handful each. Useful for Tier 1: the sweeps will cover
   far more of the space than these 24 patches do.
 
-### The drum parts use the same engine
+### Parameter block fully decoded — bytes 0x20..0x3E are knobs 0..30
 
-The 24 names are:
+thement published a 31-entry knob table with names and ranges. Our patch block is
+exactly 31 bytes wide, and **all 31 ranges are consistent with all 24 factory
+patches** (`tools/probe.py knobs`). Two independent derivations agreeing:
+
+| off | knob | name | range | enc |
+|-----|------|------|-------|-----|
+| 0x20 | 0 | octave | -2..2 | s8 |
+| 0x21 | 1 | egint (pitch) | -63..63 | s8 |
+| 0x22 | 2 | porta | 0..127 | u8 |
+| 0x23 | 3 | pitch.in | -63..63 | s8 |
+| 0x24 | 4 | pitch1.in | -63..63 | s8 |
+| 0x25 | 5 | pitch2.in | -63..63 | s8 |
+| 0x26 | 6 | vco1 waveform | 0..3 | u8 |
+| 0x27 | 7 | vco2 waveform | 0..3 | u8 |
+| 0x28 | 8 | vco2pitch | -63..63 | s8 |
+| 0x29 | 9 | balance | 0..127 | u8 |
+| 0x2A | 10 | vcosync | 0..1 | u8 |
+| 0x2B | 11 | cutoff | 0..127 | u8 |
+| 0x2C | 12 | peak | 0..127 | u8 |
+| 0x2D | 13 | vcftype | 0..2 (0=LP,1=BP,2=HP) | u8 |
+| 0x2E | 14 | egint (cutoff) | -63..63 | s8 |
+| 0x2F | 15 | cutoff.in | -63..63 | s8 |
+| 0x30 | 16 | vcaeg | 0..1 | u8 |
+| 0x31 | 17 | vca.in | -63..63 | s8 |
+| 0x32 | 18 | drive | 0..127 | u8 |
+| 0x33 | 19 | level | 0..127 | u8 |
+| 0x34 | 20 | attack | 0..127 | u8 |
+| 0x35 | 21 | decay | 0..127 | u8 |
+| 0x36 | 22 | sustain | 0..127 | u8 |
+| 0x37 | 23 | release | 0..127 | u8 |
+| 0x38 | 24 | mg.freq (LFO) | 0..127 | u8 |
+| 0x39 | 25 | mg.bpm sync | 0..1 | u8 |
+| 0x3A | 26 | pitch.in source | 0..6 | u8 |
+| 0x3B | 27 | pitch1.in source | 0..6 | u8 |
+| 0x3C | 28 | pitch2.in source | 0..6 | u8 |
+| 0x3D | 29 | cutoff.in source | 0..6 | u8 |
+| 0x3E | 30 | vca.in source | 0..6 | u8 |
+
+Modulation sources (knobs 26–30): `0` none, `1` sine, `2` saw, `3` square,
+`4` S&H, `5` EG, `6` VCO2. Only the bipolar knobs use signed encoding; the
+factory set happens to keep several of them non-negative, so signedness per knob
+comes from the range column, not from the data.
+
+Confirmed independently by thement against DS-10 PLUS **save files**, where the
+same structure appears from about `0x38000` with parameters likewise at `+0x20`.
+So the patch record is the same on cartridge and in saves.
+
+### Correction: the drum parts are resampled, not live-synthesised
+
+The percussion patches use the same 63-byte format, which initially looked like
+evidence that drums are the same virtual-analog voice. They are not, quite. The
+drum voices play a **precomputed 0x8000-sample buffer** (`0x8000` = 32768 = one
+second at 32768 Hz) resampled by a play-speed field, with **linear
+interpolation** — the renderer is at `0x02072354` *(thement)*:
 
 ```
-INIT  BASS1..BASS7  LEAD1..LEAD4  UFO  THUNDR  CPU 1  PHONE      (16 tonal)
-KICK1 KICK2 SNARE1 SNARE2 SNARE3 HIHAT TOM ZAP                   ( 8 percussive)
+DRUM  +0x10  samples to render (u16)     +0x38  offset
+      +0x30  pointer to volblock         +0x40  sample length (= 0x8000)
+      +0x34  play speed                  +0x44  sample buffer address
 ```
 
-The percussion patches use the **same 63-byte format** as the tonal ones. That
-means the drum parts are the same virtual-analog voice driven by different
-parameters, not sample playback — so there is one engine to reverse, not two.
+Trigger is `play_speed = 0x8000 * 2^((note-60)/12)` *(thement)*. So the shared
+patch format is because a drum patch is **rendered once by the synth engine into
+a one-second buffer**, then pitched by resampling. One engine, two playback paths.
 
 Song format (~12 KB) not yet touched.
 
@@ -306,7 +395,7 @@ the ARM7 is irrelevant to this project. Note there are **no** sound *channel*
 register literals (`0x4000400 + ch*16`) — those are reached via a computed base,
 which is what the stock NitroSDK driver does.
 
-### ARM9 = GUI (hardware 3D) + the DSP tables — confirmed tables, hypothesis on the DSP
+### ARM9 = GUI (hardware 3D) + the whole synth engine — confirmed
 
 ARM9 references the 3D geometry engine heavily: `GXFIFO`, `MTX_MODE`,
 `MTX_PUSH/POP/SCALE/TRANS/IDENTITY`, `POLYGON_ATTR`, `TEXIMAGE_PARAM`,
@@ -324,42 +413,68 @@ arm7_037f8000.bin     99 muls /  17664 lines  (0.56%)
 arm7_02fe0000.bin     78 muls /  23846 lines  (0.33%)
 ```
 
-**A dense cluster of monotonic curve tables sits in ARM9 at ~0x0207A000–0x02081000:**
+**The synth engine is on the ARM9.** thement's entire address map lands in ARM9
+static (`0x0207xxxx`) and ARM9 ITCM (`0x01FF8xxx`), and their ITCM buffer
+addresses fall just past the end of our loaded ITCM block — exactly where runtime
+ITCM data should be. The ARM7 only receives finished frames.
+
+### The DSP tables are u32, not u16
+
+Our first scan looked for rising `u16` runs and reported six "unidentified curve
+tables" that fit no clean model. That was an artifact: **the tables are `u32`**,
+so a `u16` scan reads alternating low/high halves and manufactures false
+structure. Read correctly, three of them are unambiguous, and every one grows by
+exactly `2^(1/12)` per entry — one entry per semitone:
+
+| address | entries | width | what | check |
+|---|---|---|---|---|
+| `0x0207E950` | ~120 | u32 | pitch table *(thement)* | ratio `1.05946` = `2^(1/12)` holds for the first 119 steps |
+| `0x0207ED38` | ~105 | u32 | drum pitch table *(thement)* | ratio `2^(1/12)` for 104 steps; entry 4 is exactly `1024`, i.e. unity playback speed |
+| `0x020807C4` | **151** | u32 | filter coefficients *(thement)* | `2^(1/12)` while small, then saturates; entry 150 = `2147391259` ≈ `0x7FFFFFFF` and entry 151 is unrelated data — confirms the published count exactly |
+
+Only the filter table's length is pinned. The two pitch tables' exact lengths are
+not yet established: the semitone ratio stops holding after ~119 and ~104 steps
+respectively, and for the drum table that happens well below saturation, so it is
+probably a shorter table followed by other data rather than a curve that bends.
+Worth nailing down, but not blocking.
+
+The filter table's own departure from a constant ratio near the top *is*
+saturation toward `0x7FFFFFFF` as cutoff approaches Nyquist, not a different
+curve. That is also why our first tolerance-band detector stopped at entry 108.
+
+The addresses our u16 scan reported (`0x02080400`, `0x0207EF44`, …) were spurious
+and are withdrawn. Lesson for the rest of this project: **guess the element width
+before fitting shapes.** `tools/probe.py tables` now reads u32.
+
+### Voice topology — confirmed
+
+Six voices, each rendering a 64-sample frame into its own ITCM buffer *(thement)*:
 
 ```
-0x0207A360   62 x u16   0 .. 0x1000     (mostly zeros - probably a false positive)
-0x0207E3D8  129 x u16   0 .. 0x2000     0x2000 = 1.0 in Q13
-0x0207EF44  127 x u16   0 .. 0x7FFF
-0x0207F042  130 x u16   0 .. 0xDF6A
-0x020803C2   65 x u16   0 .. 0xFEF8
-0x02080400  226 x s16   -13614 .. +32767, zero crossing at 0x02080444
+0x01FF87E0  synth table: 022489A0 02248FE0 02249620 02249900 02249BE0 02249EC0, null-terminated
+0x01FF8820  buf syn1     0x01FF88A0  buf syn2     0x01FF8920  buf drum1
+0x01FF89A0  buf drum2    0x01FF8A20  buf drum3    0x01FF8AA0  buf drum4
 ```
 
-The `0x02080400` region is one contiguous signed table; `0x02080444` (64 entries)
-and `0x020804C4` (128 entries) are the *same curve at two resolutions*
-(`C[i] == A[2i+1]`), and a single function references both via adjacent literals
-at `0x02075454` and `0x02075458`. **That function is the best entry point for
-Phase 1.**
+Buffer stride is `0x80` = 128 bytes = **64 samples of s16**, which independently
+confirms the frame size. Frame = 64 samples = half of a double-buffered DMA
+transfer.
 
-Shape fitting was inconclusive — mean |error| / full scale against simple models:
+Timing comes from the ARM7 over the IPC FIFO *(thement)*:
 
 ```
-0x0207EF44:  linear 0.165  quarter-sine 0.030  half-sine 0.295   (max err still 5.6%)
-0x02080400:  increments grow, but the growth ratio is not constant (1.030 -> 1.025)
-             so not a clean exponential either
+0x00004007   generate one sound frame
+0x00004047   one sequencer tick
 ```
 
-So: **these are unidentified.** They could be waveform/wavetable data, pitch or
-gain curves, or filter coefficients. Curve fitting is the wrong tool — settle it
-by xref (what indexes them, and how often) plus differential probing against the
-emulation oracle. A table read once per note is a parameter curve; one read in a
-tight loop off a phase accumulator is a waveform.
+Multiply density, for what it is worth, pointed the same way before any of this
+was known:
 
-**Open question, highest priority: is the audio render loop on the ARM9 or the
-ARM7?** The table cluster and multiply density say ARM9; the sound hardware is
-ARM7-only, so there must be a buffer handoff over the IPC FIFO either way.
-`tools/emu.py` can settle this by hooking writes and looking for the routine
-that fills a large block of sequential 16-bit samples.
+```
+arm9.bin            1258 muls / 134337 lines  (0.94%)
+arm7_037f8000.bin     99 muls /  17664 lines  (0.56%)
+arm7_02fe0000.bin     78 muls /  23846 lines  (0.33%)
+```
 
 ---
 
@@ -439,13 +554,89 @@ walk(0xF000, "/")
 
 ## 9. Open questions
 
-1. **ARM9 or ARM7 for the audio render loop?** Blocks all synth work. Method in
-   §5.
-2. What are the `0x0207A000–0x02081000` tables? Start from the function at
-   `0x02075454`.
-3. Are patch bytes `0x00..0x0F` a checksum? If so, which algorithm — needed to
-   write patches the original will load.
-4. Song/pattern layout in the 12044-byte `ds10init.dat`. Diffing it against the
-   demo songs should expose most of it.
-5. Sample rate and block size of the render loop, and how buffers reach the
-   ARM7 (IPC FIFO command? shared WRAM ring?).
+Resolved since the first pass: the render loop is on the **ARM9** (§5); the
+tables are u32 and identified (§5); sample rate is **32768 Hz** with **64-sample
+frames** (§5); the patch parameter block is **fully decoded** (§4).
+
+Still open:
+
+1. **The effects block.** thement's log ends with "attempt to make effects work
+   didn't work very well". Struct offsets are known (§10) but the delay / chorus
+   / flanger algorithms are not. This is genuinely unreversed.
+2. **The mixer**, likewise: offsets known, behaviour not. Includes the
+   unexplained `0x4444` scaling factor in the pan law, and the odd pan
+   approximation `left = 0.533*(1-bal^2)`, `right = 0.533*(1-(1-bal)^2)` where
+   `[cos, sin]` would be expected.
+3. **Drum knob handlers** — never analysed.
+4. Are patch bytes `0x00..0x0F` a checksum? Needed only to write patches the
+   original will load, not to read them.
+5. Song/pattern layout in the 12044-byte `ds10init.dat`. Diffing against the
+   demo songs should expose most of it. Also: "what is stored in patch saves
+   other than the synth configuration?"
+6. Output stage: the DAC is documented as 16-bit but thement suspects filtered
+   PWM, "12 bits tops". Affects only end-to-end comparison, not the engine.
+
+---
+
+## 10. Address and structure reference *(thement, verified same build)*
+
+Functions:
+
+```
+0x02074F98  head of synthesis loop         0x02072354  drum sampler (linear interp)
+0x02075410  store output of one synth      0x020722B8  drum render handler
+0x0207546C  synth event dispatch           0x02073150  mixer + effect code
+0x02075648  parameter (knob) set           0x02071FAC  set note
+0x02075650  knob dispatch table            0x020758EC  drive knob handler
+0x01FF846C  next-machine dispatcher (ITCM) 0x02075AD4  recompute LFO from BPM
+```
+
+Method tables — slot layout is shared across machine types:
+
+```
+0x02087CEC  synth   (+0x0C render, +0x18 knob move, +0x28 noteon)
+0x02087C7C  mixer
+0x02087BCC  drum
+```
+
+Live instances:
+
+```
+0x022489A0 syn1   0x02248FE0 syn2   0x02249620 drum1  0x02249900 drum2
+0x02249BE0 drum3  0x02249EC0 drum4  0x0224A1A0 mixer  0x0224A480 effects
+0x0226A580 delay buffer   0x02248680 output soundbuf   0x021B04A0 precomputed sample
+```
+
+Every machine has `+0x08` = pending event count, `+0x80` = event area (mixer uses
+`+0xC0`). Events are 8 bytes; writing the count is the trigger.
+
+Key struct offsets:
+
+```
+SYN     +0x30 env  +0x34 LFO  +0x3C pitchctrl  +0x40 OSC  +0x44 filter  +0x48 AMP
+OSC     +0x2C vco1 type  +0x30 vco2 type  +0x34 balance  +0x38/+0x3C vco volumes
+FILTER  +0x1C cutoff  +0x20/+0x24 peak  +0x28 coef  +0x34 highpass  +0x38 lowpass
+        +0x40 type (0=LP 1=BP 2=HP)
+AMP     +0x08 env segment  +0x0C extra distortion  +0x18 level (knob*0x20408)
+        +0x38 drive coef 1 = ((knob*0x102)^2)>>15   +0x3C drive coef 2 = 0x7FFF-knob*0xE8
+EFFECT  +0x0C type (0 delay 1 chorus 2 flanger)  +0x10 delay time
+        +0x12 L/R ratio  +0x14 LFO  +0x16 depth  +0x18 feedback  +0x1A dry/wet
+```
+
+Event opcodes (low byte of the first word):
+
+```
+01 noteoff   02 noteon (note in byte 7)   04 set bpm   05 lfo reset
+18 reset env/lfo   19 stop   1C bar start   1D pattern change   1E drum shaping
+mixer: cc 06 / vv 07 = set volume on channel;  cc 06 / pp 0A = set pan
+```
+
+Behavioural notes that matter for a bit-exact reimplementation:
+
+- **Envelopes are computed once per frame, not per sample.**
+- The engine uses the DS **hardware divider** (`DIVCNT`, `0x04000280`) and square
+  root accelerator. Any emulation harness must implement them or the output is
+  wrong — thement hit this twice.
+- Their translator bugs are a free list of traps for our C code: ASR without sign
+  extension, `SMULL` without sign extension on the second operand, and `STRH Rn,
+  [Rm], #2` post- vs pre-increment.

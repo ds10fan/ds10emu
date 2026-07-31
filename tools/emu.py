@@ -15,8 +15,11 @@ import os
 import struct
 import sys
 
+import math
+
 from unicorn import (UC_ARCH_ARM, UC_HOOK_INSN_INVALID, UC_HOOK_MEM_INVALID,
-                     UC_MODE_ARM, UC_MODE_LITTLE_ENDIAN, Uc, UcError)
+                     UC_HOOK_MEM_WRITE, UC_MODE_ARM, UC_MODE_LITTLE_ENDIAN, Uc,
+                     UcError)
 from unicorn.arm_const import (UC_ARM_REG_LR, UC_ARM_REG_PC, UC_ARM_REG_R0,
                                UC_ARM_REG_R1, UC_ARM_REG_R2, UC_ARM_REG_R3,
                                UC_ARM_REG_SP, UC_CPU_ARM_926, UC_CPU_ARM_946)
@@ -70,6 +73,67 @@ CPUS = {
 STACK_TOP = 0x0F008000
 MAGIC_LR = 0x0F00FFF0          # returning here means "function finished"
 
+# The DS9 hardware divider and square-root accelerator. The synth engine uses
+# both, so without them the render output is silently wrong rather than
+# crashing - a trap the prior reverse-engineering effort hit twice. Emulating
+# them means watching for writes to the operand registers and computing the
+# result eagerly, since real hardware latency does not matter here.
+DIVCNT, DIV_NUMER, DIV_DENOM, DIV_RESULT, DIVREM = (
+    0x04000280, 0x04000290, 0x04000298, 0x040002A0, 0x040002A8)
+SQRTCNT, SQRT_RESULT, SQRT_PARAM = 0x040002B0, 0x040002B4, 0x040002B8
+
+
+def _s64(v):
+    return v - (1 << 64) if v & (1 << 63) else v
+
+
+def install_math_accelerators(uc):
+    """Model DIVCNT / SQRTCNT by recomputing on every operand write."""
+    def rd(addr, n):
+        return int.from_bytes(uc.mem_read(addr, n), "little")
+
+    def wr(addr, n, val):
+        uc.mem_write(addr, (val & ((1 << (8 * n)) - 1)).to_bytes(n, "little"))
+
+    def recompute_div():
+        mode = rd(DIVCNT, 2) & 3
+        if mode == 0:                                  # 32 / 32
+            num, den = _s64(rd(DIV_NUMER, 4) | 0), rd(DIV_DENOM, 4)
+            num = num - (1 << 32) if num & (1 << 31) else num
+            den = den - (1 << 32) if den & (1 << 31) else den
+            width = 4
+        elif mode == 1:                                # 64 / 32
+            num = _s64(rd(DIV_NUMER, 8))
+            den = rd(DIV_DENOM, 4)
+            den = den - (1 << 32) if den & (1 << 31) else den
+            width = 8
+        else:                                          # 64 / 64
+            num, den = _s64(rd(DIV_NUMER, 8)), _s64(rd(DIV_DENOM, 8))
+            width = 8
+        if den == 0:
+            wr(DIVCNT, 2, (rd(DIVCNT, 2) | 0x4000))    # div-by-zero flag
+            return
+        wr(DIVCNT, 2, rd(DIVCNT, 2) & ~0x4000)
+        # ARM DS divider truncates toward zero, unlike Python's floor division.
+        q = abs(num) // abs(den)
+        q = -q if (num < 0) != (den < 0) else q
+        r = num - q * den
+        wr(DIV_RESULT, 8 if width == 8 else 4, q)
+        wr(DIVREM, 8 if width == 8 else 4, r)
+
+    def recompute_sqrt():
+        mode = rd(SQRTCNT, 2) & 1
+        v = rd(SQRT_PARAM, 8 if mode else 4)
+        wr(SQRT_RESULT, 4, math.isqrt(v))
+
+    def on_write(uc_, _access, address, _size, _value, _u):
+        if DIVCNT <= address < DIV_RESULT:
+            recompute_div()
+        elif SQRT_PARAM <= address < SQRT_PARAM + 8 or address == SQRTCNT:
+            recompute_sqrt()
+
+    uc.hook_add(UC_HOOK_MEM_WRITE, on_write, begin=0x04000280, end=0x040002C0)
+
 
 def build(cpu="arm7", trace_io=False):
     """Map memory for one CPU and load its blocks at their real addresses."""
@@ -108,6 +172,8 @@ def build(cpu="arm7", trace_io=False):
             return True
         return False
     uc.hook_add(UC_HOOK_INSN_INVALID, on_insn_invalid)
+    if cpu == "arm9":
+        install_math_accelerators(uc)
 
     io = []
     if trace_io:
