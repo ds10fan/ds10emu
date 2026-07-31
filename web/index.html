@@ -18,7 +18,10 @@
     background: #000; border-radius: 3px;
     box-shadow: 0 0 0 1px #2a2f37;
   }
-  #bottom { cursor: crosshair; }
+  #bottom, #top { cursor: crosshair; touch-action: none; }
+  kbd { background:#21252b; border:1px solid #343a42; border-radius:3px;
+        padding:0 .3rem; font-family:ui-monospace,monospace; font-size:.85em; }
+  code { background:#21252b; padding:.1rem .35rem; border-radius:3px; }
   .row { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; }
   select, button {
     background: #21252b; color: #e6e6e6; border: 1px solid #343a42;
@@ -31,7 +34,10 @@
 
 <h1>KORG DS-10 PLUS &mdash; decompiled</h1>
 <p>Both screens are drawn by a C reimplementation of the DS 2D graphics
-hardware, compiled to WebAssembly, reading the game's own asset files.</p>
+hardware, compiled to WebAssembly, reading the game's own asset files.
+Touch the keyboard to play it &mdash; that is the decompiled synth engine.
+Touch a box on <code>90_MAP</code> to open that page. <kbd>z</kbd> and
+<kbd>x</kbd> shift the keyboard an octave.</p>
 
 <div class="row">
   <label>bottom <select id="pick-bottom"></select></label>

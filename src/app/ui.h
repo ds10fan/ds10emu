@@ -32,6 +32,10 @@ void ds10_ui_frame(ds10_ui *u, uint32_t *top, uint32_t *bottom);
  * whose behaviour is wired up so far. */
 const char *ds10_ui_map_hit(int x, int y);
 
+/* Hit-test a touch on the keyboard page. Returns a MIDI note, or -1 if the
+ * touch is not on a key. `octave` shifts by twelve, as the OCT buttons do. */
+int ds10_ui_key_hit(int x, int y, int octave);
+
 /* The GPU state, for tests that compare it against a captured frame. */
 ds10_gpu *ds10_ui_gpu(ds10_ui *u);
 

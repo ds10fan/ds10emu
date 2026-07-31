@@ -107,8 +107,8 @@ static int load(const char *path)
         return -1;
     }
     version = rd32();
-    if (version != 3) {
-        fprintf(stderr, "%s: snapshot version %u, expected 3\n", path,
+    if (version != 4) {
+        fprintf(stderr, "%s: snapshot version %u, expected 4\n", path,
                 version);
         return -1;
     }

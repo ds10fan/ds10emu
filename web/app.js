@@ -1,12 +1,13 @@
 /* Drives the WebAssembly build: pick a page, render it, put the pixels on the
- * canvases. The C side owns the framebuffers; this only copies them out. */
+ * canvases, and play the synth when the keyboard page is touched. The C side
+ * owns the framebuffers and the audio; this only moves bytes. */
 "use strict";
 
 /* The pages under /data/mainbg that are whole screens. Those whose sprite
  * layer is known reproduce the hardware exactly; the rest draw their
  * background only, which is why they look bare. */
 const BOTTOM_PAGES = [
-  "61_SYN_EDIT", "70_PATCH", "81_KEY_i", "30_MIXER", "60_SYN_SEQ_PIANO",
+  "81_KEY_i", "61_SYN_EDIT", "70_PATCH", "30_MIXER", "60_SYN_SEQ_PIANO",
   "71_KAOSS", "52_FX", "32_PATTERN", "51_ALL_DRUMS", "53_DRUMEDIT",
   "54_DRUM_FX", "55_DRUMEDITMAP", "60_SYN_SEQ_GATE", "60_SYN_SEQ_PAN",
   "60_SYN_SEQ_VOL", "60_SYN_SEQ_KAOSS", "62_DRUM_SEQ_GATE",
@@ -29,6 +30,9 @@ const ctx = {
 };
 
 let api = null;
+let audio = null;      /* AudioContext, once the user has interacted */
+let octave = 0;
+let held = null;       /* the note currently sounding, if any */
 
 function fill(select, names, initial) {
   for (const n of names) {
@@ -51,9 +55,13 @@ function draw() {
   blit("bottom", api.bottom(), w, h);
 }
 
+function pageOf(which) {
+  return document.getElementById(
+    which === "bottom" ? "pick-bottom" : "pick-top").value;
+}
+
 function show() {
-  const bottom = document.getElementById("pick-bottom").value;
-  const top = document.getElementById("pick-top").value;
+  const bottom = pageOf("bottom"), top = pageOf("top");
   if (api.page(bottom, top) < 0) {
     status.textContent = "error: " + api.error();
     return;
@@ -62,20 +70,72 @@ function show() {
   status.textContent = bottom + "  /  " + top;
 }
 
-/* The map is drawn on whichever screen is showing it; a click there opens the
- * page that box leads to. */
-function onTouch(which, ev) {
-  const sel = document.getElementById(
-    which === "bottom" ? "pick-bottom" : "pick-top");
-  if (sel.value !== "90_MAP") return;
+/* Audio. The engine runs at 32768 Hz and the browser resamples. Blocks are
+ * rendered ahead of the clock and queued, which is enough for a keyboard. */
+function startAudio() {
+  if (audio) return;
+  if (api.audioInit() < 0) {
+    status.textContent = "error: " + api.error();
+    return;
+  }
+  audio = new AudioContext();
+  const rate = api.rate();
+  const BLOCK = 2048;
+  let next = audio.currentTime;
+
+  setInterval(() => {
+    /* Keep about a fifth of a second queued. */
+    while (next < audio.currentTime + 0.2) {
+      const n = api.audioRender(BLOCK);
+      if (!n) return;
+      const src = new Float32Array(Module.HEAPU8.buffer, api.audioBuf(), n * 2);
+      const b = audio.createBuffer(2, n, rate);
+      const l = b.getChannelData(0), r = b.getChannelData(1);
+      for (let i = 0; i < n; i++) { l[i] = src[i * 2]; r[i] = src[i * 2 + 1]; }
+      const s = audio.createBufferSource();
+      s.buffer = b;
+      s.connect(audio.destination);
+      const at = Math.max(next, audio.currentTime);
+      s.start(at);
+      next = at + n / rate;
+    }
+  }, 40);
+}
+
+function screenPos(ev) {
   const r = ev.target.getBoundingClientRect();
-  const x = Math.floor((ev.clientX - r.left) * 256 / r.width);
-  const y = Math.floor((ev.clientY - r.top) * 192 / r.height);
-  const page = api.mapHit(x, y);
-  if (!page) return;
-  document.getElementById("pick-bottom").value = page;
-  if (which === "bottom") sel.value = "90_MAP";
-  show();
+  return [Math.floor((ev.clientX - r.left) * 256 / r.width),
+          Math.floor((ev.clientY - r.top) * 192 / r.height)];
+}
+
+function noteOff() {
+  if (held === null) return;
+  api.note(0, held, 0);
+  held = null;
+}
+
+function onDown(which, ev) {
+  const page = pageOf(which);
+  const [x, y] = screenPos(ev);
+
+  if (page === "90_MAP") {
+    const next = api.mapHit(x, y);
+    if (next) {
+      document.getElementById("pick-bottom").value = next;
+      show();
+    }
+    return;
+  }
+  if (page.startsWith("81_KEY")) {
+    startAudio();
+    const note = api.keyHit(x, y, octave);
+    if (note >= 0) {
+      noteOff();
+      api.note(0, note, 1);
+      held = note;
+      status.textContent = page + "   note " + note;
+    }
+  }
 }
 
 Module.onRuntimeInitialized = () => {
@@ -89,16 +149,31 @@ Module.onRuntimeInitialized = () => {
     height: Module.cwrap("ds10_web_height", "number", []),
     error: Module.cwrap("ds10_web_error", "string", []),
     mapHit: Module.cwrap("ds10_web_map_hit", "string", ["number", "number"]),
+    keyHit: Module.cwrap("ds10_web_key_hit", "number",
+                         ["number", "number", "number"]),
+    audioInit: Module.cwrap("ds10_web_audio_init", "number", []),
+    audioRender: Module.cwrap("ds10_web_audio", "number", ["number"]),
+    audioBuf: Module.cwrap("ds10_web_audio_buf", "number", []),
+    rate: Module.cwrap("ds10_web_rate", "number", []),
+    note: Module.cwrap("ds10_web_note", null, ["number", "number", "number"]),
   };
   if (api.init() < 0) {
     status.textContent = "error: " + api.error();
     return;
   }
-  fill(document.getElementById("pick-bottom"), BOTTOM_PAGES, "61_SYN_EDIT");
+  fill(document.getElementById("pick-bottom"), BOTTOM_PAGES, "81_KEY_i");
   fill(document.getElementById("pick-top"), TOP_PAGES, "90_MAP");
   for (const id of ["pick-bottom", "pick-top"])
     document.getElementById(id).addEventListener("change", show);
-  for (const which of ["top", "bottom"])
-    canvases[which].addEventListener("click", (e) => onTouch(which, e));
+  for (const which of ["top", "bottom"]) {
+    canvases[which].addEventListener("pointerdown", (e) => onDown(which, e));
+    canvases[which].addEventListener("pointerup", noteOff);
+    canvases[which].addEventListener("pointerleave", noteOff);
+  }
+  /* z and x shift the keyboard by an octave, as the OCT buttons do. */
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "z") { octave--; status.textContent = "octave " + octave; }
+    if (e.key === "x") { octave++; status.textContent = "octave " + octave; }
+  });
   show();
 };

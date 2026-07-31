@@ -304,16 +304,23 @@ out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 
 # Needs the Emscripten SDK; source its emsdk_env.sh, or point EMCC at emcc.
 EMCC ?= emcc
-WEB_SRC = src/web/main.c src/app/ui.c src/gfx/nds2d.c src/gfx/nitro.c
+WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c \
+          src/gfx/nds2d.c src/gfx/nitro.c \
+          src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
+          src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
+          src/core/mixer.c src/core/patch.c src/core/event.c \
+          src/core/tables.c src/core/voice_state.c src/core/mixer_state.c
 WEB_FLAGS = -O2 -std=c99 -Wall \
             --preload-file data/nitrofs@/data/nitrofs \
             --preload-file data/pages.bin@/data/pages.bin \
+            --preload-file data/tables.bin@/data/tables.bin \
             -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8"]' \
             -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
 
 web: web/build/ds10.js
 web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \
-                   data/pages.bin web/index.html web/app.js
+                   data/pages.bin data/tables.bin web/index.html \
+                   web/app.js
 	@mkdir -p web/build
 	$(EMCC) $(WEB_FLAGS) -o web/build/ds10.js $(WEB_SRC)
 	@cp web/index.html web/app.js web/build/

@@ -415,6 +415,46 @@ const char *ds10_ui_map_hit(int x, int y)
     return NULL;
 }
 
+/* The keyboard on 81_KEY: fourteen white keys of 18 pixels from x=3, and ten
+ * black keys over them. Measured off the rendered page, which is pixel-exact
+ * against the hardware, so the boundaries are the real ones.
+ *
+ * The keys run F to E over two octaves - the gaps between black keys fall
+ * after the third and sixth white key, which only happens starting on F. Which
+ * F is an assumption: the lowest key is taken as F3, and the OCT buttons move
+ * it by twelve. That has not been checked against the device.
+ */
+#define KEY_TOP 28
+#define KEY_BOTTOM 170
+#define BLACK_BOTTOM 116
+#define WHITE_X0 3
+#define WHITE_W 18
+#define KEY_BASE 53 /* F3 */
+
+static const int WHITE_SEMI[14] = {
+    0, 2, 4, 6, 7, 9, 11, 12, 14, 16, 18, 19, 21, 23,
+};
+
+static const struct { int x0, x1, semi; } BLACK_KEY[10] = {
+    { 14,  24,  1}, { 33,  43,  3}, { 52,  62,  5}, { 86,  96,  8},
+    {106, 116, 10}, {140, 150, 13}, {159, 169, 15}, {178, 188, 17},
+    {212, 222, 20}, {232, 242, 22},
+};
+
+int ds10_ui_key_hit(int x, int y, int octave)
+{
+    int i;
+
+    if (y < KEY_TOP || y > KEY_BOTTOM) return -1;
+    if (y <= BLACK_BOTTOM)
+        for (i = 0; i < 10; i++)
+            if (x >= BLACK_KEY[i].x0 && x <= BLACK_KEY[i].x1)
+                return KEY_BASE + BLACK_KEY[i].semi + octave * 12;
+    i = (x - WHITE_X0) / WHITE_W;
+    if (x < WHITE_X0 || i < 0 || i >= 14) return -1;
+    return KEY_BASE + WHITE_SEMI[i] + octave * 12;
+}
+
 ds10_gpu *ds10_ui_gpu(ds10_ui *u)
 {
     return &u->gpu;

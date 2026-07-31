@@ -64,6 +64,8 @@ def main():
         f.write(text)
     cmd = ["./out/ndsref", ROM, "-f", str(frames), "-o", outdir,
            "-s", path, "-e", "200", "-b", "100"]
+    if "-m" in sys.argv:
+        cmd.append("-m")
     if os.path.exists(SAVE):
         cmd += ["-w", SAVE]
     print(" ".join(cmd))

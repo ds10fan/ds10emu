@@ -11,7 +11,10 @@
  * harness cannot do, because Unicorn runs the CPU and stops at the hardware.
  *
  *   ndsref <rom> [-f frames] [-o outdir] [-s script] [-e every] [-b begin]
- *                [-w save.sav]
+ *                [-w save.sav] [-m]
+ *
+ * -m adds a dump of main RAM to each snapshot, which is where the interface's
+ * widget objects live.
  *
  * The script is one command per line, "<frame> <command> [args]":
  *
@@ -57,7 +60,7 @@ public:
 };
 
 #define SNAP_MAGIC "NDS2"
-#define SNAP_VERSION 3
+#define SNAP_VERSION 4
 
 struct Cmd {
     int frame;
@@ -133,6 +136,8 @@ static void dump_engine(FILE *f, GPU2D &g)
     fputc(0, f);
 }
 
+static bool dump_ram = false;
+
 static void snapshot(NDS &nds, RefRenderer &rend, const std::string &dir,
                      int frame)
 {
@@ -192,6 +197,12 @@ static void snapshot(NDS &nds, RefRenderer &rend, const std::string &dir,
     nds.GPU.GetFramebuffers(&top, &bot);
     fwrite(top, 1, 256 * 192 * 4, f);
     fwrite(bot, 1, 256 * 192 * 4, f);
+
+    /* Main RAM, optionally: the widget objects live here, and rebuilding
+     * their OAM is what replaces a captured sprite layer with a generated
+     * one. 4 MB a frame, so it is off unless asked for. */
+    put32(f, dump_ram ? nds.MainRAMMask + 1 : 0);
+    if (dump_ram) fwrite(nds.MainRAM, 1, nds.MainRAMMask + 1, f);
     fclose(f);
 }
 
@@ -208,11 +219,13 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-e") && i + 1 < argc) every = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-b") && i + 1 < argc) begin = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-w") && i + 1 < argc) save = argv[++i];
+        else if (!strcmp(argv[i], "-m")) dump_ram = true;
         else if (argv[i][0] != '-') rom = argv[i];
     }
     if (!rom) {
         fprintf(stderr, "usage: ndsref <rom> [-f frames] [-o dir] "
-                        "[-s script] [-e every] [-b begin] [-w save]\n");
+                        "[-s script] [-e every] [-b begin] [-w save] "
+                        "[-m]\n");
         return 2;
     }
 

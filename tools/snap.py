@@ -72,6 +72,13 @@ class Snap:
         self.top = blob[o:o + FB]
         o += FB
         self.bot = blob[o:o + FB]
+        o += FB
+        # Main RAM, when the capture was made with -m. This is where the
+        # interface's widget objects live.
+        self.ram = b""
+        if o + 4 <= len(blob):
+            n = struct.unpack_from("<I", blob, o)[0]
+            self.ram = blob[o + 4:o + 4 + n]
 
     @staticmethod
     def _engine(blob, o):
