@@ -251,7 +251,26 @@ verified against all 24 factory patches (recon §4). Remaining:
 
 Exit: Tier 0 green on all 24 patches and all 13 songs.
 
-### P3 — Synth engine (the bulk of the work)
+### P3 — Synth engine (the bulk of the work) — **in progress**
+
+Bit-exact against the oracle, zero mismatches, under `make test`:
+
+| stage | source | vectors | status |
+|---|---|---|---|
+| VCF | `src/core/vcf.c` | 19968 samples / 312 frames | **done** |
+| VCO ×2 + xmod + sync + mix | `src/core/vco.c` | 15616 samples / 244 frames | **done** |
+| ENV (`+0x30`) | | | next |
+| LFO (`+0x34`) | | | |
+| NOTECTRL / PITCHCTRL (`+0x38`, `+0x3C`) | | | |
+| AMP + drive (`+0x48`) | | | |
+| render chain (`+0x4C`) | | | |
+| cutoff/pitch modulation matrix | | | |
+
+Both landed bit-exact on the first attempt, which says the oracle-first
+approach is working: the expensive part is reading the arithmetic correctly, and
+the test tells you immediately whether you did.
+
+
 
 Reverse and reimplement one stage at a time, differential-testing each stage as
 it lands rather than at the end. Order follows the signal path:
