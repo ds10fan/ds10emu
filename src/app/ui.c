@@ -942,14 +942,21 @@ static const int FX_PARAM[3][3] = {
 };
 static const int FX_KNOB_X[4] = {64, 118, 172, 226};
 
-/* 60_SYN_SEQ_PIANO's grid. The cell is 13 by 13 with its origin at (42,32),
- * measured off the rendered page - and the constructor at 0x02050108 agrees:
- * it carries 0x9c = 156 = 12 rows of 13 for the visible height and 0x138 = 312
- * = 24 rows for the whole note range, which is why there is a scrollbar.
+/* 60_SYN_SEQ_PIANO's grid, from the update at 0x02051074:
+ *
+ *     FUN_0205fdc4(scroller, 0x2d, 0x23, 0xd0, 0x9c, 0x10, 0xc)
+ *
+ * - a scrollable region at (45,35), 208 by 156, of 16 by 12 cells. So the cell
+ * is 13 square, and the constructor's 0x9c is those twelve rows while its
+ * 0x138 is the whole twenty-four-row note range, which is what the scrollbar
+ * moves through.
+ *
+ * Measuring the grid off the rendered page put the origin at (42,32), three
+ * pixels out in both axes.
  */
 #define SEQ_CELL 13
-#define SEQ_X0 42
-#define SEQ_Y0 32
+#define SEQ_X0 45
+#define SEQ_Y0 35
 #define SEQ_COLS 16
 #define SEQ_ROWS 12
 

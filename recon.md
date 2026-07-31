@@ -1838,6 +1838,28 @@ A screen either inlines its redraw - the five long updates do - or delegates to
 a few named passes, which the short ones do. Either way the update is the whole
 of it: about 14.5 KB of code across the eleven.
 
+### Two more updates
+
+`0x02051074` is 60_SYN_SEQ's. Same four-state machine, on `+0x140` here, but
+its running state dispatches again on a **sub-mode** at `+0x144` - one handler
+per page variant, which is what the constructor's six-name table was for:
+
+```
+0 -> 0x02051254   3 -> 0x020513a4
+1 -> 0x020514ec   4 -> 0x02051774(screen, 0)
+2 -> 0x02051630   5 -> 0x02051774(screen, 1)
+```
+
+Its build state also sets up the step grid:
+`FUN_0205fdc4(scroller, 0x2d, 0x23, 0xd0, 0x9c, 0x10, 0xc)` - a scrollable
+region at (45,35), 208 by 156, of 16 by 12 cells of 13 square. Measuring that
+off the rendered page had put the origin three pixels out in both axes.
+
+`0x02057f74` is 33_DRUM_SELECTER's, and it is a commit rather than a redraw:
+when the document's `+0x2ec` reaches 2 a drum has been picked, so it sets the
+current drum, reloads the patches, re-renders each drum's buffer
+(`0x0206dfcc` per drum, then `0x0206ec10`) and rebuilds the screen.
+
 ### The mixer's redraw passes
 
 The two passes state 2 ends with, on the mixer:
