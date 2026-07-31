@@ -365,6 +365,79 @@ def capture_vco(params, note, frames=4):
     return cases
 
 
+ENV_PTR = 0x30             # synth + 0x30
+
+
+def capture_env(params, note, frames, release_at=None):
+    """Envelope state transitions, one per frame.
+
+    The envelope advances once per frame in the render preamble, so this is a
+    state-transition test rather than a sample stream.
+
+    Events are dispatched INSIDE render, before the envelope block, so a
+    snapshot taken before the call would miss a note-on/off changing the stage.
+    Each event therefore gets one discarded frame, after which no events are
+    pending and the pre-call state is exactly what the envelope block sees.
+    """
+    o = Oracle()
+    eobj = o.u32(o.syn + ENV_PTR)
+    o.load_patch(params)
+
+    def state():
+        raw = bytes(o.uc.mem_read(eobj, 0x14))
+        pblk = struct.unpack_from("<I", raw, 0)[0]
+        praw = bytes(o.uc.mem_read(pblk, 0x10))
+        return ([_s32(struct.unpack_from("<I", praw, 4 * i)[0]) for i in range(4)],
+                raw[4],
+                _s32(struct.unpack_from("<I", raw, 8)[0]),
+                _s32(struct.unpack_from("<I", raw, 12)[0]))
+
+    cases = []
+
+    def run(n):
+        for _ in range(n):
+            pblk, stage, level, aux = state()
+            o.call(RENDER, o.syn)
+            _p2, stage2, level2, aux2 = state()
+            cases.append((pblk, stage, level, aux, stage2, level2, aux2))
+
+    o.note_on(note)
+    o.call(RENDER, o.syn)              # event frame, not measured
+    if release_at is None:
+        run(frames)
+    else:
+        run(release_at)
+        o.note_off()
+        o.call(RENDER, o.syn)          # event frame, not measured
+        run(frames - release_at)
+    return cases
+
+
+def cmd_env_vectors(path="tests/vectors/env.bin"):
+    """Sweep A/D/S/R across the factory patches, with and without note-off."""
+    _n, init = factory_patch(0)
+    cases = []
+    for a in (0, 20, 60, 127):
+        for d in (0, 40, 127):
+            for s in (0, 64, 127):
+                for r in (0, 50, 127):
+                    p = list(init)
+                    p[20], p[21], p[22], p[23] = a, d, s, r
+                    cases += capture_env(p, 60, 24, release_at=12)
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        cases += capture_env(p, 60, 16, release_at=8)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"ENV1" + struct.pack("<I", len(cases)))
+        for pblk, st, lv, ax, st2, lv2, ax2 in cases:
+            f.write(struct.pack("<4i", *pblk))
+            f.write(struct.pack("<iii", st, lv, ax))
+            f.write(struct.pack("<iii", st2, lv2, ax2))
+    print(f"{path}: {len(cases)} frame transitions")
+
+
 def cmd_vco_vectors(path="tests/vectors/vco.bin"):
     """Sweep both waveforms, sync, cross-mod, balance and the factory patches."""
     _n, init = factory_patch(0)
@@ -464,7 +537,8 @@ def cmd_waves(note="60"):
 def main():
     cmds = {"probe": cmd_probe, "render": cmd_render, "wav": cmd_wav,
             "waves": cmd_waves, "vectors": cmd_vectors,
-            "vco-vectors": cmd_vco_vectors}
+            "vco-vectors": cmd_vco_vectors,
+            "env-vectors": cmd_env_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
