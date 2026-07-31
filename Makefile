@@ -6,10 +6,10 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: recon extract oracle ghidra-image test test-vcf clean
+.PHONY: recon extract oracle ghidra-image test test-vcf test-vco clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-vcf
+test: test-vcf test-vco
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -18,9 +18,19 @@ out/test_vcf: tests/test_vcf.c src/core/vcf.c src/core/vcf.h $(CORE_HDRS)
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_vcf.c src/core/vcf.c
 
+test-vco: out/test_vco tests/vectors/vco.bin
+	@./out/test_vco
+
+out/test_vco: tests/test_vco.c src/core/vco.c src/core/vco.h $(CORE_HDRS)
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_vco.c src/core/vco.c
+
 # Vectors are ROM-derived and never committed; regenerate them locally.
 tests/vectors/vcf.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py vectors
+
+tests/vectors/vco.bin: extract tools/oracle.py tools/emu.py
+	@$(PY) tools/oracle.py vco-vectors
 
 # Reproduce every artifact recon.md refers to, from the ROM alone.
 recon: extract

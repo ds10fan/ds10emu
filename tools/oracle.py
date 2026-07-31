@@ -317,6 +317,93 @@ def capture_vcf(params, note, frames=4):
     return cases
 
 
+# OSC object field offsets, from the decompiled oscillator block. Order must
+# match ds10_vco in src/core/vco.h and the reader in tests/test_vco.c.
+VCO = {"xmod": 0x0C, "phase1": 0x14, "phase2": 0x18, "inc1": 0x1C,
+       "inc2": 0x20, "shape1": 0x24, "shape2": 0x28, "wave1": 0x2C,
+       "wave2": 0x30, "vol1": 0x38, "vol2": 0x3C, "lfsr1": 0x40,
+       "lfsr2": 0x44, "sync": 0x48, "prev2": 0x4C, "hold2": 0x50,
+       "xm_60": 0x60, "xm_64": 0x64, "xm_68": 0x68, "xm_6c": 0x6C}
+VCO_ORDER = ["xmod", "phase1", "phase2", "inc1", "inc2", "shape1", "shape2",
+             "wave1", "wave2", "vol1", "vol2", "lfsr1", "lfsr2", "sync",
+             "prev2", "hold2", "xm_60", "xm_64", "xm_68", "xm_6c"]
+OSC_PTR = 0x40             # synth + 0x40
+
+
+def capture_vco(params, note, frames=4):
+    """Oscillator state at each frame start plus the mixed output per sample.
+
+    The mix that feeds the filter is exactly the VCF_IN probe point, so no new
+    probe is needed.
+    """
+    o = Oracle()
+    oobj = o.u32(o.syn + OSC_PTR)
+    o.add_probe("mix", *VCF_IN)
+
+    snap = {"armed": False, "state": None}
+
+    def on_loop_head(u, _a, _s, _x):
+        if snap["armed"]:
+            raw = bytes(u.mem_read(oobj, 0xA0))
+            snap["state"] = [_s32(struct.unpack_from("<I", raw, VCO[k])[0])
+                             for k in VCO_ORDER]
+            snap["armed"] = False
+    o.uc.hook_add(UC_HOOK_CODE, on_loop_head, begin=LOOP_HEAD, end=LOOP_HEAD)
+
+    o.load_patch(params)
+    o.note_on(note)
+
+    cases = []
+    for _ in range(frames):
+        o.probed["mix"].clear()
+        snap["armed"] = True
+        snap["state"] = None
+        o.call(RENDER, o.syn)
+        if snap["state"] is None:
+            continue
+        cases.append((snap["state"], list(o.probed["mix"])))
+    return cases
+
+
+def cmd_vco_vectors(path="tests/vectors/vco.bin"):
+    """Sweep both waveforms, sync, cross-mod, balance and the factory patches."""
+    _n, init = factory_patch(0)
+    cases = []
+
+    def add(params, note):
+        cases.extend(capture_vco(params, note))
+
+    for w1 in range(4):
+        for w2 in range(4):
+            p = list(init)
+            p[6], p[7] = w1, w2
+            add(p, 60)
+    for sync in (0, 1):
+        for vco2pitch in (-63, -20, 0, 20, 63):
+            p = list(init)
+            p[10], p[8] = sync, vco2pitch
+            add(p, 60)
+    for bal in (0, 32, 64, 96, 127):
+        p = list(init)
+        p[9] = bal
+        add(p, 60)
+    for note in (24, 36, 48, 72, 84, 96):
+        add(list(init), note)
+    for idx in range(24):
+        _nm, p = factory_patch(idx)
+        add(p, 60)
+
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"VCO1" + struct.pack("<I", len(cases)))
+        for state, mix in cases:
+            f.write(struct.pack(f"<{len(VCO_ORDER)}i", *state))
+            f.write(struct.pack("<I", len(mix)))
+            f.write(struct.pack(f"<{len(mix)}i", *mix))
+    total = sum(len(c[1]) for c in cases)
+    print(f"{path}: {len(cases)} frames, {total} samples")
+
+
 def cmd_vectors(path="tests/vectors/vcf.bin"):
     """Sweep cutoff, peak, type and the factory patches; write test vectors."""
     _n, init = factory_patch(0)
@@ -376,7 +463,8 @@ def cmd_waves(note="60"):
 
 def main():
     cmds = {"probe": cmd_probe, "render": cmd_render, "wav": cmd_wav,
-            "waves": cmd_waves, "vectors": cmd_vectors}
+            "waves": cmd_waves, "vectors": cmd_vectors,
+            "vco-vectors": cmd_vco_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
