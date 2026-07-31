@@ -347,7 +347,6 @@ int main(int argc, char **argv)
     seq.incr = DS10_SEQ_INCR;
     seq.ntracks = NTRK;
     seq.steps = DS10_SONG_STEPS;
-    ds10_seq_set_tempo(&seq, (int)song.tempo);
     ds10_seq_set_swing(&seq, (int)song.swing);
     /* The original's constructor leaves the accumulator at period-incr+1 for its
      * default 120 BPM, so the very first tick call crosses the period and the
@@ -382,8 +381,6 @@ int main(int argc, char **argv)
     ds10_fx_state_load(&mix.fx, ts.fx_init);
     mix.fx.buf_l = dl;
     mix.fx.buf_r = dr;
-    ds10_mixer_event(&mix, DS10_MIX_EV_TEMPO, 0, 0, (int32_t)song.tempo,
-                     &ts.fx);
     /* The array the sequencer reads per-channel volume and pan defaults from,
      * indexed through a two-byte-per-track table. It is the mixer's own knob
      * array, so it tracks the pattern. */
@@ -412,6 +409,24 @@ int main(int argc, char **argv)
     for (i = 0; i < NSYN; i++)
         ctx.machine[i] = &voice[i];
 
+    /* Now that the router sink exists, set the tempo the way the sequencer does:
+     * it broadcasts opcode 4 to every machine and the mixer, which is the only
+     * thing that tells a voice the BPM its synced LFO runs against. */
+    {
+        int n = ds10_seq_tempo(&ctx, (int)song.tempo);
+        int j;
+
+        for (j = 0; j < n; j++) {
+            if (ev[j].dest < NSYN)
+                ds10_voice_event(&voice[ev[j].dest], ev[j].opcode, 0,
+                                 (int32_t)ev[j].payload, &ts.t);
+            else if (ev[j].dest == DS10_BUS1(NTRK))
+                ds10_mixer_event(&mix, ev[j].opcode, ev[j].channel,
+                                 ev[j].payload, (int32_t)ev[j].payload,
+                                 &ts.fx);
+        }
+    }
+
     memset(silence, 0, sizeof silence);
     for (i = 0; i < DS10_MIX_CHANNELS; i++)
         chp[i] = i < NTRK ? buf[i] : silence;
@@ -439,10 +454,9 @@ int main(int argc, char **argv)
                 if (dest < NSYN &&
                     (op == DS10_EV_NOTE_ON || op == DS10_EV_NOTE_OFF)) {
                     if (getenv("DS10_TRACE"))
-                        fprintf(stderr, "[ev] f=%lu syn%d %s note=%d "
-                                "pay=%04x\n", nframes / FRAME, dest,
-                                op == DS10_EV_NOTE_ON ? "on " : "off", note,
-                                ev[k].payload);
+                        fprintf(stderr, "[ev] f=%lu syn%d %s note=%d\n",
+                                nframes / FRAME, dest,
+                                op == DS10_EV_NOTE_ON ? "on " : "off", note);
                     ds10_voice_event(&voice[dest], op, note, 0, &ts.t);
                 } else if (dest >= NSYN && dest < NTRK &&
                            (op == DS10_EV_NOTE_ON || op == DS10_EV_NOTE_OFF)) {
@@ -454,20 +468,11 @@ int main(int argc, char **argv)
                 } else if (dest == DS10_BUS1(NTRK)) {
                     ds10_mixer_event(&mix, op, ev[k].channel, ev[k].payload, 0,
                                      &ts.fx);
-                } else if (op == DS10_EV_BAR_START ||
-                           op == DS10_EV_PATTERN_CHANGE) {
-                    if (dest < NSYN) {
-                        int32_t before = voice[dest].lfo.phase_up;
-
-                        ds10_voice_event(&voice[dest], op, 0,
-                                         (int32_t)song.tempo, &ts.t);
-                        if (getenv("DS10_TRACE"))
-                            fprintf(stderr, "[bar] f=%lu syn%d op=%02x bar=%d "
-                                    "sync=%d phase %d -> %d\n",
-                                    nframes / FRAME, dest, op, seq.bar,
-                                    voice[dest].lfo.bpm_sync, before,
-                                    voice[dest].lfo.phase_up);
-                    }
+                } else if (dest < NSYN) {
+                    /* Everything else a voice acts on, the tempo included - the
+                     * payload word carries its argument. */
+                    ds10_voice_event(&voice[dest], op, 0,
+                                     (int32_t)ev[k].payload, &ts.t);
                 }
             }
         }

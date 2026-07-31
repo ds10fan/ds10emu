@@ -345,6 +345,22 @@ static void automation(ds10_seq_ctx *c)
     }
 }
 
+int ds10_seq_tempo(ds10_seq_ctx *c, int tempo)
+{
+    if (tempo > DS10_SEQ_TEMPO_MAX)
+        tempo = DS10_SEQ_TEMPO_MAX;
+    else if (tempo < DS10_SEQ_TEMPO_MIN)
+        tempo = DS10_SEQ_TEMPO_MIN;
+
+    c->nout = 0;
+    if (c->s->tempo != (uint8_t)tempo) {
+        c->s->tempo = (uint8_t)tempo;
+        post(c, 4, 0x70, (uint16_t)tempo);
+    }
+    c->s->period = DS10_SEQ_TEMPO_NUM / tempo;
+    return c->nout;
+}
+
 int ds10_seq_run(ds10_seq_ctx *c)
 {
     ds10_seq *s = c->s;

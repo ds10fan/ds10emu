@@ -1080,6 +1080,23 @@ Per track, a gate countdown (`0x0206EABC`) returns 1 (note off), 2 (note on) or
 `track | 0xA0` for note-on — so note-ons also go to the second bus. The payload
 is the note in the low byte with `0x7F` above it.
 
+### The tempo has to reach the machines
+
+`0x0206DA90` is the sequencer's tempo setter. It clamps to **10..250** and, when
+the value changes, broadcasts **opcode 4 to target `0x70` - every machine and the
+mixer** - before deriving `period = 60000000 / tempo`.
+
+That broadcast is the only thing that tells a *voice* the tempo. A voice does not
+read it from the sequencer, and neither the `0x1C` bar line nor the `0x1D` pattern
+change sets it, even though both carry the tempo in their payload. Nothing else
+sends opcode 4.
+
+It matters because a BPM-synced LFO's increment is `f(rate_knob) * lfo.bpm`. Miss
+the broadcast and every synced LFO runs at whatever tempo the constructor left,
+which is 120 - so at 87 BPM it runs 1.38x too fast, and at 165 BPM 0.73x. On a
+patch with the LFO routed to pitch that is audibly wrong pitch movement, which is
+how it was spotted.
+
 ### Automation lanes, `0x0206E1EC`
 
 Two lanes per track, 8 bytes each at `track + 0x10 + lane*8`: knob id, value

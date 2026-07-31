@@ -117,6 +117,8 @@ typedef struct {
  * 0x0207025C. */
 int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out);
 
+/* Sets tempo and period only. The real setter is ds10_seq_tempo below, which
+ * also tells the machines - this one is for tests that drive state directly. */
 void ds10_seq_set_tempo(ds10_seq *s, int tempo);
 void ds10_seq_set_swing(ds10_seq *s, int swing);
 void ds10_seq_tick(ds10_seq *s);
@@ -225,5 +227,15 @@ struct ds10_seq_ctx {
  * posts, then note emission. Automation is not run - set a track's mode so the
  * original skips it too. Returns the events appended to c->out. */
 int ds10_seq_run(ds10_seq_ctx *c);
+
+/* The sequencer's own tempo setter, 0x0206DA90: clamp to 10..250 and, if it
+ * changed, broadcast opcode 4 to target 0x70 - every machine AND the mixer.
+ * That broadcast is the only thing that tells a voice the tempo, and a
+ * BPM-synced LFO's rate is scaled by it, so without it every synced LFO runs at
+ * whatever tempo the constructor left. Returns events appended to c->out. */
+int ds10_seq_tempo(ds10_seq_ctx *c, int tempo);
+
+#define DS10_SEQ_TEMPO_MIN 10
+#define DS10_SEQ_TEMPO_MAX 250
 
 #endif /* DS10_SEQ_H */
