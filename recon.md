@@ -976,14 +976,23 @@ ldrsb r1, [r0, #0x64]    ; lane 0
 ldrsb r0, [r0, #0x65]    ; lane 1
 ```
 
-**Open question.** Under the obvious reading — 16 steps, 4-byte records from
-`+0x24`, automation from `+0x64` — a track needs 132 bytes but the stride is
-104, so track 0's automation would run into track 1's block. One of those
-assumptions is wrong. The arithmetic above is certain; what is uncertain is the
-step count for the automation lanes or the placement of the step-record array.
-This is resolvable by dumping a real pattern out of the harness and comparing
-against a song file, which is the obvious next step and needs no new
-decompilation.
+**Resolved — the earlier "overlap" was my own mis-grouping.** `track*0x68 + 0x24`
+is `0x24 + track*0x68`: the `0x24` is the **pattern header size**, not a
+per-track offset. Regrouping, the layout is consistent:
+
+```
+pattern +0x00..0x23              36-byte pattern header
+pattern +0x24 + track*0x68       per-track block, 104 bytes:
+          block +0x00..0x3F        16 steps x 4 bytes  (note, gate, u16)
+          block +0x40..0x5F        16 steps x 2 bytes  (two automation lanes)
+          block +0x60..0x67        8 bytes spare
+```
+
+Both arrays fit inside the 104-byte stride with room over, and it agrees with
+the song file: 6 tracks x 104 = 624, plus the 36-byte header = 660, inside the
+676-byte record the file diff showed. The automation loop runs over
+`seq[0x4C]` (synth count) rather than `seq[0x54]`, so only the two synth tracks
+have lanes; the step-record loop runs over all six.
 
 ### Note emission, `0x0206E8C8`
 
