@@ -304,7 +304,7 @@ out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 
 # Needs the Emscripten SDK; source its emsdk_env.sh, or point EMCC at emcc.
 EMCC ?= emcc
-WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c \
+WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
           src/gfx/nds2d.c src/gfx/nitro.c \
           src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
           src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
@@ -334,11 +334,11 @@ PORT ?= 8537
 # Render a page natively, as a check that the browser build is not the odd one
 # out. ds10view writes PPMs; the wasm build produces the same pixels.
 ds10view: out/ds10view
-out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c \
+out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c src/app/cell.c \
               src/gfx/nds2d.c src/gfx/nitro.c
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/app/obj.c \
-	    src/gfx/nds2d.c src/gfx/nitro.c -lm
+	    src/app/cell.c src/gfx/nds2d.c src/gfx/nitro.c -lm
 
 # Render each page with the reimplementation and diff it against the captured
 # frame for the same page. Needs `make sweep` first.

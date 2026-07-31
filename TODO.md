@@ -98,19 +98,23 @@ Done:
 
 Remaining, roughly in order:
 
-- **The widget constructors.** `data/pages.bin` is still a captured frame of
-  sprites per page rather than generated ones, so most of a page draws but does
-  not animate. The exception is the synth edit page's sixteen knob pointers,
-  which are generated.
+- **What drives the display lists.** `data/pages.bin` is now a display list
+  per page - which cell, where, with what matrix - and the sprites are
+  generated from it by the decompiled expander rather than replayed. Six pages
+  come out pixel-exact that way, and the synth edit knobs turn because their
+  cell's matrix is ours to set.
 
-  The OAM allocator is now decompiled (`recon.md` §16) and so is the OAM
-  builder, verified against the original. What is missing is each screen's list
-  of widgets. Two things are known about where not to look: scanning RAM for
-  `0x0202a820`-shaped objects finds candidates but no live ones, and every OAM
-  entry appears exactly once in RAM, in the shadow - so the screens are not
-  building sprites through that object and handing it over. Reading one screen
-  constructor end to end (`0x02050108` is the sequencer's, and legible) is
-  probably faster than more scanning.
+  What is still missing is the code that *produces* those lists: each screen's
+  constructor and its per-frame update. The lists here were recovered from one
+  captured frame per page (`tools/pages.py` inverts the expansion), so a page
+  shows the state it was captured in until something is wired to change it.
+  Reading one screen constructor end to end - `0x02050108` is the sequencer's,
+  and legible - is how that gets replaced.
+
+- **Pages whose sprites are not attributed.** `01_UNMAIN_MENU` and `90_MAP`
+  come out mostly as raw OAM rather than cells, and the four advertisement
+  screens have no sprite record at all. They probably draw from a sheet at a
+  tile base the matcher does not try.
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
   small textured-quad rasteriser, not a polygon pipeline.

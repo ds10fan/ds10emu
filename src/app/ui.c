@@ -20,6 +20,7 @@
 #include <math.h>
 
 #include "ui.h"
+#include "cell.h"
 #include "obj.h"
 #include "../gfx/nitro.h"
 
@@ -39,13 +40,41 @@
 #define OBJ_FONT 0x0000
 #define OBJ_CHARS 0x8000
 
-/* One page's sprite layer, as the game had it. See tools/pages.py: these are
- * captured rather than generated, until the widget constructors are read. */
+/* One page's display list: which cell was drawn where, recovered from a
+ * captured frame by tools/pages.py. The sprites are generated from this by
+ * the decompiled expander, not replayed - so anything whose position or
+ * rotation we drive can move. Entries that could not be attributed to a cell
+ * are kept as raw OAM so no page is worse off than the frozen frame was. */
+typedef struct {
+    char bank[24];
+    uint16_t cell;
+    uint8_t prio, flags, affine, base;
+    int32_t x, y;
+    int32_t mtx[4];
+} page_item;
+
+/* A record is either a cell to expand or one OAM entry nothing explained.
+ * They are kept in the order the game emitted them, because sprites of equal
+ * priority are resolved by OAM index. */
+typedef struct {
+    uint8_t kind;      /* 0 cell, 1 raw */
+    page_item item;
+    uint8_t entry[6];
+} page_rec;
+
 typedef struct {
     char name[24];
     uint8_t engine;
-    uint8_t oam[1024];
-} page_oam;
+    int nrec;
+    page_rec *rec;
+} page_list;
+
+/* The NCER banks a display list names. */
+typedef struct {
+    char name[24];
+    uint8_t *blob;
+    ds10_ncer ncer;
+} cell_bank;
 
 struct ds10_ui {
     char root[256];
@@ -53,8 +82,10 @@ struct ds10_ui {
     ds10_gpu gpu;
     uint8_t *blob[8]; /* whatever is currently held open */
     int nblob;
-    page_oam *pages;
+    page_list *pages;
     int npages;
+    cell_bank bank[24];
+    int nbanks;
     /* The OAM slot and affine index each synth-edit knob's pointer uses,
      * or -1. The two are different: the sprite lives in one slot and its
      * rotation matrix in another, named by attr1 bits 9-13. */
@@ -148,60 +179,6 @@ static int load_page(ds10_ui *u, const char *name, int engine)
     return 0;
 }
 
-/* data/pages.bin, if it is there. Without it the pages simply draw with no
- * sprite layer, which is how this looked before the file existed. */
-static void load_pages(ds10_ui *u)
-{
-    char path[512];
-    FILE *f;
-    uint32_t version, count, i;
-    unsigned char hdr[12];
-
-    snprintf(path, sizeof path, "%s/../pages.bin", u->root);
-    f = fopen(path, "rb");
-    if (!f) return;
-    if (fread(hdr, 1, 12, f) != 12 || memcmp(hdr, "PAGE", 4) != 0) {
-        fclose(f);
-        return;
-    }
-    version = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) |
-              ((uint32_t)hdr[6] << 16) | ((uint32_t)hdr[7] << 24);
-    count = (uint32_t)hdr[8] | ((uint32_t)hdr[9] << 8) |
-            ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
-    if (version != 1 || count == 0 || count > 512) {
-        fclose(f);
-        return;
-    }
-    u->pages = calloc(count, sizeof *u->pages);
-    if (!u->pages) {
-        fclose(f);
-        return;
-    }
-    for (i = 0; i < count; i++) {
-        int len = fgetc(f);
-
-        if (len <= 0 || len >= (int)sizeof u->pages[i].name) break;
-        if (fread(u->pages[i].name, 1, (size_t)len, f) != (size_t)len) break;
-        u->pages[i].name[len] = 0;
-        u->pages[i].engine = (uint8_t)fgetc(f);
-        if (fread(u->pages[i].oam, 1, 1024, f) != 1024) break;
-        u->npages++;
-    }
-    fclose(f);
-}
-
-static void apply_page_oam(ds10_ui *u, const char *name, int engine)
-{
-    int i;
-
-    memset(u->gpu.oam + (engine ? 0x400 : 0), 0, 1024);
-    for (i = 0; i < u->npages; i++)
-        if (strcmp(u->pages[i].name, name) == 0) {
-            memcpy(u->gpu.oam + (engine ? 0x400 : 0), u->pages[i].oam, 1024);
-            return;
-        }
-}
-
 /* 61_SYN_EDIT's knobs. Five columns at x = 22, 75, 124, 174, 225 and four
  * rows at y = 39, 80, 121, 162, confirmed by looking for the light knob cap
  * against the dark panel in the rendered page - which is pixel-exact against
@@ -249,22 +226,31 @@ static const char *const KNOB_NAME[31] = {
 #define PTR_SWEEP 150.0
 #define PTR_PI 3.14159265358979323846
 
-static void write_affine(uint8_t *oam, int slot, double deg)
+/* An affine slot holds four halfwords, 8.8, scattered through OAM at
+ * entry*0x20 + 6, 0xe, 0x16, 0x1e - the gaps are the sprite attributes. */
+static void write_affine_mtx(uint8_t *oam, int slot, const int32_t *mtx)
 {
-    double c = cos(deg * PTR_PI / 180.0), s = sin(deg * PTR_PI / 180.0);
-    /* The DS stores the inverse transform, 8.8 fixed point. */
-    int16_t p[4] = {
-        (int16_t)lrint(c * 256.0), (int16_t)lrint(s * 256.0),
-        (int16_t)lrint(-s * 256.0), (int16_t)lrint(c * 256.0),
-    };
     int i;
 
     for (i = 0; i < 4; i++) {
         int off = slot * 0x20 + 6 + i * 8;
+        int16_t v = (int16_t)(mtx[i] >> 4); /* 20.12 down to 8.8 */
 
-        oam[off] = (uint8_t)p[i];
-        oam[off + 1] = (uint8_t)(p[i] >> 8);
+        oam[off] = (uint8_t)v;
+        oam[off + 1] = (uint8_t)(v >> 8);
     }
+}
+
+static void write_affine(uint8_t *oam, int slot, double deg)
+{
+    double c = cos(deg * PTR_PI / 180.0), s = sin(deg * PTR_PI / 180.0);
+    /* The DS stores the inverse transform. */
+    int32_t m[4] = {
+        (int32_t)lrint(c * 4096.0), (int32_t)lrint(s * 4096.0),
+        (int32_t)lrint(-s * 4096.0), (int32_t)lrint(c * 4096.0),
+    };
+
+    write_affine_mtx(oam, slot, m);
 }
 
 void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
@@ -375,6 +361,199 @@ static void claim_knob_slots(ds10_ui *u, const char *page)
         u->knob_slot[bestk] = ptr[bestp].slot;
         u->knob_affine[bestk] = ptr[bestp].affine;
         ptr[bestp].slot = -1;
+    }
+}
+
+/* data/pages.bin, if it is there. Without it the pages simply draw with no
+ * sprite layer, which is how this looked before the file existed. */
+static int rd8(FILE *f) { return fgetc(f); }
+
+static int rd16f(FILE *f)
+{
+    int a = fgetc(f), b = fgetc(f);
+
+    return a | (b << 8);
+}
+
+static int32_t rd32f(FILE *f)
+{
+    uint32_t v = (uint32_t)fgetc(f);
+
+    v |= (uint32_t)fgetc(f) << 8;
+    v |= (uint32_t)fgetc(f) << 16;
+    v |= (uint32_t)fgetc(f) << 24;
+    return (int32_t)v;
+}
+
+static int rdname(FILE *f, char *dst, size_t cap)
+{
+    int len = fgetc(f);
+
+    if (len <= 0 || (size_t)len >= cap) return -1;
+    if (fread(dst, 1, (size_t)len, f) != (size_t)len) return -1;
+    dst[len] = 0;
+    return 0;
+}
+
+static void load_pages(ds10_ui *u)
+{
+    char path[512];
+    FILE *f;
+    unsigned char hdr[12];
+    uint32_t version, count, i;
+
+    snprintf(path, sizeof path, "%s/../pages.bin", u->root);
+    f = fopen(path, "rb");
+    if (!f) return;
+    if (fread(hdr, 1, 12, f) != 12 || memcmp(hdr, "PAGE", 4) != 0) {
+        fclose(f);
+        return;
+    }
+    version = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) |
+              ((uint32_t)hdr[6] << 16) | ((uint32_t)hdr[7] << 24);
+    count = (uint32_t)hdr[8] | ((uint32_t)hdr[9] << 8) |
+            ((uint32_t)hdr[10] << 16) | ((uint32_t)hdr[11] << 24);
+    if (version != 3 || count == 0 || count > 512) {
+        fclose(f);
+        return;
+    }
+    u->pages = calloc(count, sizeof *u->pages);
+    if (!u->pages) {
+        fclose(f);
+        return;
+    }
+    for (i = 0; i < count; i++) {
+        page_list *p = &u->pages[i];
+        int k;
+
+        if (rdname(f, p->name, sizeof p->name) < 0) break;
+        p->engine = (uint8_t)rd8(f);
+        p->nrec = rd16f(f);
+        if (p->nrec < 0 || p->nrec > 256) break;
+        p->rec = calloc((size_t)p->nrec + 1, sizeof *p->rec);
+        if (!p->rec) break;
+        for (k = 0; k < p->nrec; k++) {
+            page_rec *r = &p->rec[k];
+            page_item *it = &r->item;
+            int j;
+
+            r->kind = (uint8_t)rd8(f);
+            if (r->kind) {
+                if (fread(r->entry, 1, 6, f) != 6) goto done;
+                continue;
+            }
+            if (rdname(f, it->bank, sizeof it->bank) < 0) goto done;
+            it->cell = (uint16_t)rd16f(f);
+            it->prio = (uint8_t)rd8(f);
+            it->flags = (uint8_t)rd8(f);
+            it->affine = (uint8_t)rd8(f);
+            it->base = (uint8_t)rd8(f);
+            it->x = rd32f(f);
+            it->y = rd32f(f);
+            for (j = 0; j < 4; j++) it->mtx[j] = rd32f(f);
+        }
+        u->npages++;
+    }
+done:
+    fclose(f);
+}
+
+/* The cell banks a display list can name. */
+static void load_banks(ds10_ui *u)
+{
+    static const char *const NAME[] = {
+        "CHARACTER_c", "CHARACTER_S", "COMMON_c", "FONT", "DS10FONT",
+        "S_c", "90_MAP", "81_KEY_c", "71_KAOSS_c", "60_SYN_SEQ_PIANO_c",
+        "30_MIXER", "52_FX_c", "51_ALL_DRUMS_c", "55_DRUMEDITMAP_c",
+        "54_DRUM_FX", "33_DRUM_SELECTOR", "31_SONG_c", "32_PATTERN_c",
+        "01_MEIN_MENU_c", "3D_TEX", "3D_MESS_TEX", "icon", "UNFONT",
+    };
+    size_t k;
+
+    for (k = 0; k < sizeof NAME / sizeof NAME[0] &&
+                u->nbanks < (int)(sizeof u->bank / sizeof u->bank[0]); k++) {
+        cell_bank *b = &u->bank[u->nbanks];
+        uint8_t *blob;
+        size_t len;
+
+        blob = slurp(u, "mainobj", NAME[k], ".NCER", &len);
+        if (!blob) continue;
+        if (ds10_ncer_parse(&b->ncer, blob, len) < 0) continue;
+        snprintf(b->name, sizeof b->name, "%s", NAME[k]);
+        b->blob = blob;
+        /* Keep this one: the display lists point into it. */
+        u->nblob--;
+        u->nbanks++;
+    }
+}
+
+static const cell_bank *find_bank(const ds10_ui *u, const char *name)
+{
+    int i;
+
+    for (i = 0; i < u->nbanks; i++)
+        if (strcmp(u->bank[i].name, name) == 0) return &u->bank[i];
+    return NULL;
+}
+
+/* Expand a page's display list into its half of OAM. */
+static void draw_page(ds10_ui *u, const char *name, int engine)
+{
+    uint8_t *oam = u->gpu.oam + (engine ? 0x400 : 0);
+    int slot = 0, i;
+    const page_list *p = NULL;
+
+    /* Unused slots park off the bottom of the screen, as the game's do. */
+    for (i = 0; i < 128; i++) {
+        oam[i * 8] = 192;
+        oam[i * 8 + 1] = 0;
+        oam[i * 8 + 2] = 0;
+        oam[i * 8 + 3] = 0;
+        oam[i * 8 + 4] = 0;
+        oam[i * 8 + 5] = 0;
+    }
+    for (i = 0; i < u->npages; i++)
+        if (strcmp(u->pages[i].name, name) == 0) { p = &u->pages[i]; break; }
+    if (!p) return;
+
+    for (i = 0; i < p->nrec && slot < 128; i++) {
+        const page_rec *r = &p->rec[i];
+        const page_item *it = &r->item;
+        const cell_bank *b;
+        ds10_cell cell;
+        ds10_cell_ref ref;
+        int32_t pos[2];
+        int n, k;
+
+        if (r->kind) {
+            memcpy(oam + slot * 8, r->entry, 6);
+            slot++;
+            continue;
+        }
+        b = find_bank(u, it->bank);
+        if (!b || ds10_ncer_cell(&b->ncer, it->cell, &cell) < 0) continue;
+        ref.nobj = cell.nobj;
+        ref.obj = cell.obj;
+        pos[0] = it->x;
+        pos[1] = it->y;
+        n = ds10_cell_to_oam(oam + slot * 8, 128 - slot, &ref,
+                             (it->flags & 1) ? it->mtx : NULL, pos,
+                             it->affine, (it->flags >> 1) & 1);
+        for (k = 0; k < n; k++) {
+            uint8_t *e = oam + (slot + k) * 8;
+            int a2 = e[4] | (e[5] << 8);
+            /* base 1 means the CHARACTER_c sheet, whose tiles the draw call
+             * offsets by 0x200; base 0 is the sheet at tile 0. */
+            int base = it->base ? 0x200 : 0;
+
+            a2 = (a2 & ~0x3FF) | (((a2 & 0x3FF) + base) & 0x3FF);
+            a2 = (a2 & ~0x0C00) | (it->prio << 10);
+            e[4] = (uint8_t)a2;
+            e[5] = (uint8_t)(a2 >> 8);
+        }
+        if ((it->flags & 1) && it->affine < 32)
+            write_affine_mtx(oam, it->affine, it->mtx);
+        slot += n;
     }
 }
 
@@ -522,6 +701,7 @@ ds10_ui *ds10_ui_new(const char *root)
     snprintf(u->root, sizeof u->root, "%s", root);
     set_registers(u);
     load_pages(u);
+    load_banks(u);
     if (load_shared(u) < 0 || load_sprites(u) < 0) {
         fprintf(stderr, "ds10_ui_new: %s\n", u->err);
         drop_blobs(u);
@@ -547,12 +727,12 @@ int ds10_ui_page(ds10_ui *u, const char *bottom, const char *top)
     /* Engine A drives the touch screen when POWCNT's swap bit is clear. */
     if (bottom) {
         rc |= load_page(u, bottom, 0);
-        apply_page_oam(u, bottom, 0);
+        draw_page(u, bottom, 0);
         claim_knob_slots(u, bottom);
     }
     if (top) {
         rc |= load_page(u, top, 1);
-        apply_page_oam(u, top, 1);
+        draw_page(u, top, 1);
     }
     drop_blobs(u);
     return rc;
