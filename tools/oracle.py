@@ -762,6 +762,197 @@ def capture_song(o, blob):
     return steps, autos, counts
 
 
+# --- song replay capture ----------------------------------------------------
+# The whole tick, driven by a real pattern out of a real demo song. Everything
+# the sequencer needs is built by hand: a router with six fake machines and two
+# buses, a runtime pattern, and a song player whose handler is an existing
+# `bx lr`. Automation is switched off per track (the enable byte at +0x20 is
+# neither 1 nor 2) so the original skips it, since only the lane mapping is
+# verified so far and not the modes around it.
+CHAN_IDX_TABLE = 0x02160808   # two bytes per track: volume index, pan index
+# Track-block bytes the replay compares. +0x0C and +0x0D are the live gate and
+# note; the constructor does not leave them zero, and the play modes read them.
+TRK_REPLAY_FIELDS = (0, 1, 2, 4, 5, 6, 7, 0x0C, 0x0D)
+RT_PAT_SIZE = 0x50C           # the back-pointer at +0x508 is the last field
+
+
+def _rt_pattern(o, song_pat, ntracks, steps):
+    """Build a runtime pattern from a parsed .dat pattern."""
+    pat = o.call(NEW_THUNK, RT_PAT_SIZE)
+    o.uc.mem_write(pat, b"\0" * RT_PAT_SIZE)
+    o.uc.mem_write(pat + 6, bytes([steps]))
+    for t in range(ntracks):
+        for st in range(16):
+            src = 0x42 + t * 64 + st * 4
+            o.uc.mem_write(pat + 0x24 + t * 0x68 + st * 4, song_pat[src:src + 4])
+    return pat
+
+
+def capture_replay(blob, pattern_idx, ticks, tempo, swing, modes, chan, idx,
+                   live=None):
+    o = Oracle()
+    seq = _new_seq(o, 2, 4)
+    o.w32(ROUTER_ENABLE, 1)
+
+    # Machines need a queue for the router and a vtable for anything that calls
+    # through them; two buses stand in for the mixer and the UI bus.
+    vt = o.call(NEW_THUNK, 0x20)
+    o.w32(vt + 0x18, BX_LR)
+    machines, queues = [], []
+    for _ in range(NMACH + 2):
+        m = o.call(NEW_THUNK, 0x10)
+        q = o.call(NEW_THUNK, 8 * 64)
+        o.w32(m + 0x00, vt)
+        o.w32(m + 0x04, q)
+        o.uc.mem_write(m + 0x08, b"\0")
+        machines.append(m)
+        queues.append(q)
+    arr = o.call(NEW_THUNK, 4 * NMACH)
+    for i in range(NMACH):
+        o.w32(arr + 4 * i, machines[i])
+    router = o.call(NEW_THUNK, 0x20)
+    o.w32(router + 0x00, arr)
+    o.w32(router + 0x04, machines[NMACH])
+    o.w32(router + 0x08, machines[NMACH + 1])
+    o.w32(router + 0x14, NMACH)
+
+    # Song player: message word at +4, answer at +8, handler at vtable slot 1.
+    pvt = o.call(NEW_THUNK, 0x10)
+    o.w32(pvt + 0x04, BX_LR)
+    player = o.call(NEW_THUNK, 0x10)
+    o.w32(player + 0x00, pvt)
+
+    payload = blob[16:]
+    off = 0xEC + pattern_idx * 676
+    song_pat = payload[off:off + 676]
+    steps = struct.unpack_from("<I", song_pat, 0)[0]
+    pat = _rt_pattern(o, song_pat, NMACH, steps)
+
+    chan_arr = o.call(NEW_THUNK, 0x40)
+    o.uc.mem_write(chan_arr, bytes(v & 0xFF for v in chan))
+    o.uc.mem_write(CHAN_IDX_TABLE, bytes(idx))
+
+    o.w32(seq + 0x34, router)
+    o.w32(seq + 0x3C, player)
+    o.w32(seq + 0x54, NMACH)
+    o.w32(seq + 0x4C, 2)
+    o.w32(seq + 0x50, 4)
+    o.w32(seq + 0x60, chan_arr)
+    o.call(SEQ_SET_SWING, seq, swing)
+    period = _s32(o.call(DIVIDE, DS10_SEQ_TEMPO_NUM, tempo))
+    o.uc.mem_write(seq + 0x10, bytes([tempo & 0xFF]))
+    o.w32(seq + 0x14, period)
+    o.w32(seq + 0x40, pat)
+    o.w32(pat + 0x508, seq)
+    o.uc.mem_write(seq + 0x2C, bytes([steps]))
+    for t in range(NMACH):
+        trk = seq + 0x64 + t * 0x24
+        o.uc.mem_write(trk + 0x20, bytes([0, 0, modes[t]]))
+        if live is not None:
+            o.uc.mem_write(trk + 0x0C, bytes([live[t][0] & 0xFF,
+                                              live[t][1] & 0xFF]))
+    o.uc.mem_write(seq + 0x0C, bytes([1, 1]))
+
+    def snap():
+        raw = bytes(o.uc.mem_read(seq, SEQ_SIZE))
+        return [_rdf(raw, o_, sz) for o_, sz in SEQ_FIELDS]
+
+    def trkstate():
+        out = []
+        for t in range(NMACH):
+            raw = bytes(o.uc.mem_read(seq + 0x64 + t * 0x24, 0x24))
+            out.append([raw[j] for j in TRK_REPLAY_FIELDS])
+        return out
+
+    initial = (snap(), trkstate())
+    runs = []
+    for _ in range(ticks):
+        for m in machines:
+            o.uc.mem_write(m + 0x08, b"\0")
+        o.call(SEQ_TICK, seq)
+        posted = []
+        for i, (m, q) in enumerate(zip(machines, queues)):
+            n = o.uc.mem_read(m + 0x08, 1)[0]
+            for e in range(n):
+                raw = bytes(o.uc.mem_read(q + 8 * e, 8))
+                posted.append((i, raw[0], raw[1],
+                               struct.unpack_from("<H", raw, 4)[0]))
+        runs.append((snap(), trkstate(), posted, steps))
+        # Stand in for the song player: whenever the sequencer drops the pattern
+        # at the end of a bar, put it straight back. The chain walk is not
+        # decompiled, so both sides do the same thing here and neither is being
+        # checked against the original. Snapshot first, so what is compared is
+        # the tick's own output.
+        if o.u32(seq + 0x40) == 0:
+            o.w32(seq + 0x40, pat)
+            o.uc.mem_write(seq + 0x2C, bytes([steps]))
+    return initial, runs, steps
+
+
+def cmd_replay_vectors(path="tests/vectors/replay.bin"):
+    files = song_files()
+    if not files:
+        print("no song files - run `make extract` first")
+        return
+    # One case per demo song that has any notes, plus mode variations on one of
+    # them so the mute, live and record paths get exercised too.
+    cases = []
+    for name, blob in files:
+        payload = blob[16:]
+        tempo = struct.unpack_from("<I", payload, 4)[0]
+        swing = struct.unpack_from("<H", payload, 0x0A)[0]
+        chain = struct.unpack_from("<100H", payload, 0x24)
+        if chain[0] == 0xFFFF:
+            continue
+        for pidx in (chain[0], chain[1] if chain[1] != 0xFFFF else chain[0]):
+            cases.append((name, blob, pidx, tempo, swing, [0] * 6,
+                          [0x40] * 16, [0, 1] * 8))
+    base = list(cases[0]) + [None]
+    cases = [list(c) + [None] for c in cases]
+    for modes in ([1] * 6, [0, 1, 0, 1, 0, 1], [2] * 6, [3] * 6,
+                  [0, 1, 2, 3, 4, 5]):
+        cases.append(base[:5] + [modes] + base[6:])
+    for chan in ([0] * 16, [0x7F] * 16, [-64] * 16):
+        cases.append(base[:6] + [chan] + base[7:])
+    # Live input matters to the unless-live and record modes: mode 2 must skip
+    # the pattern while a note is held, mode 3 must write the held note back.
+    live = [(0x0C, 48 + 3 * t) for t in range(6)]
+    for modes in ([2] * 6, [3] * 6, [0, 2, 3, 2, 3, 0]):
+        cases.append(base[:5] + [modes] + base[6:8] + [live])
+    cases.append(base[:5] + [[2] * 6] + base[6:8] + [[(0x0C, -1)] * 6])
+
+    TICKS = 700
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"RPL1")
+        f.write(struct.pack("<3I", len(cases), TICKS, NMACH))
+        nev = 0
+        for name, blob, pidx, tempo, swing, modes, chan, idx, live in cases:
+            initial, runs, steps = capture_replay(blob, pidx, TICKS, tempo,
+                                                 swing, modes, chan, idx, live)
+            f.write(struct.pack("<I", len(name)))
+            f.write(name.encode())
+            f.write(struct.pack("<6I", pidx, tempo, swing, steps, 2, 4))
+            f.write(bytes(modes))
+            f.write(struct.pack("<16b", *[c if c >= -128 else -128
+                                          for c in chan]))
+            f.write(bytes(idx))
+            pat = blob[16 + 0xEC + pidx * 676:16 + 0xEC + (pidx + 1) * 676]
+            f.write(pat)
+            f.write(struct.pack(f"<{len(SEQ_FIELDS)}i", *initial[0]))
+            for t in initial[1]:
+                f.write(bytes(t))
+            for state, trks, posted, _ in runs:
+                f.write(struct.pack(f"<{len(SEQ_FIELDS)}i", *state))
+                for t in trks:
+                    f.write(bytes(t))
+                f.write(struct.pack("<I", len(posted)))
+                for d, op, ch, pl in posted:
+                    f.write(struct.pack("<BBBxH", d, op, ch, pl))
+                nev += len(posted)
+    print(f"{path}: {len(cases)} cases x {TICKS} ticks, {nev} events")
+
+
 def cmd_song_vectors(path="tests/vectors/song.bin"):
     files = song_files()
     if not files:
@@ -1862,7 +2053,8 @@ def main():
             "drum-vectors": cmd_drum_vectors,
             "event-vectors": cmd_event_vectors,
             "seq-vectors": cmd_seq_vectors,
-            "song-vectors": cmd_song_vectors}
+            "song-vectors": cmd_song_vectors,
+            "replay-vectors": cmd_replay_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1

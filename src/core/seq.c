@@ -183,7 +183,9 @@ int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out)
 
     for (tr = 0; tr < s->ntracks; tr++) {
         int ev = ds10_seq_gate(&tracks[tr]);
-        uint16_t payload = (uint16_t)((tracks[tr].note & 0xFF) | PAYLOAD_HI);
+        /* ADD, not or: the note is sign-extended first, so a negative note
+         * borrows from the high byte. 0x7F00 + (-22) is 0x7EEA. */
+        uint16_t payload = (uint16_t)(PAYLOAD_HI + tracks[tr].note);
 
         if (ev == DS10_NOTE_OFF) {
             n += route((int)s->ntracks, TARGET_OFF | tr, DS10_NOTE_OFF,
@@ -221,4 +223,168 @@ int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults)
 void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults)
 {
     l->cur = (int16_t)(ds10_lane_map(l, raw, defaults) << 8);
+}
+
+/* --- the pattern-driven tick (0x0206E5AC in full) ------------------------- */
+
+static void say(ds10_seq_ctx *c, uint32_t msg, int32_t arg)
+{
+    c->player->msg = msg;
+    c->player->arg = arg;
+    c->player->handle(c->player, c->s);
+}
+
+static void post(ds10_seq_ctx *c, int opcode, int target, uint16_t payload)
+{
+    if (c->nout + 8 > c->max)
+        return;
+    c->nout += route((int)c->s->ntracks, target, opcode, payload,
+                     c->out + c->nout);
+}
+
+/* Truncating signed divide by 127, which the original does with the magic
+ * multiplier 0x81020409 rather than a call to the divider. */
+static int div127(int32_t v)
+{
+    return (int)(v / 127);
+}
+
+/* The two mixer posts a sounding track makes every step (0x0206EB44 and
+ * 0x0206EBB0). Both go to `track | 0x40`, which is the mixer only. */
+static void post_chan(ds10_seq_ctx *c, int track)
+{
+    const ds10_seq_track *t = &c->trk[track];
+    int32_t vol = div127((int32_t)t->vel * c->chan[c->chan_idx[track * 2]]);
+    int32_t pan = (int32_t)t->pan + c->chan[c->chan_idx[track * 2 + 1]] - 0x40;
+
+    if (pan < 0)
+        pan = 0;
+    else if (pan > 127)
+        pan = 127;
+
+    post(c, 6, track | 0x40,
+         (uint16_t)(DS10_KNOB_CHAN_VOL | ((vol & 0xFF) << 8)));
+    post(c, 6, track | 0x40,
+         (uint16_t)(DS10_KNOB_CHAN_PAN | ((pan & 0xFF) << 8)));
+}
+
+static void run_step(ds10_seq_ctx *c)
+{
+    ds10_seq *s = c->s;
+    int track;
+
+    /* Swing picks the sub-tick count by step parity. */
+    s->sub_cur = (s->step & 1) ? s->sub_odd : s->sub_even;
+
+    for (track = 0; track < s->ntracks; track++) {
+        int8_t *rec = c->pat->step[track][s->step];
+        ds10_seq_track *t = &c->trk[track];
+
+        /* Velocity and pan are only latched when the step has a note. */
+        if (rec[0] >= 0) {
+            t->vel = rec[2];
+            t->pan = rec[3];
+        }
+        /* The note is read signed and the gate UNSIGNED, which is what makes
+         * gate 0xFF a tie rather than a negative countdown. */
+        switch (t->play_mode) {
+        case DS10_PLAY_PATTERN:
+            ds10_seq_step_track(t, rec[0], (uint8_t)rec[1], s->sub_cur);
+            break;
+        case DS10_PLAY_MUTE:
+            break;
+        case DS10_PLAY_UNLESS_LIVE:
+            if (t->live_note < 0)
+                ds10_seq_step_track(t, rec[0], (uint8_t)rec[1], s->sub_cur);
+            break;
+        case DS10_PLAY_RECORD:
+            rec[0] = t->live_note;
+            rec[1] = (int8_t)t->live_gate;
+            ds10_seq_step_track(t, t->live_note, t->live_gate, s->sub_cur);
+            break;
+        default:
+            break;
+        }
+        if (t->note >= 0)
+            post_chan(c, track);
+    }
+    s->auto_sub = 0;
+}
+
+int ds10_seq_run(ds10_seq_ctx *c)
+{
+    ds10_seq *s = c->s;
+
+    c->nout = 0;
+    if (s->playing != 1) {
+        /* Not running still drains the gate countdowns. */
+        c->nout += ds10_seq_emit(s, c->trk, c->out + c->nout);
+        return c->nout;
+    }
+
+    s->accum += s->incr;
+    if (s->accum <= s->period)
+        return 0;
+
+    do {
+        if (s->starting == 1) {
+            s->starting = 0;
+            s->step = -1;
+            s->step_count = -1;
+            s->bar = -1;
+            s->tick = -1;
+            s->subtick = 0;
+        }
+        s->tick++;
+
+        if (s->subtick == 0) {
+            say(c, DS10_MSG_STEP, s->step);
+
+            s->step++;
+            s->step_count++;
+            if (s->step >= (int8_t)s->steps) {
+                if (c->pat != 0) {
+                    c->prev = c->pat;
+                    say(c, DS10_MSG_ENDPAT, s->bar);
+                    c->pat = 0;
+                    s->pattern = 0;
+                }
+                s->step = 0;
+            }
+            if (s->step == 0) {
+                s->bar++;
+                c->player->answer = 0;
+                say(c, DS10_MSG_BAR, 0);
+                if (c->player->answer != 0) {
+                    /* The answer IS the next pattern. set_pattern (0x0206DBE4)
+                     * would also re-initialise the tracks and broadcast 0x1D;
+                     * neither is modelled yet, so this only installs. */
+                    c->pat = c->player->answer;
+                    s->pattern = 1;
+                    s->steps = c->pat->steps;
+                    s->auto_sub = 0;
+                    say(c, DS10_MSG_RUN, s->bar);
+                    /* 0x1C BAR_START, broadcast, carrying the tempo. The
+                     * original puts it in the event's u32 at +4; the low half is
+                     * what a queue entry's payload word holds. */
+                    post(c, 28, 0x70, s->tempo);
+                }
+            }
+            if (c->pat != 0)
+                run_step(c);
+            s->subtick = s->sub_cur;
+        }
+
+        c->nout += ds10_seq_emit(s, c->trk, c->out + c->nout);
+        /* The automation processor (0x0206E1EC) runs here when a pattern is
+         * loaded. Its per-lane work is skipped unless a track enables it, but it
+         * always bumps the automation sub-step on the way out. */
+        if (c->pat != 0)
+            s->auto_sub++;
+
+        s->subtick--;
+        s->accum -= s->period;
+    } while (s->accum > s->period);
+
+    return c->nout;
 }

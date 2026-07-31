@@ -25,6 +25,7 @@
 #define DS10_SEQ_TEMPO_NUM 60000000
 #define DS10_SEQ_SUBTICKS 24       /* per step pair */
 #define DS10_SEQ_INCR 240000
+#define DS10_SEQ_STEPS 16
 
 typedef struct {
     uint8_t playing;     /* +0x0C 1 = running */
@@ -71,7 +72,21 @@ typedef struct {
     int8_t gate_left;   /* +2 countdown in sub-ticks */
     int8_t gate_mode;   /* +4 the raw gate value */
     int8_t note;        /* +5 */
+    int8_t vel;         /* +6 the step's velocity, copied on a note */
+    int8_t pan;         /* +7 and its pan */
+    uint8_t live_gate;  /* +0x0C gate from live input, for record mode */
+    int8_t live_note;   /* +0x0D note from live input, negative = none */
+    uint8_t play_mode;  /* +0x22 enum ds10_play_mode */
 } ds10_seq_track;
+
+/* What a track does with the pattern, from the jump table at 0x0206E7A4.
+ * Anything above RECORD does nothing at all. */
+enum ds10_play_mode {
+    DS10_PLAY_PATTERN = 0,
+    DS10_PLAY_MUTE = 1,
+    DS10_PLAY_UNLESS_LIVE = 2,   /* play the step only if no live note is held */
+    DS10_PLAY_RECORD = 3,        /* write the live note back into the pattern */
+};
 
 /* Apply one step's (note, gate) to a track. `subticks` is the current step's
  * sub-tick count, which is where swing feeds into gate length. */
@@ -105,6 +120,58 @@ int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out);
 void ds10_seq_set_tempo(ds10_seq *s, int tempo);
 void ds10_seq_set_swing(ds10_seq *s, int swing);
 void ds10_seq_tick(ds10_seq *s);
+
+/* --- the pattern-driven tick (the rest of 0x0206E5AC) --------------------- */
+
+#define DS10_SEQ_MAXTRACKS 6
+
+/* A pattern as the sequencer reads it - not the layout a .dat file uses, which
+ * has a 64-byte track stride and puts the two automation bytes elsewhere. See
+ * recon.md section 13 for the header fields; only the ones the tick reads are
+ * modelled here. */
+typedef struct {
+    uint8_t steps;                                  /* +0x06 */
+    /* +0x24 + track*0x68 + step*4: note, gate, velocity, pan */
+    int8_t step[DS10_SEQ_MAXTRACKS][DS10_SEQ_STEPS][4];
+} ds10_rt_pattern;
+
+/* Message ids the tick writes into the song player, u32 constants that read as
+ * FourCCs. The answer to BAR is the next pattern, or NULL for none. */
+#define DS10_MSG_STEP 0x73746570u   /* "step", arg = the step being left */
+#define DS10_MSG_ENDPAT 0x65647470u /* "edtp", arg = bar */
+#define DS10_MSG_BAR 0x73747074u    /* "stpt", arg 0 in, next pattern out */
+#define DS10_MSG_RUN 0x726E7470u    /* "rntp", arg = bar */
+
+typedef struct ds10_song_player ds10_song_player;
+struct ds10_song_player {
+    uint32_t msg;                   /* +0x04 */
+    int32_t arg;                    /* +0x08 in the original this word is both */
+    ds10_rt_pattern *answer;        /* the argument and the answer; split here */
+    void (*handle)(ds10_song_player *p, ds10_seq *s);  /* vtable slot 1 */
+};
+
+/* The mixer knobs the per-step velocity and pan land on. */
+#define DS10_KNOB_CHAN_VOL 7
+#define DS10_KNOB_CHAN_PAN 10
+
+typedef struct {
+    ds10_seq *s;
+    ds10_seq_track *trk;
+    ds10_rt_pattern *pat;           /* seq +0x40, NULL = none */
+    ds10_rt_pattern *prev;          /* seq +0x44 */
+    ds10_song_player *player;       /* seq +0x3C */
+    const int8_t *chan;             /* the byte array at seq +0x60 */
+    const uint8_t *chan_idx;        /* two per track: volume then pan */
+    ds10_seq_posted *out;           /* every routed event, in order */
+    int nout;
+    int max;
+} ds10_seq_ctx;
+
+/* One tick call, the whole of 0x0206E5AC: accumulator, step advance, the song
+ * player messages, the pattern read, per-track play modes, the velocity and pan
+ * posts, then note emission. Automation is not run - set a track's mode so the
+ * original skips it too. Returns the events appended to c->out. */
+int ds10_seq_run(ds10_seq_ctx *c);
 
 #endif /* DS10_SEQ_H */
 

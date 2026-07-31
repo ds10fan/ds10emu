@@ -1134,19 +1134,41 @@ this testable without building the whole context object.
 Also verified bit-exact: **automation lanes** and the **song file format**
 (section 14).
 
-Still decompiled but not verified, and all of it on the path to replaying a
-song as audio:
+Also verified bit-exact: **the pattern-driven tick**, by replaying a real demo
+pattern (`src/core/seq.c`, 1781444 checks over 34 cases and 20244 routed events,
+`make test-replay`). Each case installs one pattern out of one demo `.dat` into
+the original sequencer at that song's own tempo and swing and calls the real tick
+700 times - several bars - comparing the whole sequencer state, all six track
+blocks and every routed event after every tick. Covered: the step record read,
+all four play modes including the record write-back, the per-step velocity and
+pan posts, the end-of-pattern drop, and the automation sub-step.
+
+Two bugs in already-"verified" code came out of it, both invisible to the earlier
+sequencer test because it ran with no pattern loaded and so never fed real step
+records through:
+
+- The gate byte is read **unsigned**. Reading it signed turns gate `0xFF` from a
+  tie into a negative countdown.
+- A note event's payload is `0x7F00 + note`, an **add**, not `note | 0x7F00`. The
+  note is sign-extended first, so a negative note borrows: `0x7F00 + (-22)` is
+  `0x7EEA`. Every demo note used so far was positive, which is why an or looked
+  right.
+
+Still decompiled but not verified, and all of it on the path to replaying a song
+as audio rather than as events:
 
 - `set_pattern` (`0x0206DBE4`) and the three initialisers it calls on a bar
-  boundary, `0x0206DFCC`, `0x0206EC10`, `0x0206DEE4`.
-- The pattern-driven half of the tick: the per-track mode dispatch and the
-  velocity/pan posts. The tick is verified only with no pattern loaded.
+  boundary, `0x0206DFCC`, `0x0206EC10`, `0x0206DEE4`. The replay test sidesteps
+  these by reinstalling the pattern itself, outside the sequencer.
 - Automation modes other than per-step latch, and the knob dispatch at the tail
-  of `0x0206E1EC`.
-- The song player itself - nothing walks the bar chain yet.
+  of `0x0206E1EC` - which is `machine->vtable[0x18](machine, lane->knob,
+  lane->cur >> 8)` for each lane whose knob is not `0xFF`.
+- The song player itself - nothing walks the bar chain yet, so the replay loops
+  one pattern.
 - The unnamed regions of a pattern record, which is where the per-pattern synth,
-  drum and mixer settings live. Until those are named, a replay cannot set the
-  machines up from a song file at all.
+  drum and mixer settings live. **This is what blocks audio.** Until those are
+  named, neither side can set the machines up from a song file, so a replay can
+  be compared as events but not as samples.
 
 ## 14. Song file format - decompiled and verified
 
