@@ -186,7 +186,9 @@ typedef struct {
     uint8_t mode;        /* track state +0x21, 0..3 */
 } ds10_seq_auto;
 
-typedef struct {
+typedef struct ds10_seq_ctx ds10_seq_ctx;
+
+struct ds10_seq_ctx {
     ds10_seq *s;
     ds10_seq_track *trk;
     ds10_rt_pattern *pat;           /* seq +0x40, NULL = none */
@@ -207,7 +209,16 @@ typedef struct {
     int nauto;
     void (*knob)(void *machine, int knob, int value);
     void *machine[DS10_SEQ_MAXTRACKS];
-} ds10_seq_ctx;
+
+    /* Called where the original calls set_pattern (0x0206DBE4), i.e. inside the
+     * tick the moment the song player answers with a pattern and before any step
+     * is processed. That is where the machines are re-initialised from the new
+     * pattern - patches, mixer knobs, automation lanes - and doing it after the
+     * tick returns is too late: the first step's own volume events would already
+     * have gone out against the previous pattern's mixer settings. */
+    void (*install)(ds10_seq_ctx *c, ds10_rt_pattern *pat);
+    void *user;
+};
 
 /* One tick call, the whole of 0x0206E5AC: accumulator, step advance, the song
  * player messages, the pattern read, per-track play modes, the velocity and pan

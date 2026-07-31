@@ -1336,9 +1336,15 @@ Still open:
 Still decompiled but not verified, and all of it on the path to replaying a song
 as audio rather than as events:
 
-- `set_pattern` (`0x0206DBE4`) and the three initialisers it calls on a bar
-  boundary, `0x0206DFCC`, `0x0206EC10`, `0x0206DEE4`. The replay test sidesteps
-  these by reinstalling the pattern itself, outside the sequencer.
+- `set_pattern` (`0x0206DBE4`) itself. What it calls on a bar boundary is
+  reproduced - `0x0206DFCC` reloads the synth patches, `0x0206EC10` pushes the 25
+  mixer knobs, `0x0206DEE4` re-initialises the automation lanes - and crucially at
+  the moment it does, **inside the tick, before the new pattern's first step is
+  processed**. Doing that work after the tick returned silenced the first note of
+  every song: the step's own volume event had already gone out scaled against a
+  mixer knob array that was still zero, so channel 0 was set to silence and stayed
+  there until the next note. The array the sequencer scales against is the mixer's
+  own live knob array, not a copy taken later.
 - Automation modes other than per-step latch, and the knob dispatch at the tail
   of `0x0206E1EC` - which is `machine->vtable[0x18](machine, lane->knob,
   lane->cur >> 8)` for each lane whose knob is not `0xFF`.

@@ -397,6 +397,8 @@ int ds10_seq_run(ds10_seq_ctx *c)
                     s->pattern = 1;
                     s->steps = c->pat->steps;
                     s->auto_sub = 0;
+                    if (c->install)
+                        c->install(c, c->pat);
                     say(c, DS10_MSG_RUN, s->bar);
                     /* 0x1C BAR_START, broadcast, carrying the tempo. The
                      * original puts it in the event's u32 at +4; the low half is

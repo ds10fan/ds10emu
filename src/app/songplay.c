@@ -75,7 +75,60 @@ typedef struct {
     ds10_rt_pattern *rt;        /* one per song pattern */
     int last;                   /* pattern installed most recently, -1 = none */
     int done;
+    /* What a pattern change has to re-initialise. */
+    ds10_voice *voice;
+    ds10_mixer *mix;
+    int8_t *chan;
+    int8_t *lane_raw;
+    const int8_t **dflt;
+    const ds10_table_set *t;
+    const ds10_fx_tables *ft;
 } song_player;
+
+/* Everything a pattern change re-initialises, in the order and at the moment the
+ * original does it - inside the tick, before the new pattern's first step is
+ * processed. 0x0206DFCC reloads every synth knob, 0x0206EC10 pushes all 25 mixer
+ * knobs, and 0x0206DEE4 re-initialises both automation lanes of every synth
+ * track. Doing this after the tick returned silenced the first note of a song:
+ * the step's own volume event had already gone out scaled against a mixer knob
+ * array that was still zero. */
+static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
+{
+    song_player *sp = (song_player *)c->user;
+    int i = (int)(pat - sp->rt), t, l, st;
+    const ds10_song_pattern *q;
+
+    if (i == sp->last)
+        return;
+    sp->last = i;
+    q = &sp->song->pattern[i];
+
+    for (t = 0; t < NSYN; t++)
+        ds10_patch_load(&sp->voice[t], q->knobs[t], &sp->t->t);
+    for (t = 0; t < DS10_MIX_KNOBS; t++)
+        ds10_mixer_set_knob(sp->mix, t, q->mixer[t], sp->ft);
+    /* The sequencer reads per-channel volume and pan out of this same array. */
+    memcpy(sp->chan, q->mixer, DS10_MIX_KNOBS);
+
+    for (t = 0; t < NSYN; t++) {
+        memset(&c->autom[t], 0, sizeof c->autom[t]);
+        c->autom[t].enable = 1;
+        sp->dflt[t] = q->knobs[t];
+        for (st = 0; st < DS10_SONG_STEPS; st++)
+            for (l = 0; l < DS10_SEQ_LANES; l++)
+                sp->lane_raw[t * 2 * DS10_SONG_STEPS + st * 2 + l] =
+                    q->lane[t][st].raw[l];
+        for (l = 0; l < DS10_SEQ_LANES; l++) {
+            int kn = (uint8_t)q->lane[t][0].knob[l];
+
+            c->autom[t].lane[l].knob = (uint8_t)kn;
+            if (kn < DS10_SONG_KNOBS) {
+                c->autom[t].lane[l].offset = (int8_t)sp->t->knob_min[kn];
+                c->autom[t].lane[l].scale = (uint8_t)sp->t->knob_range[kn];
+            }
+        }
+    }
+}
 
 /* The sequencer reads a pattern with a 104-byte track stride; a song file uses 64
  * and a different header. The step record's first two bytes also swap: the file
@@ -297,6 +350,13 @@ int main(int argc, char **argv)
     sp.song = &song;
     sp.rt = rt;
     sp.last = -1;
+    sp.voice = voice;
+    sp.mix = &mix;
+    sp.chan = chan;
+    sp.lane_raw = lane_raw;
+    sp.dflt = dflt;
+    sp.t = &ts;
+    sp.ft = &ts.fx;
 
         /* The mixer starts from its constructor's state; each pattern's own 25 knobs
      * go in when it is installed. The tempo event is the only way a synced delay
@@ -331,6 +391,8 @@ int main(int argc, char **argv)
     ctx.defaults = dflt;
     ctx.nauto = NSYN;
     ctx.knob = knob_hook;
+    ctx.install = install_pattern;
+    ctx.user = &sp;
     for (i = 0; i < NSYN; i++)
         ctx.machine[i] = &voice[i];
 
@@ -354,45 +416,6 @@ int main(int argc, char **argv)
         while (acc >= TICK_DEN) {
             acc -= TICK_DEN;
             n = ds10_seq_run(&ctx);
-            /* A newly installed pattern brings its own two patches, the way
-             * 0x0206DFCC reloads every knob on a pattern change. */
-            if (ctx.pat != 0 && ctx.pat - rt != sp.last) {
-                sp.last = (int)(ctx.pat - rt);
-                for (i = 0; i < NSYN; i++)
-                    ds10_patch_load(&voice[i], song.pattern[sp.last].knobs[i],
-                                    &ts.t);
-                /* 0x0206EC10 pushes all 25 mixer knobs on a pattern change. */
-                for (i = 0; i < DS10_MIX_KNOBS; i++)
-                    ds10_mixer_set_knob(&mix, i,
-                                        song.pattern[sp.last].mixer[i], &ts.fx);
-                memcpy(chan, song.pattern[sp.last].mixer, DS10_MIX_KNOBS);
-                /* And 0x0206DEE4 re-initialises both automation lanes of every
-                 * synth track: the knob id off the pattern, the offset and scale
-                 * off that knob's descriptor. */
-                for (i = 0; i < NSYN; i++) {
-                    const ds10_song_pattern *q = &song.pattern[sp.last];
-                    int l, st;
-
-                    memset(&autom[i], 0, sizeof autom[i]);
-                    autom[i].enable = 1;
-                    dflt[i] = q->knobs[i];
-                    for (st = 0; st < DS10_SONG_STEPS; st++)
-                        for (l = 0; l < DS10_SEQ_LANES; l++)
-                            lane_raw[i * 2 * DS10_SONG_STEPS + st * 2 + l] =
-                                q->lane[i][st].raw[l];
-                    for (l = 0; l < DS10_SEQ_LANES; l++) {
-                        int kn = (uint8_t)q->lane[i][0].knob[l];
-
-                        autom[i].lane[l].knob = (uint8_t)kn;
-                        if (kn < DS10_SONG_KNOBS) {
-                            autom[i].lane[l].offset =
-                                (int8_t)ts.knob_min[kn];
-                            autom[i].lane[l].scale =
-                                (uint8_t)ts.knob_range[kn];
-                        }
-                    }
-                }
-            }
             for (k = 0; k < n; k++) {
                 int dest = ev[k].dest, op = ev[k].opcode;
                 int note = (int8_t)(ev[k].payload & 0xFF);
