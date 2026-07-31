@@ -962,10 +962,28 @@ byte 1  gate length
 bytes 2..3  a 16-bit per-step value
 ```
 
-Automation lanes are read at `pattern + track*0x68 + step*2 + 0x64`, two bytes
-per step. Note that overlaps the next track's block at stride `0x68`, so either
-the automation array is stored separately or the stride differs there — **not
-yet resolved**, and it needs the ARM rather than the decompiler output.
+Automation lanes are read at `pattern + track*0x68 + step*2 + 0x64`, one signed
+byte per lane, the two lanes adjacent. Confirmed from the raw ARM at
+`0x0206E250`, so the address arithmetic is not in doubt:
+
+```
+ldr  r1, [r9, #0x40]     ; pattern
+mov  r0, #104            ; 0x68
+mla  r0, r5, r0, r1      ; pattern + track*0x68
+ldrb r1, [r9, #0x2d]     ; step
+add  r0, r0, r1, lsl #1  ; + step*2
+ldrsb r1, [r0, #0x64]    ; lane 0
+ldrsb r0, [r0, #0x65]    ; lane 1
+```
+
+**Open question.** Under the obvious reading — 16 steps, 4-byte records from
+`+0x24`, automation from `+0x64` — a track needs 132 bytes but the stride is
+104, so track 0's automation would run into track 1's block. One of those
+assumptions is wrong. The arithmetic above is certain; what is uncertain is the
+step count for the automation lanes or the placement of the step-record array.
+This is resolvable by dumping a real pattern out of the harness and comparing
+against a song file, which is the obvious next step and needs no new
+decompilation.
 
 ### Note emission, `0x0206E8C8`
 
@@ -1019,7 +1037,13 @@ Verified bit-exact (`src/core/seq.c`, 15457 checks, `make test-seq`):
 transport, tempo mapping, swing mapping, accumulator, step advance, bar
 counting, the step trigger and the gate countdown.
 
-Decompiled and documented above but not implemented: the event target/payload
-encoding in `0x0206E8C8` (straightforward, but verifying it needs a router and
-fake machines), the automation lanes, the song-player callback protocol, and the
-song file format. The unresolved automation-lane stride is noted above.
+Also verified bit-exact: **event emission and router fan-out** — six tracks
+driven through the real `0x0206E8C8` into a router with fake machines, checking
+every queue entry's destination, opcode, channel byte and payload. A machine is
+only a queue pointer at `+0x04` and a count byte at `+0x08`, which is what made
+this testable without building the whole context object.
+
+Still decompiled but **not** verified: the automation lanes (blocked on the
+layout question above) and the song file format (the loader is not decompiled).
+The song-player callback protocol is understood but has no implementation, since
+it belongs with the song format.
