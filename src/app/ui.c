@@ -455,6 +455,51 @@ int ds10_ui_key_hit(int x, int y, int octave)
     return KEY_BASE + WHITE_SEMI[i] + octave * 12;
 }
 
+/* 61_SYN_EDIT's knobs. Five columns at x = 22, 75, 124, 174, 225 and four
+ * rows at y = 39, 80, 121, 162, confirmed by looking for the light knob cap
+ * against the dark panel in the rendered page - which is pixel-exact against
+ * the hardware. Which knob is at which position is read off the caption
+ * printed under it. The four positions not listed carry switches rather than
+ * knobs (VCO SYNC, VCA EG, filter TYPE) and are not wired.
+ *
+ * The names are the game's own, from the table at 0x020852dc. */
+#define KNOB_R 12
+
+static const struct { int x, y, id; } SYN_KNOB[] = {
+    { 22,  39,  0}, { 22,  80,  2}, { 22, 121,  1}, { 22, 162, 19},
+    { 75,  39,  6}, { 75,  80,  9},                 { 75, 162, 18},
+    {124,  39,  7}, {124,  80,  8},
+    {174,  39, 11}, {174,  80, 12}, {174, 121, 14},
+    {225,  39, 20}, {225,  80, 21}, {225, 121, 22}, {225, 162, 23},
+};
+
+static const char *const KNOB_NAME[31] = {
+    "OCTAVE", "PITCH EG INT", "PORTA", "PITCH IN INT", "VCO1 P.IN INT",
+    "VCO2 P.IN INT", "VCO1 WAVE", "VCO2 WAVE", "VCO2 PITCH", "BALANCE",
+    "VCO SYNC", "CUTOFF", "PEAK", "FILTER TYPE", "VCF EG INT",
+    "CUTOFF IN INT", "VCA EG", "VCA IN INT", "DRIVE", "LEVEL", "ATTACK",
+    "DECAY", "SUSTAIN", "RELEASE", "MG FREQ", "MG BPM", "PITCH IN",
+    "VCO1 P.IN", "VCO2 P.IN", "CUTOFF IN", "VCA IN",
+};
+
+int ds10_ui_knob_hit(int x, int y)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
+        int dx = x - SYN_KNOB[i].x, dy = y - SYN_KNOB[i].y;
+
+        if (dx * dx + dy * dy <= KNOB_R * KNOB_R) return SYN_KNOB[i].id;
+    }
+    return -1;
+}
+
+const char *ds10_ui_knob_name(int id)
+{
+    if (id < 0 || id > 30) return "";
+    return KNOB_NAME[id];
+}
+
 ds10_gpu *ds10_ui_gpu(ds10_ui *u)
 {
     return &u->gpu;

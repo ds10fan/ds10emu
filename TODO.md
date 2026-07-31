@@ -84,24 +84,39 @@ Everything round-trips, so nothing is lost - these are just not understood:
 
 ## 6. GUI
 
-Done: the 2D hardware model, pixel-exact against melonDS over 29 screens
-(`make test-2d`); the asset containers; the pages drawing natively and in the
-browser; six of them pixel-exact against the real thing (`make test-page`).
+Done:
+
+- the 2D hardware model, pixel-exact against melonDS over 29 screens
+  (`make test-2d`);
+- the sprite widget's OAM builder, bit-exact against the game's own setter
+  under Unicorn (`make test-obj`);
+- the asset containers, and the pages drawing natively and in the browser, six
+  of them pixel-exact against the real thing (`make test-page`);
+- the browser build plays: the keyboard drives the decompiled synth engine at
+  the right pitch, and the synth edit page's knobs turn, through the engine's
+  own dispatch and the ROM's own knob ranges.
 
 Remaining, roughly in order:
 
-- **The widget constructors.** Each screen is a constructor that places widgets
-  at fixed coordinates - `0x02039e68` is one, and `0x0202e750` is the widget
-  that builds OAM. Decompiling those replaces `data/pages.bin`, which is
-  currently a captured frame of sprites per page, and is what turns a page that
-  draws into a page that responds.
+- **The widget constructors.** `data/pages.bin` is still a captured frame of
+  sprites per page rather than generated ones, so a page draws but does not
+  animate. The OAM builder underneath is decompiled and verified; what is
+  missing is each screen's list of widgets. Scanning main RAM for the objects
+  finds them but not the ones that are live: the positions a widget holds are
+  in a parent's coordinate space, and the pass that copies a widget's private
+  buffer into the shadow OAM at runtime has not been read yet. That pass is the
+  next thing to find - `tools/widgets.py` already rebuilds any candidate and
+  checks it, so once the transform is known the layouts fall out.
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
   small textured-quad rasteriser, not a polygon pipeline.
-- **Touch.** The map's boxes are hit-tested from coordinates read off the
-  rendered screen, not from the game's own hit-test code. Everything else is
-  unwired.
-- **Wiring the UI to the synth**, which is already decompiled and verified.
+- **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
+  synth edit knobs are hit-tested from coordinates measured off the rendered
+  screen, which is pixel-exact, rather than from the game's own hit-test code.
+  Everything else - the sequencer grid, the mixer, the patch browser, the song
+  arranger - is unwired.
+- **Which octave the keyboard starts on.** The layout says it starts on an F;
+  F3 is an assumption, not a reading.
 
 ## 7. Longer term
 

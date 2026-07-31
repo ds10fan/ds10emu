@@ -173,6 +173,39 @@ int ds10_web_page(const char *bottom, const char *top)
     return 0;
 }
 
+/* Which knob a touch on the synth edit page is on, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_knob_hit(int x, int y) { return ds10_ui_knob_hit(x, y); }
+
+EMSCRIPTEN_KEEPALIVE
+const char *ds10_web_knob_name(int id) { return ds10_ui_knob_name(id); }
+
+/* A knob's range, from the descriptors the ROM carries. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_knob_min(int id)
+{
+    if (!audio_ready || id < 0 || id > 30) return 0;
+    return tables.knob_min[id];
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_knob_range(int id)
+{
+    if (!audio_ready || id < 0 || id > 30) return 1;
+    return tables.knob_range[id];
+}
+
+/* Apply a knob to both voices, through the engine's own dispatch. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_knob_set(int id, int value)
+{
+    int i;
+
+    if (!audio_ready || id < 0 || id > 30) return;
+    for (i = 0; i < NSYN; i++)
+        ds10_patch_set_knob(&voice[i], id, value, &tables.t);
+}
+
 /* Which MIDI note a touch on the keyboard page is, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_key_hit(int x, int y, int octave)

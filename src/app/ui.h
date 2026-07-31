@@ -36,6 +36,11 @@ const char *ds10_ui_map_hit(int x, int y);
  * touch is not on a key. `octave` shifts by twelve, as the OCT buttons do. */
 int ds10_ui_key_hit(int x, int y, int octave);
 
+/* Hit-test a touch on the synth edit page. Returns a knob id 0..30, or -1.
+ * The name of knob `id`, for display, is ds10_ui_knob_name(). */
+int ds10_ui_knob_hit(int x, int y);
+const char *ds10_ui_knob_name(int id);
+
 /* The GPU state, for tests that compare it against a captured frame. */
 ds10_gpu *ds10_ui_gpu(ds10_ui *u);
 

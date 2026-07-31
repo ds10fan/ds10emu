@@ -33,6 +33,7 @@ let api = null;
 let audio = null;      /* AudioContext, once the user has interacted */
 let octave = 0;
 let held = null;       /* the note currently sounding, if any */
+let drag = null;       /* {id, value, y} while a knob is being turned */
 
 function fill(select, names, initial) {
   for (const n of names) {
@@ -108,6 +109,25 @@ function screenPos(ev) {
           Math.floor((ev.clientY - r.top) * 192 / r.height)];
 }
 
+function setKnob(id, value) {
+  const lo = api.knobMin(id), n = api.knobRange(id);
+  const v = Math.max(lo, Math.min(lo + n - 1, Math.round(value)));
+  api.knobSet(id, v);
+  status.textContent = api.knobName(id) + "  " + v + "   ("
+    + lo + ".." + (lo + n - 1) + ")";
+  return v;
+}
+
+function onMove(ev) {
+  if (!drag) return;
+  const r = ev.target.getBoundingClientRect();
+  const y = (ev.clientY - r.top) * 192 / r.height;
+  /* Up increases. A full screen height covers the whole range twice, which
+   * is about what the device feels like. */
+  const span = api.knobRange(drag.id);
+  drag.value = setKnob(drag.id, drag.start + (drag.y - y) * span / 96);
+}
+
 function noteOff() {
   if (held === null) return;
   api.note(0, held, 0);
@@ -123,6 +143,18 @@ function onDown(which, ev) {
     if (next) {
       document.getElementById("pick-bottom").value = next;
       show();
+    }
+    return;
+  }
+  if (page === "61_SYN_EDIT") {
+    startAudio();
+    const id = api.knobHit(x, y);
+    if (id >= 0) {
+      const r = ev.target.getBoundingClientRect();
+      drag = {id: id, start: api.knobMin(id) + api.knobRange(id) / 2,
+              y: (ev.clientY - r.top) * 192 / r.height};
+      setKnob(id, drag.start);
+      ev.target.setPointerCapture(ev.pointerId);
     }
     return;
   }
@@ -156,6 +188,11 @@ Module.onRuntimeInitialized = () => {
     audioBuf: Module.cwrap("ds10_web_audio_buf", "number", []),
     rate: Module.cwrap("ds10_web_rate", "number", []),
     note: Module.cwrap("ds10_web_note", null, ["number", "number", "number"]),
+    knobHit: Module.cwrap("ds10_web_knob_hit", "number", ["number", "number"]),
+    knobName: Module.cwrap("ds10_web_knob_name", "string", ["number"]),
+    knobMin: Module.cwrap("ds10_web_knob_min", "number", ["number"]),
+    knobRange: Module.cwrap("ds10_web_knob_range", "number", ["number"]),
+    knobSet: Module.cwrap("ds10_web_knob_set", null, ["number", "number"]),
   };
   if (api.init() < 0) {
     status.textContent = "error: " + api.error();
@@ -167,8 +204,9 @@ Module.onRuntimeInitialized = () => {
     document.getElementById(id).addEventListener("change", show);
   for (const which of ["top", "bottom"]) {
     canvases[which].addEventListener("pointerdown", (e) => onDown(which, e));
-    canvases[which].addEventListener("pointerup", noteOff);
-    canvases[which].addEventListener("pointerleave", noteOff);
+    canvases[which].addEventListener("pointermove", onMove);
+    canvases[which].addEventListener("pointerup", () => { noteOff(); drag = null; });
+    canvases[which].addEventListener("pointerleave", () => { noteOff(); drag = null; });
   }
   /* z and x shift the keyboard by an octave, as the OCT buttons do. */
   document.addEventListener("keydown", (e) => {
