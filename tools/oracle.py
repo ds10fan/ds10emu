@@ -513,6 +513,62 @@ def capture_seq_ticks(tempo, swing, ticks=400):
 
 
 DS10_SEQ_TEMPO_NUM = 60000000
+SEQ_AUTO = 0x0206E1EC         # automation lanes
+BX_LR = 0x02072A44            # an existing `bx lr`, used to stub the knob call
+
+
+def capture_seq_auto():
+    """Drive the real automation-lane processor and read back the lane result.
+
+    The processor ends by calling the machine's knob handler through vtable slot
+    +0x18; pointing that at an existing `bx lr` makes the call harmless, after
+    which the computed value is readable from the lane's own bytes.
+    """
+    o = Oracle()
+    seq = _new_seq(o)
+    vt = o.call(NEW_THUNK, 0x20)
+    o.w32(vt + 0x18, BX_LR)
+    mach = o.call(NEW_THUNK, 0x10)
+    o.w32(mach, vt)
+    arr = o.call(NEW_THUNK, 8)
+    o.w32(arr, mach)
+    o.w32(arr + 4, mach)
+    router = o.call(NEW_THUNK, 0x20)
+    o.w32(router, arr)
+    o.w32(seq + 0x34, router)
+    pat = o.call(NEW_THUNK, 0x2A4)
+    defaults = o.call(NEW_THUNK, 0x80)
+    o.w32(pat + 0x14, defaults)
+    o.w32(pat + 0x18, defaults)
+    o.w32(seq + 0x40, pat)
+    o.w32(seq + 0x4C, 1)
+
+    cases = []
+    for raw in (-1, -64, -8, 0, 1, 7, 31, 63, 100, 127):
+        for offset in (-64, -1, 0, 1, 63):
+            for scale in (0, 1, 3, 64, 127, 255):
+                step = 3
+                o.uc.mem_write(seq + 0x2D, bytes([step]))
+                o.uc.mem_write(seq + 0x33, bytes([0]))
+                trk = seq + 0x64
+                o.uc.mem_write(trk + 0x20, bytes([1, 0, 0]))
+                for lane in range(2):
+                    lb = trk + 0x10 + lane * 8
+                    o.uc.mem_write(lb, bytes([5 + lane, 0,
+                                              offset & 0xFF, scale]))
+                    o.w32(lb + 4, 0)
+                a = pat + 0 * 0x68 + step * 2
+                o.uc.mem_write(a + 0x64, bytes([raw & 0xFF, raw & 0xFF]))
+                o.call(SEQ_AUTO, seq)
+                out = []
+                for lane in range(2):
+                    lb = trk + 0x10 + lane * 8
+                    raw8 = bytes(o.uc.mem_read(lb, 8))
+                    out.append(struct.unpack_from("<h", raw8, 4)[0])
+                cases.append((raw, offset, scale, out[0], out[1]))
+    return cases
+
+
 SEQ_EMIT = 0x0206E8C8         # (seq) -> gate countdown + note event emission
 ROUTER_ENABLE = 0x02160A90    # the router bails out if this word is zero
 NMACH = 6
@@ -635,11 +691,14 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
             runs.append((t, w, capture_seq_ticks(t, w)))
     notes = capture_seq_notes()
     emits = capture_seq_emit()
+    autos = capture_seq_auto()
     nf = len(SEQ_FIELDS)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
-        f.write(b"SEQ3" + struct.pack("<IIIII", len(tempo), len(swing), nf,
-                                       len(notes), len(emits)))
+        f.write(b"SEQ4" + struct.pack("<IIIIII", len(tempo), len(swing), nf,
+                                       len(notes), len(emits), len(autos)))
+        for r_, of, sc, l0, l1 in autos:
+            f.write(struct.pack("<5i", r_, of, sc, l0, l1))
         for trk_state, posted, after in emits:
             for st in trk_state:
                 f.write(struct.pack("<5i", *st))
@@ -666,7 +725,7 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
                 f.write(struct.pack(f"<{nf}i", *after))
     print(f"{path}: {len(tempo)} tempos, {len(swing)} swings, "
           f"{len(runs)} runs x {len(runs[0][2])} ticks, {len(notes)} note cases, "
-          f"{len(emits)} emit cases")
+          f"{len(emits)} emit cases, {len(autos)} lane cases")
 
 
 # --- synth event handling capture -------------------------------------------

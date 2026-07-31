@@ -201,3 +201,24 @@ int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out)
     }
     return n;
 }
+
+/* --- automation lanes (0x0206E1EC) --------------------------------------- */
+
+/* offset + raw*scale/128, truncated to a signed byte. The original spells the
+ * divide as an explicit round-toward-zero correction, which is what C's / does
+ * for negatives too. */
+int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults)
+{
+    int32_t p;
+
+    if (raw == -1)
+        return defaults[l->knob];
+
+    p = raw * (int32_t)l->scale;
+    return (int8_t)(l->offset + p / 128);
+}
+
+void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults)
+{
+    l->cur = (int16_t)(ds10_lane_map(l, raw, defaults) << 8);
+}

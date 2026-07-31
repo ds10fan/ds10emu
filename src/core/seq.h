@@ -107,3 +107,22 @@ void ds10_seq_set_swing(ds10_seq *s, int swing);
 void ds10_seq_tick(ds10_seq *s);
 
 #endif /* DS10_SEQ_H */
+
+/* --- automation lanes (0x0206E1EC) --------------------------------------- */
+/* Two per synth track, 8 bytes each. `value` of -1 means take the per-track
+ * default from the pattern header instead of the step byte. */
+typedef struct {
+    uint8_t knob;
+    int8_t value;
+    int8_t offset;
+    uint8_t scale;
+    int16_t cur;     /* result, held as value<<8 */
+    int16_t delta;
+} ds10_lane;
+
+/* Map a raw lane byte to the knob value the machine receives. A raw value of -1
+ * means "no automation on this step": the per-track default from the pattern
+ * header is used directly, bypassing offset and scale entirely. */
+int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults);
+/* Hold mode: latch the step's value for the whole step. */
+void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults);

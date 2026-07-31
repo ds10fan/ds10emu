@@ -18,7 +18,7 @@
 
 #include "../src/core/seq.h"
 
-#define MAGIC "SEQ3"
+#define MAGIC "SEQ4"
 #define NMACH 6
 #define NF 19
 
@@ -91,7 +91,7 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "tests/vectors/seq.bin";
     char magic[4];
-    uint32_t ntempo, nswing, nf, nnotes, nemits, i, k;
+    uint32_t ntempo, nswing, nf, nnotes, nemits, nautos, i, k;
     unsigned long bad = 0, total = 0;
     int32_t nruns;
 
@@ -110,9 +110,46 @@ int main(int argc, char **argv)
     nf = rd32();
     nnotes = rd32();
     nemits = rd32();
+    nautos = rd32();
     if (nf != NF) {
         fprintf(stderr, "vector file has %u fields, expected %d\n", nf, NF);
         return 2;
+    }
+
+    /* Automation lanes: the real 0x0206E1EC computes each lane's held value
+     * from the step byte, an offset and a scale; the knob call it ends with is
+     * stubbed so the result is readable from the lane bytes. */
+    for (i = 0; i < nautos; i++) {
+        ds10_lane l;
+        int32_t raw = (int32_t)rd32();
+        int32_t offset = (int32_t)rd32();
+        int32_t scale = (int32_t)rd32();
+        int32_t w0 = (int32_t)rd32();
+        int32_t w1 = (int32_t)rd32();
+        int32_t w[2];
+        int lane;
+
+        w[0] = w0;
+        w[1] = w1;
+        for (lane = 0; lane < 2; lane++) {
+            l.knob = (uint8_t)(5 + lane);
+            l.value = 0;
+            l.offset = (int8_t)offset;
+            l.scale = (uint8_t)scale;
+            l.cur = 0;
+            l.delta = 0;
+            static const int8_t defaults[256] = {0};
+
+            ds10_lane_hold(&l, raw, defaults);
+            total++;
+            if (l.cur != (int16_t)w[lane]) {
+                if (bad < 10)
+                    fprintf(stderr, "lane case %u lane %d (raw=%d off=%d "
+                            "scale=%d): got %d want %d\n", i, lane, raw,
+                            offset, scale, l.cur, w[lane]);
+                bad++;
+            }
+        }
     }
 
     /* Event emission: run the gate countdown for six tracks with assorted prior
