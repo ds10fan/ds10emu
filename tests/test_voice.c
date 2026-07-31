@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "../src/core/voice.h"
+#include "voice_state.h"
 
 #define MAGIC "VOI1"
 #define NDEPTH 128
@@ -90,8 +91,8 @@ int main(int argc, char **argv)
     ft.mod_b = mod_b;
     ft.coef = coef;
 
-    if (nfields != 89) {
-        fprintf(stderr, "vector file has %u state fields, expected 89 - "
+    if (nfields != 90) {
+        fprintf(stderr, "vector file has %u state fields, expected 90 - "
                 "struct layout and the capture lists are out of sync\n",
                 nfields);
         return 2;
@@ -103,95 +104,7 @@ int main(int argc, char **argv)
         int frame_bad = 0;
         int j;
 
-        for (k = 0; k < 5; k++)
-            v.lfo.out[k] = s();
-        v.lfo.phase_down = s();
-        v.lfo.inc = s();
-        v.lfo.phase_up = s();
-        v.lfo.lfsr = s();
-
-        v.env.stage = (uint8_t)rd32();
-        v.env.level = s();
-        v.env.aux = s();
-        v.env_params.attack = s();
-        v.env_params.decay = s();
-        v.env_params.sustain = s();
-        v.env_params.release = s();
-
-        v.nc.target = s();
-        v.nc.current = s();
-        v.nc.rate = s();
-        v.nc.dir = (uint8_t)rd32();
-
-        v.pc.eg_depth = s();
-        for (k = 0; k < 3; k++)
-            v.pc.depth_sel[k] = s();
-        v.pc.octave12 = s();
-        v.pc.vco2pitch = (int16_t)s();
-        v.pc.inc1 = s();
-        v.pc.inc2 = s();
-        for (k = 0; k < 3; k++)
-            v.pc.lfo_sel[k] = (int16_t)s();
-        for (k = 0; k < 3; k++)
-            v.pc.env_sel[k] = s();
-
-        v.vco.xmod = s();
-        v.vco.phase1 = s();
-        v.vco.phase2 = s();
-        v.vco.inc1 = s();
-        v.vco.inc2 = s();
-        v.vco.shape1 = s();
-        v.vco.shape2 = s();
-        v.vco.wave1 = s();
-        v.vco.wave2 = s();
-        v.vco.vol1 = s();
-        v.vco.vol2 = s();
-        v.vco.lfsr1 = s();
-        v.vco.lfsr2 = s();
-        v.vco.sync = s();
-        v.vco.prev2 = s();
-        v.vco.hold2 = s();
-        v.vco.xm_60 = s();
-        v.vco.xm_64 = s();
-        v.vco.xm_68 = s();
-        v.vco.xm_6c = s();
-        v.vco.pitch_in = s();
-        v.vco.pitch1_in = s();
-        v.vco.pitch2_in = s();
-
-        v.vcf.q = s();
-        v.vcf.band = s();
-        v.vcf.low = s();
-        v.vcf.type = s();
-        v.vcf.f = s();
-        v.vcf.f_delta = s();
-        v.vcf.damp = s();
-        v.vcf.damp_delta = s();
-        v.vcf.lfo_sel = s();
-        v.vcf.env_sel = s();
-        v.vcf.osc_depth = s();
-        v.vcf.peak_raw = s();
-        v.vcf.cutoff = s();
-        v.vcf.coef = s();
-        v.vcf.type_req = s();
-        v.vcf.eg_depth = s();
-        v.vcf.in_depth = s();
-        v.vcf.f_target = s();
-        v.vcf.damp_target = s();
-
-        v.amp.dist = s();
-        v.amp.wet = s();
-        v.amp.level = s();
-        v.amp.level_delta = s();
-        v.amp.clipped = s();
-        v.amp.drive1 = s();
-        v.amp.drive2 = s();
-        v.amp.lfo_sel = s();
-        v.amp.env_sel = s();
-        v.amp.level_knob = s();
-        v.amp.in_depth = s();
-        v.amp.eg_sel = s();
-        v.amp.target = s();
+        voice_state_load(&v, s);
 
         for (j = 0; j < FRAME; j++)
             want[j] = rd16();

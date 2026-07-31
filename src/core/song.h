@@ -55,12 +55,18 @@ typedef struct {
     int8_t knob[DS10_SONG_LANES];
 } ds10_song_auto;
 
+#define DS10_SONG_KNOBS 31   /* what the synth machine's own knob count reports */
+
 typedef struct {
     uint32_t steps;         /* +0x00  steps in this pattern; 6..16 in the demos */
-    uint8_t head[0x3E];     /* +0x04  per-pattern parameters, not yet named */
+    /* +0x04  one 31-knob patch per synth track. 0x0206DFCC pushes exactly this
+     * array into the machine on a pattern change, one knob at a time, and the
+     * synth reports 31 knobs. Every one of the 544 patches in the ROM's songs
+     * falls inside the per-knob range patch.c already knows. */
+    int8_t knobs[2][DS10_SONG_KNOBS];
     ds10_song_step step[DS10_SONG_TRACKS][DS10_SONG_STEPS];   /* +0x42 */
     ds10_song_auto lane[DS10_SONG_LANES][DS10_SONG_STEPS];    /* +0x1C2 */
-    uint8_t params[0x62];   /* +0x242  synth/drum/mixer settings */
+    uint8_t params[0x62];   /* +0x242  drum and mixer settings, not yet named */
 } ds10_song_pattern;
 
 typedef struct {

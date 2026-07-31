@@ -49,7 +49,7 @@ static void parse_pattern(ds10_song_pattern *q, const uint8_t *p)
     int t, s, l;
 
     q->steps = rd32(p);
-    memcpy(q->head, p + 0x04, sizeof q->head);
+    memcpy(q->knobs, p + 0x04, sizeof q->knobs);
     for (t = 0; t < DS10_SONG_TRACKS; t++)
         for (s = 0; s < DS10_SONG_STEPS; s++) {
             const uint8_t *r = p + 0x42 + t * 64 + s * 4;
@@ -76,7 +76,7 @@ static void write_pattern(const ds10_song_pattern *q, uint8_t *p)
     int t, s, l;
 
     wr32(p, q->steps);
-    memcpy(p + 0x04, q->head, sizeof q->head);
+    memcpy(p + 0x04, q->knobs, sizeof q->knobs);
     for (t = 0; t < DS10_SONG_TRACKS; t++)
         for (s = 0; s < DS10_SONG_STEPS; s++) {
             uint8_t *r = p + 0x42 + t * 64 + s * 4;

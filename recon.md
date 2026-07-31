@@ -1154,6 +1154,52 @@ records through:
   `0x7EEA`. Every demo note used so far was positive, which is why an or looked
   right.
 
+### Rendering a song as audio
+
+`src/app/songplay.c` renders a `.dat` to a WAV using nothing but the
+reimplementation, and `make test-songrender` checks the result against the
+original: the original's own sequencer wired to two of the original's own synth
+voices through the original's own router, with the patches and step data of a
+real demo pattern. **2188800 samples over 19 cases, 0 mismatches.**
+
+The pattern's synth patches are what made this possible. `0x0206DFCC` runs on
+every pattern change and pushes a per-track knob array into the machine one knob
+at a time, and the synth machine reports 31 knobs, so a pattern's two patches are
+the 62 bytes at `pattern +0x04`. All 544 patches in the ROM's songs land inside
+the per-knob ranges `patch.c` already knew - 16864 range checks, no violations.
+
+Two more not-zero-after-construction traps, both found by this test:
+
+- The sequencer's accumulator starts at `period - incr + 1` for the default 120
+  BPM, i.e. 260001, so the first tick call fires immediately. Starting from zero
+  delays the first step by three frames.
+- The envelope's retrigger byte at `+0x05` is not zero after construction, and
+  without it a note-on glides instead of restarting the attack - which is silence
+  when the envelope is already at zero. It was missing from the captured voice
+  state, so `tests/test_voice.c` had been passing without it; the field lists and
+  the loader now live in one place, `tests/voice_state.h`.
+
+**Tick rate - derived, not observed.** The tick runs on its own thread
+(`0x0206D604`) woken by an OS event this project has not traced. The rate is
+pinned by arithmetic instead: the accumulator advances 240000 per call against a
+period of `60000000/BPM`, and 12 sub-ticks make a step at 50% swing, so a
+musically correct tempo needs exactly **200 calls per second** whatever the BPM.
+`32768/200` is 163.84 samples, which the renderer hits exactly with 1600 per
+64-sample frame against 4096 per tick. As a check, `ds10demo01` predicts 16560
+sub-ticks over its 90 bars, or 164.29 s; the renderer produces 164.30 s.
+
+What the render does NOT get from the song, and so approximates:
+
+- **Drums.** Four of the six tracks are drums, and a drum voice plays back a
+  buffer the drum synth renders. That synth is not decompiled, so those channels
+  are silent and the result is thinner than the real thing.
+- **Mixer and effect settings.** The mixer reports 25 knobs and a pattern has 98
+  bytes still unnamed at `+0x242`; until the knob map is established the mixer is
+  set flat and the effect bypassed.
+- **Per-step velocity and pan** do come from the song, but the original posts them
+  as mixer knobs 7 and 10 and that map is not established either, so they are
+  applied as a plain channel gain and position.
+
 Still decompiled but not verified, and all of it on the path to replaying a song
 as audio rather than as events:
 

@@ -6,10 +6,10 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay clean
+.PHONY: recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-voice test-patch test-event test-seq test-replay test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -102,6 +102,30 @@ out/test_event: tests/test_event.c src/core/event.c src/core/patch.c \
 test-seq: out/test_seq tests/vectors/seq.bin
 	@./out/test_seq
 
+# The whole chain: a demo song's patches and steps through the sequencer into two
+# synth voices, bit-compared against the original doing the same.
+SONG_SRC = src/core/seq.c src/core/song.c src/core/md5.c src/core/tables.c \
+           src/core/patch.c src/core/event.c src/core/voice.c src/core/vco.c \
+           src/core/vcf.c src/core/env.c src/core/lfo.c src/core/pitch.c \
+           src/core/amp.c src/core/fx.c
+
+test-songrender: out/test_songrender tests/vectors/songrender.bin out/tables.bin
+	@./out/test_songrender
+
+out/test_songrender: tests/test_songrender.c tests/voice_state.h $(SONG_SRC)
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_songrender.c $(SONG_SRC)
+
+# Render a song file to a WAV with nothing but the reimplementation.
+songplay: out/songplay
+out/songplay: src/app/songplay.c $(SONG_SRC) src/core/mixer.c
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ src/app/songplay.c $(SONG_SRC) src/core/mixer.c
+
+tables: out/tables.bin
+out/tables.bin: extract tools/oracle.py
+	@$(PY) tools/oracle.py tables
+
 test-replay: out/test_replay tests/vectors/replay.bin
 	@./out/test_replay
 
@@ -181,6 +205,9 @@ tests/vectors/song.bin: extract tools/oracle.py tools/emu.py
 
 tests/vectors/replay.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py replay-vectors
+
+tests/vectors/songrender.bin: extract tools/oracle.py tools/emu.py
+	@$(PY) tools/oracle.py songrender-vectors
 
 # Reproduce every artifact recon.md refers to, from the ROM alone.
 recon: extract

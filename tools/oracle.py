@@ -953,6 +953,227 @@ def cmd_replay_vectors(path="tests/vectors/replay.bin"):
     print(f"{path}: {len(cases)} cases x {TICKS} ticks, {nev} events")
 
 
+# --- end-to-end song render capture -----------------------------------------
+# The real sequencer driving two REAL synth voices through the real router, with
+# the patches and step data of a real demo pattern. This is the audio the
+# reimplementation has to match sample for sample.
+SONGR_OUT = (0x0F00C000, 0x0F00C400)   # one output buffer per voice
+SONGR_SLOT = (0x0F00C800, 0x0F00C808)
+TICK_NUM, TICK_DEN = 1600, 4096        # sequencer ticks per 64-sample frame
+
+
+def _new_synth(o, out, slot):
+    syn = o.call(SYNTH_NEW)
+    if not syn:
+        raise RuntimeError("synth factory returned NULL")
+    o.w32(syn + 0x04, o.call(NEW_THUNK, 8 * 64))
+    o.uc.mem_write(syn + 0x08, b"\0")
+    for off, val in SYN_FIELDS.items():
+        o.w32(syn + off, val)
+    o.w32(slot, out)
+    o.w32(syn + 0x1C, slot)
+    return syn
+
+
+def voice_snapshot(o, syn):
+    """Whole-voice state, in the field order tests/test_voice.c reads."""
+    ptr = {k: o.u32(syn + off) for k, off in
+           (("lfo", 0x34), ("env", 0x30), ("nc", 0x38), ("pc", 0x3C),
+            ("vco", 0x40), ("vcf", 0x44), ("amp", 0x48))}
+
+    def read(base, fields, size):
+        raw = bytes(o.uc.mem_read(base, size))
+        return [_rdf(raw, off, sz) for off, sz in fields]
+
+    envp = o.u32(ptr["env"])
+    return (read(ptr["lfo"], V_LFO, 0x34) + read(ptr["env"], V_ENV, 0x14) +
+            read(envp, V_ENVP, 0x10) + read(ptr["nc"], V_NC, 0x14) +
+            read(ptr["pc"], V_PC, 0x58) + read(ptr["vco"], V_VCO, 0xA0) +
+            read(ptr["vcf"], V_VCF, 0x64) + read(ptr["amp"], V_AMP, 0x40))
+
+
+def capture_songrender(blob, pattern_idx, frames):
+    o = Oracle()
+    seq = _new_seq(o, 2, 4)
+    o.w32(ROUTER_ENABLE, 1)
+
+    payload = blob[16:]
+    off = 0xEC + pattern_idx * 676
+    song_pat = payload[off:off + 676]
+    steps = struct.unpack_from("<I", song_pat, 0)[0]
+    pat = _rt_pattern(o, song_pat, NMACH, steps)
+
+    # Two real voices as machines 0 and 1; the drum tracks and the two buses get
+    # queue-only stand-ins, since a drum voice needs a rendered sample buffer.
+    syn = [_new_synth(o, SONGR_OUT[i], SONGR_SLOT[i]) for i in range(2)]
+    vt = o.call(NEW_THUNK, 0x20)
+    o.w32(vt + 0x18, BX_LR)
+    stub = []
+    for _ in range(NMACH - 2 + 2):
+        m = o.call(NEW_THUNK, 0x10)
+        o.w32(m + 0x00, vt)
+        o.w32(m + 0x04, o.call(NEW_THUNK, 8 * 64))
+        o.uc.mem_write(m + 0x08, b"\0")
+        stub.append(m)
+    arr = o.call(NEW_THUNK, 4 * NMACH)
+    for i in range(2):
+        o.w32(arr + 4 * i, syn[i])
+    for i in range(2, NMACH):
+        o.w32(arr + 4 * i, stub[i - 2])
+    router = o.call(NEW_THUNK, 0x20)
+    o.w32(router + 0x00, arr)
+    o.w32(router + 0x04, stub[NMACH - 2])
+    o.w32(router + 0x08, stub[NMACH - 1])
+    o.w32(router + 0x14, NMACH)
+
+    pvt = o.call(NEW_THUNK, 0x10)
+    o.w32(pvt + 0x04, BX_LR)
+    player = o.call(NEW_THUNK, 0x10)
+    o.w32(player + 0x00, pvt)
+
+    chan_arr = o.call(NEW_THUNK, 0x40)
+    o.uc.mem_write(chan_arr, bytes([0x40] * 0x40))
+    o.uc.mem_write(CHAN_IDX_TABLE, bytes([0, 1] * 8))
+
+    tempo = struct.unpack_from("<I", payload, 4)[0]
+    swing = struct.unpack_from("<H", payload, 0x0A)[0]
+    o.w32(seq + 0x34, router)
+    o.w32(seq + 0x3C, player)
+    o.w32(seq + 0x54, NMACH)
+    o.w32(seq + 0x4C, 2)
+    o.w32(seq + 0x50, 4)
+    o.w32(seq + 0x60, chan_arr)
+    o.call(SEQ_SET_SWING, seq, swing)
+    o.uc.mem_write(seq + 0x10, bytes([tempo & 0xFF]))
+    o.w32(seq + 0x14, _s32(o.call(DIVIDE, DS10_SEQ_TEMPO_NUM, tempo)))
+    o.w32(seq + 0x40, pat)
+    o.w32(pat + 0x508, seq)
+    o.uc.mem_write(seq + 0x2C, bytes([steps]))
+    for t in range(NMACH):
+        o.uc.mem_write(seq + 0x64 + t * 0x24, bytes([0] * 0x24))
+        o.uc.mem_write(seq + 0x64 + t * 0x24 + 0x0D, bytes([0xFF]))
+    o.uc.mem_write(seq + 0x0C, bytes([1, 1]))
+
+    # The patches the pattern carries, pushed knob by knob exactly as
+    # 0x0206DFCC does on a pattern change.
+    knobs = [[_sb(song_pat[4 + v * 31 + k]) for k in range(31)] for v in range(2)]
+    for v in range(2):
+        for k, val in enumerate(knobs[v]):
+            o.call(KNOB_SET, syn[v], k, val)
+
+    # The constructor does not leave a voice zeroed, so the reimplementation has
+    # to start from the same state rather than from a memset.
+    vstate = [voice_snapshot(o, syn[v]) for v in range(2)]
+    sstate = snapshot_seq(o, seq)
+    out, acc = [], 0
+    for _ in range(frames):
+        acc += TICK_NUM
+        while acc >= TICK_DEN:
+            acc -= TICK_DEN
+            o.call(SEQ_TICK, seq)
+            if o.u32(seq + 0x40) == 0:
+                o.w32(seq + 0x40, pat)
+                o.uc.mem_write(seq + 0x2C, bytes([steps]))
+        # The drum and bus stand-ins have no render to drain their queues, so
+        # empty them by hand or the router walks off the end of the buffer.
+        for m in stub:
+            o.uc.mem_write(m + 0x08, b"\0")
+        frame = []
+        for v in range(2):
+            o.call(RENDER, syn[v])
+            raw = bytes(o.uc.mem_read(SONGR_OUT[v], FRAME * 2))
+            frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
+        out.append(frame)
+    return knobs, tempo, swing, steps, song_pat, vstate, sstate, out
+
+
+def _sb(v):
+    return v - 256 if v > 127 else v
+
+
+def snapshot_seq(o, seq):
+    raw = bytes(o.uc.mem_read(seq, SEQ_SIZE))
+    return [_rdf(raw, off, sz) for off, sz in SEQ_FIELDS]
+
+
+def cmd_songrender_vectors(path="tests/vectors/songrender.bin"):
+    files = song_files()
+    if not files:
+        print("no song files - run `make extract` first")
+        return
+    FRAMES = 900          # about 1.8 s, a bar or two
+    cases = []
+    for name, blob in files:
+        payload = blob[16:]
+        chain = struct.unpack_from("<100H", payload, 0x24)
+        if chain[0] == 0xFFFF:
+            continue
+        seen = []
+        for bar in range(min(6, len(chain))):
+            if chain[bar] != 0xFFFF and chain[bar] not in seen:
+                seen.append(chain[bar])
+        for pidx in seen[:2]:
+            cases.append((name, blob, pidx))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"SRN1")
+        f.write(struct.pack("<3I", len(cases), FRAMES, FRAME))
+        for name, blob, pidx in cases:
+            knobs, tempo, swing, steps, song_pat, vstate, sstate, out = \
+                capture_songrender(blob, pidx, FRAMES)
+            f.write(struct.pack("<I", len(name)))
+            f.write(name.encode())
+            f.write(struct.pack("<5I", pidx, tempo, swing, steps,
+                                len(vstate[0])))
+            f.write(song_pat)
+            f.write(struct.pack(f"<{len(SEQ_FIELDS)}i", *sstate))
+            for v in range(2):
+                f.write(struct.pack(f"<{len(vstate[v])}i", *vstate[v]))
+            for frame in out:
+                for v in range(2):
+                    f.write(struct.pack(f"<{FRAME}h", *frame[v]))
+    print(f"{path}: {len(cases)} cases x {FRAMES} frames, "
+          f"{len(cases) * FRAMES * FRAME * 2} samples")
+
+
+# --- ROM table dump --------------------------------------------------------
+# Everything the C core needs that lives in ROM, in one file, so a standalone
+# renderer does not have to go through a test vector to get at it. ROM-derived,
+# so it is not committed; `make tables` regenerates it.
+TABLES = [
+    ("env_rate", 0x0207FD80, 128, "i"),
+    ("lfo_bpm", 0x0207FF80, 16, "i"),
+    ("lfo_free", 0x0207FFC4, 128, "i"),
+    ("porta", 0x020801C4, 128, "i"),
+    ("peak", 0x020805C4, 128, "i"),
+    ("pitch", 0x0207E950, 130, "i"),
+    ("depth", 0x0207EB38, 128, "i"),
+    ("mod_a", 0x020803C4, 128, "h"),
+    ("mod_b", 0x020804C4, 128, "h"),
+    ("coef", 0x020807C4, 152, "i"),
+    ("fx_phase_off", 0x0207EF38, 3, "i"),
+    ("fx_flanger_fb", 0x0207EF44, 128, "h"),
+    ("fx_depth", 0x0207F044, 128, "h"),
+    ("fx_delay_div", 0x0207F144, 12, "i"),
+    ("fx_lfo_rate", 0x0207FFC4, 128, "i"),
+]
+
+
+def cmd_tables(path="out/tables.bin"):
+    b = open("out/arm9.bin", "rb").read()
+    base = 0x02004000
+    with open(path, "wb") as f:
+        f.write(b"TBL1")
+        f.write(struct.pack("<I", len(TABLES)))
+        for name, addr, n, kind in TABLES:
+            sz = 4 if kind == "i" else 2
+            vals = [struct.unpack_from("<" + kind, b, addr - base + sz * i)[0]
+                    for i in range(n)]
+            f.write(struct.pack("<I", n))
+            f.write(struct.pack(f"<{n}{kind}", *vals))
+    print(f"{path}: {len(TABLES)} tables")
+
+
 def cmd_song_vectors(path="tests/vectors/song.bin"):
     files = song_files()
     if not files:
@@ -1533,7 +1754,7 @@ def cmd_patch_vectors(path="tests/vectors/patch.bin"):
 # size 1 = byte, 2 = signed halfword, 4 = word.
 V_LFO = [(0x00, 4), (0x04, 4), (0x08, 4), (0x0C, 4), (0x10, 4),
          (0x14, 4), (0x18, 4), (0x1C, 4), (0x24, 4)]
-V_ENV = [(0x04, 1), (0x08, 4), (0x0C, 4)]
+V_ENV = [(0x04, 1), (0x05, 1), (0x08, 4), (0x0C, 4)]  # +0x05 is retrig
 V_ENVP = [(0x00, 4), (0x04, 4), (0x08, 4), (0x0C, 4)]
 V_NC = [(0x00, 4), (0x04, 4), (0x0C, 4), (0x10, 1)]
 V_PC = [(0x20, 4), (0x24, 4), (0x28, 4), (0x2C, 4), (0x30, 4), (0x34, 2),
@@ -2054,7 +2275,9 @@ def main():
             "event-vectors": cmd_event_vectors,
             "seq-vectors": cmd_seq_vectors,
             "song-vectors": cmd_song_vectors,
-            "replay-vectors": cmd_replay_vectors}
+            "replay-vectors": cmd_replay_vectors,
+            "tables": cmd_tables,
+            "songrender-vectors": cmd_songrender_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
