@@ -24,6 +24,8 @@
 #include "obj.h"
 #include "../gfx/nitro.h"
 
+static void draw_page(ds10_ui *u, const char *name, int engine);
+
 #define PAGE_TILES 0x04000
 #define PAGE_MAP 0x00800
 #define BACK_TILES 0x10000
@@ -85,6 +87,7 @@ struct ds10_ui {
     int nblob;
     page_list *pages;
     int npages;
+    char shown[2][24];  /* the page on each engine */
     cell_bank bank[24];
     int nbanks;
     /* The OAM slot and affine index each synth-edit knob's pointer uses,
@@ -817,11 +820,13 @@ int ds10_ui_page(ds10_ui *u, const char *bottom, const char *top)
 
     /* Engine A drives the touch screen when POWCNT's swap bit is clear. */
     if (bottom) {
+        snprintf(u->shown[0], sizeof u->shown[0], "%s", bottom);
         rc |= load_page(u, bottom, 0);
         draw_page(u, bottom, 0);
         claim_knob_slots(u, bottom);
     }
     if (top) {
+        snprintf(u->shown[1], sizeof u->shown[1], "%s", top);
         rc |= load_page(u, top, 1);
         draw_page(u, top, 1);
     }
@@ -1073,6 +1078,43 @@ int ds10_ui_slider_pos(int value, int min, int max, int span, int orient)
     off = span * (value - min) / range;
     /* 0 and 3 measure from the far end. */
     return (orient == 0 || orient == 3) ? span - off : off;
+}
+
+/* The mixer's fader handles are the six cell-15 items in its display list, at
+ * x = 10 + 43*ch. The constructor puts the slider's origin at y = 85 with a
+ * span of 0x61, so the handle sits at 85 plus what ds10_ui_slider_pos gives -
+ * a vertical slider with its minimum at the bottom.
+ *
+ * Moving it and redrawing is what the screen's redraw pass does; the meters
+ * beside it (0x02067160) take each track's step velocity divided by four.
+ */
+#define MIX_FADER_CELL 15
+#define MIX_FADER_ORIGIN 85
+
+void ds10_ui_mixer_fader(ds10_ui *u, int ch, int value)
+{
+    page_list *p = NULL;
+    int i, seen = 0;
+
+    if (ch < 0 || ch >= 6) return;
+    if (strcmp(u->shown[0], "30_MIXER") != 0) return;
+    for (i = 0; i < u->npages; i++)
+        if (strcmp(u->pages[i].name, "30_MIXER") == 0) { p = &u->pages[i]; break; }
+    if (!p) return;
+
+    for (i = 0; i < p->nrec; i++) {
+        page_item *it = &p->rec[i].item;
+
+        if (p->rec[i].kind || it->cell != MIX_FADER_CELL) continue;
+        /* The list is not in channel order, so go by the x the constructor
+         * gave each fader. */
+        if ((it->x >> 12) != MIX_VOL_X + MIX_STEP * ch) continue;
+        it->y = (MIX_FADER_ORIGIN +
+                 ds10_ui_slider_pos(value, 0, 127, MIX_VOL_H, 0)) << 12;
+        seen = 1;
+        break;
+    }
+    if (seen) draw_page(u, "30_MIXER", 0);
 }
 
 /* 90_MAP's bottom bar. The slots and positions are the ones a captured frame

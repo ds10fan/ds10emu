@@ -133,9 +133,10 @@ Remaining, roughly in order:
   value into the machine and redraws. Both widget redraws are decompiled too -
   the knob's sweep and the slider's span.
 
-  What is not read is each screen's own two redraw passes - `0x0206724c` and
-  `0x02067160` on the mixer - which are what update the readouts that follow a
-  control rather than being one. Those are per screen.
+  The mixer's two are read (`recon.md` §16): one drives the level meters from
+  the sequencer's step velocities, the other handles the mute and solo rows.
+  Its fader handles move with their volume. The other screens' passes are the
+  same shape and are not read.
 
 - **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
   synth edit knobs are hit-tested from coordinates measured off the rendered

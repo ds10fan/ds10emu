@@ -630,6 +630,8 @@ void ds10_web_mixer_set(int id, int value)
     if (value < 0) value = 0;
     if (value > 127) value = 127;
     ds10_mixer_set_knob(&mixer, id, value, &tables.fx);
+    /* And the screen's redraw pass: a volume moves its fader handle. */
+    if (id >= 17 && id < 23) ds10_ui_mixer_fader(ui, id - 17, value);
 }
 
 /* Which knob a touch on the synth edit page is on, or -1. */

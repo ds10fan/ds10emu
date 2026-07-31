@@ -1813,6 +1813,24 @@ Which is the same relation this reimplementation implements directly, with the
 name lookup collapsed out: a hit box gives a knob id, the id goes to the
 engine, and the widget redraws through the sweep or the span.
 
+### The mixer's redraw passes
+
+The two passes state 2 ends with, on the mixer:
+
+- `0x02067160` is the **level meters**. It reads the sequencer's current step
+  and, if it has moved since the screen's `+0x148`, asks `0x0206f480` for each
+  of the six tracks' velocity at that step and stores it divided by four into
+  the six bytes at `+0x1dc`. With the transport stopped (`+0x32c` is 1) it
+  zeroes them.
+- `0x0206724c` is the **mute and solo buttons**. It takes the widget under the
+  pen from the registry, requires its class to be 0xb and its state 4, and
+  splits on bit 4 of its index at `+0x98` - one row calls `0x02052fec`, the
+  other `0x02052fdc`.
+
+The fader handles themselves are the six cell-15 entries in the display list,
+at x = 10 + 43*ch, and they move to `85 + slider_pos(value)` - the slider
+origin the constructor gave them, plus the span mapping.
+
 ### The widget registry
 
 Every screen registers each widget by name into one global registry at

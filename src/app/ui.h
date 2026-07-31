@@ -41,6 +41,10 @@ int ds10_ui_key_hit(int x, int y, int octave);
 int ds10_ui_knob_hit(int x, int y);
 const char *ds10_ui_knob_name(int id);
 
+/* Move the mixer's fader handle for channel `ch` to `value` (0..127) and
+ * redraw. This is what the screen's redraw pass does when a fader changes. */
+void ds10_ui_mixer_fader(ds10_ui *u, int ch, int value);
+
 /* Where a slider's handle sits for a value, decompiled from 0x02039188.
  * `orient` is 0 for vertical with the value upward, 1 for vertical downward,
  * 3 for horizontal reversed, anything else horizontal. Returns the offset

@@ -148,6 +148,7 @@ function onMove(ev) {
     const v = Math.max(0, Math.min(127,
       Math.round(drag.start + (drag.y - y) * 128 / 96)));
     api.mixerSet(drag.id, v);
+    draw();
     status.textContent = (drag.id < 9 ? "FX parameter " + drag.id + " "
       : drag.id < 17 ? "PAN " + (drag.id - 8)
       : "VOLUME " + (drag.id - 16)) + "   " + v;
@@ -245,6 +246,7 @@ function onDown(which, ev) {
       drag = {id: id, mixer: true, start: 64,
               y: (ev.clientY - r.top) * 192 / r.height};
       api.mixerSet(id, 64);
+      draw();
       status.textContent = (id < 17 ? "PAN " : "VOLUME ")
         + ((id < 17 ? id - 9 : id - 17) + 1) + "   64";
       ev.target.setPointerCapture(ev.pointerId);
