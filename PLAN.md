@@ -251,53 +251,40 @@ verified against all 24 factory patches (recon §4). Remaining:
 
 Exit: Tier 0 green on all 24 patches and all 13 songs.
 
-### P3 — Synth engine (the bulk of the work) — **in progress**
+### P3 — Audio engine — **DONE**
 
-Bit-exact against the oracle, zero mismatches, under `make test`:
+Every audio component is reimplemented in float-free C and verified bit-exact
+against the original ARM9 code. All under `make test`, which regenerates its
+vectors from the user's ROM first:
 
-| stage | source | vectors | status |
-|---|---|---|---|
-| VCF | `src/core/vcf.c` | 19968 samples / 312 frames | **done** |
-| VCO ×2 + xmod + sync + mix | `src/core/vco.c` | 15616 samples / 244 frames | **done** |
-| ENV (`+0x30`) | `src/core/env.c` | 2976 frame transitions | **done** |
-| LFO (`+0x34`) | `src/core/lfo.c` | 1136 frame transitions | **done** |
-| NOTECTRL / PITCHCTRL (`+0x38`, `+0x3C`) | `src/core/pitch.c` | 1180 frame transitions | **done** |
-| AMP + drive (`+0x48`) | `src/core/amp.c` | 15104 samples / 236 frames | **done** |
-| render chain (`+0x4C`) | | | not needed for a single voice |
-| per-frame filter cutoff mapping | `src/core/vcf.c` | 468 frame transitions | **done** |
-| per-frame amp drive/level mapping | `src/core/amp.c` | covered end-to-end | **done** |
-| per-frame osc prep (pitch reciprocal via hardware divider, xmod coefs) | `src/core/vco.c` | covered end-to-end | **done** |
-| **whole voice, end to end** | `src/core/voice.c` | **33280 samples / 520 frames** | **done** |
-| patch loader: 31 knobs -> voice state | `src/core/patch.c` | 2505 patches x 45 fields | **done** |
-| cutoff/pitch modulation matrix | | | |
+| component | source | vectors |
+|---|---|---|
+| whole synth voice, end to end | `voice.c` | 33280 samples / 520 frames |
+| patch loading, 31 knobs | `patch.c` | 2720 patches x 45 fields |
+| event handling, 9 opcodes | `event.c` | 78 dispatch calls x 19 fields |
+| effect parameter mappings | `fx.c` | 489 sets x 17 fields |
+| mixer + effect DSP | `mixer.c` `fx.c` | 41472 samples / 35 cases |
+| drum voice | `drum.c` | 8960 samples / 21 cases |
+| VCF per-sample | `vcf.c` | 19968 samples / 312 frames |
+| VCF cutoff mapping | `vcf.c` | 468 frame transitions |
+| VCO x2 + xmod + sync + mix | `vco.c` | 15616 samples / 244 frames |
+| ENV | `env.c` | 2976 frame transitions |
+| LFO | `lfo.c` | 1136 frame transitions |
+| NOTECTRL + PITCHCTRL | `pitch.c` | 1180 frame transitions |
+| AMP + drive | `amp.c` | 15104 samples / 236 frames |
 
-The **per-sample chain is complete**: oscillator -> filter -> amp -> output
-buffer, all bit-exact. What remains for a full voice is the per-frame preamble
-that computes the coefficients those stages consume (filter cutoff mapping, amp
-drive and level), plus the render chain object. Once those land, a whole frame
-can be rendered in C from a patch and a note and compared end-to-end, replacing
-the per-stage vector formats.
+Tempo sync is covered in all three places it appears: the effect's
+tempo-synced delay time through the hardware divider, the synth LFO's
+BPM-synced rate across five tempos, and the bar-start event that re-phases a
+BPM-synced LFO but leaves a free-running one alone.
 
-Six stages, six first-attempt passes. The only failures so far have been in the
-test harness, not the C: event dispatch running inside render, preamble ordering
-within the frame, and selector indices reaching one past a shape array. The
-arithmetic has read correctly every time.
+Every component landed bit-exact on its first or second attempt. The failures
+were: two harness sampling-order bugs, one selector array too small, one mapping
+applied to all three effect types instead of one, and one case of dividing by the
+sync flag instead of the tempo. None was a misread of the arithmetic.
 
-
-
-Reverse and reimplement one stage at a time, differential-testing each stage as
-it lands rather than at the end. Order follows the signal path:
-
-oscillators → envelope → filter → amp/pan → voice → drums → FX → mixer.
-
-Where the original decomposes into per-stage functions, give each its own oracle
-entry point. Where it does not, test at block level and bisect mismatches by
-sweeping one parameter at a time.
-
-Expected topology, based on the MS-10 lineage and the confirmed FX parameters —
-treat as **hypothesis to confirm, not as a specification**: 2 VCOs, 24 dB
-low-pass VCF with cutoff and peak, ADSR envelope, LFO, portamento, 4 drum parts,
-and a delay/chorus/flanger send.
+What is deliberately NOT covered: the sequencer that generates events, and the
+GUI. Both are outside "audio code".
 
 Recon §4/§10 reshape this phase considerably:
 

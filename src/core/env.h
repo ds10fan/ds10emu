@@ -36,6 +36,10 @@ typedef struct {
     uint8_t stage;     /* +0x04 low byte, enum ds10_env_stage */
     int32_t level;     /* +0x08 */
     int32_t aux;       /* +0x0C */
+    /* +0x05: set by note-off, consumed by note-on. Non-zero means the next
+     * note-on restarts the attack; zero means it glides without retriggering,
+     * which is how legato works - a note-on with no preceding note-off. */
+    uint8_t retrig;
 } ds10_env;
 
 /* Advance one frame. Note-on resets stage to attack; note-off sets it to

@@ -35,6 +35,13 @@ typedef struct {
     ds10_vco vco;
     ds10_vcf vcf;
     ds10_amp amp;
+
+    /* Sequencer-facing state, on the synth object rather than a sub-object.
+     * The two bar flags are set together by a pattern-change event and consumed
+     * separately: bar_lfo by the bar-start event, bar_env by the next note-on. */
+    int32_t bpm;        /* +0x2C */
+    int16_t bar_lfo;    /* +0x50 */
+    int16_t bar_env;    /* +0x52 */
 } ds10_voice;
 
 /* Render `n` samples (normally DS10_FRAME). The per-frame preamble runs once,

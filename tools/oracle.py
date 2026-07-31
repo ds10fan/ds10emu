@@ -449,6 +449,101 @@ def cmd_vcfupd_vectors(path="tests/vectors/vcfupd.bin"):
     print(f"{path}: {len(cases)} frame transitions")
 
 
+# --- synth event handling capture -------------------------------------------
+# (object, offset, size) for everything the event dispatcher can touch.
+EV_FIELDS = [("env", 0x04, 1), ("env", 0x05, 1), ("env", 0x08, 4),
+             ("env", 0x0C, 4),
+             ("nc", 0x00, 4), ("nc", 0x04, 4), ("nc", 0x0C, 4),
+             ("nc", 0x10, 1),
+             ("lfo", 0x14, 4), ("lfo", 0x18, 4), ("lfo", 0x1C, 4),
+             ("lfo", 0x28, 1), ("lfo", 0x2C, 4), ("lfo", 0x30, 2),
+             ("syn", 0x2C, 4), ("syn", 0x50, 2), ("syn", 0x52, 2),
+             ("vco", 0x14, 4), ("vco", 0x18, 4)]
+
+
+def capture_events(params, seqs, bpm_sync=0):
+    """Post event batches into the real queue and call the real dispatcher.
+
+    Calling 0x0207546C directly isolates event handling from the DSP.
+    """
+    cases = []
+    for seq in seqs:
+        o = Oracle()
+        base = {"syn": o.syn, "env": o.u32(o.syn + 0x30),
+                "lfo": o.u32(o.syn + 0x34), "nc": o.u32(o.syn + 0x38),
+                "vco": o.u32(o.syn + 0x40)}
+        p = list(params)
+        p[25] = bpm_sync
+        o.load_patch(p)
+
+        def snap():
+            out = []
+            for key, off, sz in EV_FIELDS:
+                raw = bytes(o.uc.mem_read(base[key] + off, 4))
+                out.append(_rdf(raw, 0, sz))
+            return out
+
+        steps = []
+        for batch in seq:
+            before = snap()
+            for i, (op, note, arg) in enumerate(batch):
+                o.uc.mem_write(o.evq + 8 * i,
+                               struct.pack("<Bxxxi", op, arg if op == 4 else note))
+            o.uc.mem_write(o.syn + 0x08, bytes([len(batch)]))
+            o.call(EVENT_DISPATCH, o.syn)
+            steps.append((batch, before, snap()))
+        cases.append(steps)
+    return cases
+
+
+def cmd_event_vectors(path="tests/vectors/event.bin"):
+    _n, init = factory_patch(0)
+    seqs = []
+    # Every opcode on its own.
+    for op in (1, 2, 4, 5, 0x18, 0x19, 0x1C, 0x1D, 0x1E):
+        seqs.append([[(op, 60, 120)]])
+    # Note-on/off pairs and legato (note-on with no note-off between).
+    seqs.append([[(2, 48, 0)], [(1, 0, 0)], [(2, 60, 0)], [(1, 0, 0)]])
+    seqs.append([[(2, 48, 0)], [(2, 55, 0)], [(2, 60, 0)]])
+    # Pattern change then bar start then note-on, which is the path where the
+    # bar flags actually matter.
+    seqs.append([[(0x1D, 0, 0)], [(0x1C, 0, 0)], [(2, 60, 0)]])
+    seqs.append([[(0x1D, 0, 0)], [(2, 60, 0)], [(0x1C, 0, 0)]])
+    # Tempo changes, then a bar start - the BPM-synced LFO re-phase path.
+    for bpm in (60, 120, 240):
+        seqs.append([[(4, 0, bpm)], [(0x1D, 0, 0)], [(0x1C, 0, 0)],
+                     [(2, 60, 0)]])
+    # Multiple events in one batch, which the dispatcher loops over.
+    seqs.append([[(0x1D, 0, 0), (2, 60, 0)], [(1, 0, 0), (2, 64, 0)]])
+    # Descending notes, to exercise the portamento direction flag both ways.
+    seqs.append([[(2, 96, 0)], [(2, 24, 0)], [(2, 96, 0)]])
+
+    cases = []
+    for sync in (0, 1):
+        cases += capture_events(init, seqs, bpm_sync=sync)
+
+    b = open("out/arm9.bin", "rb").read()
+    bb = 0x02004000
+    u32t = lambda a, n: [_s32(struct.unpack_from("<I", b, a - bb + 4 * i)[0])
+                         for i in range(n)]
+    nf = len(EV_FIELDS)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"EVT1" + struct.pack("<II", len(cases), nf))
+        f.write(struct.pack("<16i", *u32t(0x0207FF80, 16)))
+        f.write(struct.pack("<128i", *u32t(0x0207FFC4, 128)))
+        for steps in cases:
+            f.write(struct.pack("<i", len(steps)))
+            for batch, before, after in steps:
+                f.write(struct.pack("<i", len(batch)))
+                for op, note, arg in batch:
+                    f.write(struct.pack("<iii", op, note, arg))
+                f.write(struct.pack(f"<{nf}i", *before))
+                f.write(struct.pack(f"<{nf}i", *after))
+    nsteps = sum(len(c) for c in cases)
+    print(f"{path}: {len(cases)} sequences, {nsteps} dispatch calls")
+
+
 # --- drum voice capture -----------------------------------------------------
 DRUM_NEW = 0x02076014
 DRUM_RENDER = 0x020722B8
@@ -1379,7 +1474,8 @@ def main():
             "patch-vectors": cmd_patch_vectors,
             "fx-vectors": cmd_fx_vectors,
             "mixer-vectors": cmd_mixer_vectors,
-            "drum-vectors": cmd_drum_vectors}
+            "drum-vectors": cmd_drum_vectors,
+            "event-vectors": cmd_event_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
         print(__doc__)
         return 1
