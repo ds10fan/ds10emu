@@ -333,6 +333,7 @@ WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
           src/core/tables_data.c
 WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             --preload-file data/nitrofs@/data/nitrofs \
+            --preload-file data/saves@/data/saves \
             --preload-file data/pages.bin@/data/pages.bin \
             --preload-file data/tables.bin@/data/tables.bin \
             -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","FS"]' \
@@ -352,16 +353,23 @@ web/build/ds10audio.js: $(WEB_SRC) src/core/tables_data.c
 	@mkdir -p web/build
 	$(EMCC) $(AUDIO_FLAGS) -o web/build/ds10audio.js $(WEB_SRC)
 
+# The songs in songs/*.SAV, so your own saves are in the picker too.
+data/saves: tools/savex.py $(wildcard songs/*.SAV)
+	@rm -rf data/saves && $(PY) tools/savex.py data/saves songs/*.SAV \
+	    | tail -1
+	@$(PY) tools/mksaveindex.py data/saves web/saves.js
+
 src/core/tables_data.c: data/tables.bin tools/mktables.py
 	@$(PY) tools/mktables.py data/tables.bin $@
 
 web: web/build/ds10.js web/build/ds10audio.js
 web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \
                    data/pages.bin data/tables.bin web/index.html \
-                   web/app.js web/panel.js web/worklet.js
+                   web/app.js web/panel.js web/worklet.js web/saves.js
 	@mkdir -p web/build
 	$(EMCC) $(WEB_FLAGS) -o web/build/ds10.js $(WEB_SRC)
-	@cp web/index.html web/app.js web/worklet.js web/panel.js web/build/
+	@cp web/index.html web/app.js web/worklet.js web/panel.js \
+	    web/saves.js web/build/
 
 # Serve it. The page is static, so anything that serves files will do.
 serve: web

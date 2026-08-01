@@ -93,6 +93,17 @@ static ds10_song_player seq_player;
  */
 static int preview_ready;
 
+/* Whether selecting a pattern takes effect at once or at the next bar line.
+ * The original waits; waiting is also what makes a chained song hold
+ * together, so it stays the default. */
+static int instant_pattern;
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_instant_pattern(int on) { instant_pattern = on ? 1 : 0; }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_instant_pattern(void) { return instant_pattern; }
+
 /* Note-ons the sequencer has dispatched, per track, since anyone last asked.
  * Sound that is missing for one track and not another is either not being
  * emitted or not being heard, and from outside those look the same. */
@@ -394,6 +405,11 @@ int ds10_web_song(const char *name)
     snprintf(path, sizeof path, "/data/nitrofs/demo/%s.dat", name);
     f = fopen(path, "rb");
     if (!f) {
+        /* Songs pulled out of songs/*.SAV live alongside the ROM's own. */
+        snprintf(path, sizeof path, "/data/saves/%s.dat", name);
+        f = fopen(path, "rb");
+    }
+    if (!f) {
         snprintf(last_error, sizeof last_error, "cannot open %s", path);
         return -1;
     }
@@ -563,6 +579,10 @@ void ds10_web_set_pattern(int p)
     if (p < 0 || p >= DS10_SONG_PATTERNS) return;
     ed.pattern = p;
     preview_ready = 0;          /* the new pattern's sound, on the next note */
+    if (instant_pattern && song_loaded) {
+        seq_ctx.pat = &song_rt[p];
+        seq_install(&seq_ctx, &song_rt[p]);
+    }
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -878,6 +898,25 @@ static int ui_cursor = -2;      /* -2: nobody has told us, use our own */
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_set_cursor(int step) { ui_cursor = step; }
 
+/* Which pattern the transport is on. In song mode that is the chain's, not
+ * the one selected for editing, and the display follows it - otherwise the
+ * notes on screen stay put while different ones are heard. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_play_pattern(void)
+{
+    if (!song_loaded) return 0;
+    if (song_mode && song_bars > 0)
+        return (int)(ed.song.chain[song_bar] % DS10_SONG_PATTERNS);
+    return ed.pattern;
+}
+
+/* The pattern to draw, which the page sets from the worklet's. -1 means the
+ * one being edited. */
+static int view_pattern = -1;
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_view_pattern(int p) { view_pattern = p; }
+
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_cursor(void)
 {
@@ -1152,6 +1191,12 @@ static void refresh(void)
     int cursor = ds10_web_cursor();
     int track = ed.track < NSYN ? ed.track : 0;
     int i;
+    /* Draw whatever is sounding, then put the edit selection back. Every
+     * getter reads ed.pattern, so this is the one place that swaps it. */
+    int edit_pattern = ed.pattern;
+
+    if (view_pattern >= 0 && view_pattern < DS10_SONG_PATTERNS)
+        ed.pattern = view_pattern;
 
     if (strcmp(page_bottom, "60_SYN_SEQ_PIANO") == 0) {
         int note[DS10_SONG_STEPS];
@@ -1192,6 +1237,7 @@ static void refresh(void)
     if (strcmp(page_top, "90_MAP") == 0)
         ds10_ui_map_labels(ui, ds10_web_get_name(), (int)ed.song.swing,
                            (int)ed.song.tempo);
+    ed.pattern = edit_pattern;
 }
 
 /* Which synth the map box under a touch selects, or -1. The map's per-synth

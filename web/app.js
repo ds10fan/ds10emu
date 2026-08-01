@@ -231,6 +231,7 @@ function send(m) { if (worklet) worklet.port.postMessage(m); }
 function transport(on) {
   trace("transport " + (on ? "start" : "stop"));
   playing = !!on;
+  if (!playing) api.setViewPattern(-1);   /* back to what is being edited */
   api.seqPlay(playing ? 1 : 0);
   send({type: "play", on: playing});
   if (!playing) { cursor = -1; api.setCursor(-1); }
@@ -250,7 +251,14 @@ async function startAudio() {
     });
     worklet.port.onmessage = (e) => {
       const m = e.data;
-      if (m.type === "cursor") { cursor = m.step; api.setCursor(m.step); }
+      if (m.type === "cursor") {
+        cursor = m.step;
+        api.setCursor(m.step);
+        /* Draw whatever is sounding. In song mode the chain moves on without
+         * the edit selection, and the notes on screen used to stay put while
+         * different ones were heard. */
+        api.setViewPattern(playing ? m.pattern : -1);
+      }
       else if (m.type === "ready") trace("worklet ready at " + m.rate + " Hz");
       else if (m.type === "error") report("worklet: " + m.what);
       else if (m.type === "loaded")
@@ -362,7 +370,8 @@ function gridTouch(x, y, first) {
   if (first) paint = {track: track, note: api.seqNote(track, step) === note
                                           ? -1 : note};
   api.seqStep(paint.track, step, paint.note);
-  sendSong();
+  send({type: "step", track: paint.track, step: step, note: paint.note});
+  paint.dirty = 1;
   /* Sound the note as it goes in, so a melody can be entered by ear. */
   if (paint.note >= 0 && paint.note !== held) {
     noteOff();
@@ -398,7 +407,8 @@ function drumTouch(x, y, first) {
   if (first) paint = {track: track,
                       note: api.seqNote(track, step) >= 0 ? -1 : 60};
   api.seqStep(paint.track, step, paint.note);
-  sendSong();
+  send({type: "step", track: paint.track, step: step, note: paint.note});
+  paint.dirty = 1;
   if (first && paint.note >= 0) send({type: "drum", n: drum});
   say("DRUM" + (drum + 1) + "  step " + (step + 1)
       + (paint.note < 0 ? "  off" : "  on"));
@@ -704,6 +714,11 @@ function boot() {
                           ["number", "number"]),
     seqPlay: Module.cwrap("ds10_web_seq_play", null, ["number"]),
     setCursor: Module.cwrap("ds10_web_set_cursor", null, ["number"]),
+    setViewPattern: Module.cwrap("ds10_web_set_view_pattern", null,
+                                 ["number"]),
+    instantPattern: Module.cwrap("ds10_web_instant_pattern", "number", []),
+    setInstantPattern: Module.cwrap("ds10_web_set_instant_pattern", null,
+                                    ["number"]),
     songBytes: Module.cwrap("ds10_web_song_bytes", "number",
                             ["number", "number"]),
     song: Module.cwrap("ds10_web_song", "number", ["string"]),
@@ -779,8 +794,8 @@ function boot() {
      * enough to turn it - which on a 256-pixel-wide canvas is not far. */
     for (const ev of ["pointerup", "pointercancel"])
       canvases[which].addEventListener(ev, (e) => {
-        /* Post the song once the drag ends, not on every pixel of it. */
-        if (drag && drag.dirty) sendSong();
+        /* Post the song once the gesture ends, not on every step or pixel. */
+        if ((drag && drag.dirty) || (paint && paint.dirty)) sendSong();
         if (drag && drag.moves === 0)
           trace("released " + drag.kind + " " + drag.id + " with no move ("
                 + e.type + ")");

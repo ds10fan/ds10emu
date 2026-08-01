@@ -128,8 +128,12 @@ const boot = () => {
   /* app.js and panel.js share a scope in the browser, so concatenate them -
    * the panel is generated at run time, and a missing entry point in it only
    * shows when it is built. */
-  const src = fs.readFileSync(repo + '/web/app.js', 'utf8') + '\n'
-            + fs.readFileSync(repo + '/web/panel.js', 'utf8');
+  const src = fs.readFileSync(repo + '/web/saves.js', 'utf8') + '\n'
+            + fs.readFileSync(repo + '/web/app.js', 'utf8') + '\n'
+            + fs.readFileSync(repo + '/web/panel.js', 'utf8')
+            /* The three share a scope in the browser; reach into it. */
+            + '\nglobalThis.__saved = typeof SAVED_SONGS !== "undefined" '
+            + '? SAVED_SONGS : [];\n';
   const run = new Function(src);
   try {
     run();
@@ -225,6 +229,21 @@ const boot = () => {
   }
   if (fails2.length) {
     for (const f of fails2) console.error('FAIL: ' + f);
+    process.exit(1);
+  }
+  /* One of the saved songs must load, or the whole songs/ directory is
+   * listed and unreachable. */
+  try {
+    const song = cw('ds10_web_song', 'number', ['string']);
+    const getName = cw('ds10_web_get_name', 'string', []);
+    const saved = globalThis.__saved || [];
+    if (!saved.length) throw new Error('no saved songs listed');
+    if (song(saved[0][0]) !== 0)
+      throw new Error('cannot load ' + saved[0][0]);
+    console.log('  saves: ' + saved.length + ' listed, first is '
+                + JSON.stringify(getName()));
+  } catch (e) {
+    console.error('FAIL: the saved songs: ' + (e.message || e));
     process.exit(1);
   }
   console.log('  panel: ' + panel + ' sections, route/type/lanes all respond');

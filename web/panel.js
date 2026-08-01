@@ -108,8 +108,18 @@ function buildPanel() {
     modeBtn.classList.toggle("on", !!api.songMode());
     bars.textContent = api.songBars() + " bars";
   });
+  const instBtn = button("at the next bar", () => {
+    api.setInstantPattern(!api.instantPattern());
+    send({type: "instant", on: !!api.instantPattern()});
+    panelSync();
+  });
+  syncers.push(() => {
+    const on = !!api.instantPattern();
+    instBtn.textContent = on ? "pattern changes now" : "at the next bar";
+    instBtn.classList.toggle("on", on);
+  });
   host.appendChild(group("transport", [
-    playBtn, modeBtn, bars,
+    playBtn, modeBtn, bars, instBtn,
     slider("tempo", 20, 300, () => api.getTempo(),
            (v) => { api.setTempo(v); send({type: "tempo", bpm: v}); }),
     slider("swing", 50, 75, () => api.getSwing(),
@@ -450,6 +460,10 @@ function buildPanel() {
   }});
   for (const n of SONGS)
     songSel.appendChild(el("option", {value: n, text: n}));
+  /* And whatever is in songs/*.SAV, by the names they were saved under. */
+  if (typeof SAVED_SONGS !== "undefined")
+    for (const [file, label] of SAVED_SONGS)
+      songSel.appendChild(el("option", {value: file, text: label}));
   const patchSel = el("select", {onchange: (e) => {
     const n = +e.target.value;
     if (n < 0) return;

@@ -179,8 +179,21 @@ int ds10_editor_get_knob(const ds10_editor *e, int track, int knob)
 
 void ds10_editor_mixer(ds10_editor *e, int knob, int value)
 {
+    int i;
+
     if (knob < 0 || knob >= DS10_SONG_MIX_KNOBS) return;
-    ds10_editor_pattern(e)->mixer[knob] = (int8_t)value;
+    if (knob <= DS10_MIX_LAST_FX) {
+        /* The effect is song-wide, even though the format keeps a copy per
+         * pattern and the sequencer pushes all twenty-five at a bar line.
+         * Across every pattern the chain uses, in every song in the ROM,
+         * knobs 0 to 8 are identical - so the original writes all sixteen,
+         * and editing one pattern's effect would be undone by the next bar.
+         * The pans and volumes do vary per pattern, and stay that way. */
+        for (i = 0; i < DS10_SONG_PATTERNS; i++)
+            e->song.pattern[i].mixer[knob] = (int8_t)value;
+    } else {
+        ds10_editor_pattern(e)->mixer[knob] = (int8_t)value;
+    }
     e->changed++;
 }
 

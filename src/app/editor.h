@@ -76,6 +76,10 @@ void ds10_editor_lane_knob(ds10_editor *e, int track, int lane, int knob);
 void ds10_editor_steps(ds10_editor *e, int steps);
 int ds10_editor_get_steps(const ds10_editor *e);
 
+/* Mixer knobs 0 to 8 are the effect: which channels are routed through it,
+ * its type, and its parameters. Those are song-wide - see ds10_editor_mixer. */
+#define DS10_MIX_LAST_FX 8
+
 /* A synth track's patch, and the mixer, as the pattern stores them. */
 void ds10_editor_knob(ds10_editor *e, int track, int knob, int value);
 int ds10_editor_get_knob(const ds10_editor *e, int track, int knob);

@@ -22,6 +22,7 @@ class DS10Processor extends AudioWorkletProcessor {
     this.api = null;
     this.pending = [];
     this.cursor = -1;
+    this.pattern = -1;    /* the pattern the transport is on */
     this.songs = 0;       /* songs accepted over the port */
     this.blocks = 0;      /* process() calls */
     this.peak = 0;
@@ -49,6 +50,9 @@ class DS10Processor extends AudioWorkletProcessor {
         setSwing: c("ds10_web_set_swing", null, ["number"]),
         cursor: c("ds10_web_cursor", "number", []),
         trackNotes: c("ds10_web_track_notes", "number", ["number"]),
+        playPattern: c("ds10_web_play_pattern", "number", []),
+        seqStep: c("ds10_web_seq_step", null, ["number", "number", "number"]),
+        instant: c("ds10_web_set_instant_pattern", null, ["number"]),
       };
       this.api.audioInit();
       for (const m of this.pending) this.handle(m);
@@ -79,6 +83,11 @@ class DS10Processor extends AudioWorkletProcessor {
       break;
     }
     case "note":       a.note(m.voice | 0, m.note | 0, m.on ? 1 : 0); break;
+    /* One step, rather than the whole song. Painting a run across the grid
+     * posted 12 KB per cell, and each reload reset the voices under whatever
+     * was sounding - which is what made entering notes glitch. */
+    case "step":       a.seqStep(m.track | 0, m.step | 0, m.note | 0); break;
+    case "instant":    a.instant(m.on ? 1 : 0); break;
     case "knob":       a.setTrack(m.track | 0); a.knobSet(m.id, m.value); break;
     case "mixer":      a.mixerSet(m.id, m.value); break;
     case "drum":       a.drumPlay(m.n | 0); break;
@@ -118,10 +127,11 @@ class DS10Processor extends AudioWorkletProcessor {
       if (mag > this.peak) this.peak = mag;
     }
     /* Tell the page where the transport is, but only when it moves. */
-    const c = this.api.cursor();
-    if (c !== this.cursor) {
+    const c = this.api.cursor(), pat = this.api.playPattern();
+    if (c !== this.cursor || pat !== this.pattern) {
       this.cursor = c;
-      this.port.postMessage({type: "cursor", step: c});
+      this.pattern = pat;
+      this.port.postMessage({type: "cursor", step: c, pattern: pat});
     }
     return true;
   }
