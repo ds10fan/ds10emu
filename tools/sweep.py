@@ -17,16 +17,40 @@ import sys
 ROM = os.environ.get("DS10_ROM", "ds10plus.nds")
 SAVE = "songs/DS10PLUS.SAV"
 
-# Tap targets on the navigation map, once it is on the touch screen.
-PAGES = [
-    ("syn1_seq", 40, 38), ("syn1_kbd", 48, 54), ("syn1_kaoss", 48, 70),
-    ("syn1_edit", 130, 38), ("syn1_patch", 133, 54),
-    ("mixer", 228, 38), ("fx", 230, 54),
-    ("syn2_seq", 40, 98), ("syn2_kbd", 48, 114), ("syn2_kaoss", 48, 130),
-    ("syn2_edit", 130, 98), ("syn2_patch", 133, 114),
-    ("menu", 228, 98), ("song", 228, 114), ("drums", 228, 130),
-    ("drums_seq", 40, 157),
+# The map's boxes, from the table its constructor walks (0x02087018 and
+# 0x02086f08) - the same one src/app/ui.c carries, as x, y, w, h.
+#
+# These replace coordinates that had been measured off a rendered screen.
+# Several of those missed their box by a pixel or two - the FX box starts at
+# y 55 and was being tapped at 54 - and three were nowhere near one, which is
+# why the corpus had no FX, drum or pattern pages in it at all.
+MAP_BOX = [
+    ("syn1_seq",    7,  25, 46, 16),
+    ("syn1_kbd",   39,  45, 54, 16),
+    ("syn1_kaoss", 39,  65, 54, 16),
+    ("syn1_edit", 117,  25, 46, 16),
+    ("syn1_patch", 131, 54, 53, 16),
+    ("syn2_seq",    7,  87, 46, 16),
+    ("syn2_kbd",   39, 107, 54, 16),
+    ("syn2_kaoss", 39, 127, 54, 16),
+    ("syn2_edit", 117,  87, 46, 16),
+    ("syn2_patch", 131, 116, 53, 16),
+    ("mixer",     203,  25, 36, 16),
+    ("fx",        207,  55, 30, 16),
+    ("pattern",     4,   2, 76, 14),
+    ("drums_seq",   7, 149, 54, 16),
 ]
+
+# The DRUMS button opens a submenu over the map, so these need two taps.
+DRUMS = (206, 142, 46, 16)
+SUBMENU = [
+    ("drum_edit",  85,  64, 88, 16),
+    ("drum_patch", 85,  96, 88, 16),
+    ("drum_fx",    85, 128, 88, 16),
+]
+
+
+PAGES = [(n, x + w // 2, y + h // 2) for n, x, y, w, h in MAP_BOX]
 
 # Boot, SINGLE PLAYER, session S-01, confirm. Frame numbers are settling time,
 # found by watching the framebuffer stop changing.
@@ -52,6 +76,18 @@ def script():
         out.append("%d release\n" % (t + 160))
         out.append("%d snap\n" % (t + 280))           # the page it opened
         t += STEP
+    # The drum pages need the DRUMS button first: it opens a submenu over the
+    # map, and the page is on the second tap.
+    dx, dy = DRUMS[0] + DRUMS[2] // 2, DRUMS[1] + DRUMS[3] // 2
+    for name, x, y, w, h in SUBMENU:
+        out.append("%d key L\n%d up L\n" % (t, t + 20))
+        out.append("%d touch %d %d\n" % (t + 90, dx, dy))
+        out.append("%d release\n" % (t + 130))
+        out.append("%d snap\n" % (t + 200))           # the submenu itself
+        out.append("%d touch %d %d\n" % (t + 220, x + w // 2, y + h // 2))
+        out.append("%d release\n" % (t + 260))
+        out.append("%d snap\n" % (t + 380))
+        t += STEP + 120
     return "".join(out), t + 40
 
 

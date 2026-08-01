@@ -390,11 +390,11 @@ tests/vectors/cell.bin: extract tools/oracle.py
 	@$(PY) tools/oracle.py cell-vectors
 
 test-page: out/ds10view
-	@$(PY) tools/pagecheck.py out/sweep
+	@$(PY) tools/pagecheck.py out/sweep out/sweep2
 
 # The captured sprite layer per page, until the widget constructors are read.
 data/pages.bin: tools/pages.py
-	@$(PY) tools/pages.py out/sweep $@
+	@$(PY) tools/pages.py out/sweep out/sweep2 $@
 
 # Render a string with one of the ROM's fonts, as an eye check on the reader.
 fonttest: out/fonttest

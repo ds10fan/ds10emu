@@ -171,6 +171,11 @@ static int load_page(ds10_ui *u, const char *name, int engine)
         p = strstr(alt, "MAIN");
         if (p) memcpy(p, "MEIN", 4);
         else if ((p = strstr(alt, "MEIN")) != NULL) memcpy(p, "MAIN", 4);
+        /* And the drum selector, whose two files disagree the same way. */
+        else if ((p = strstr(alt, "SELECTER")) != NULL)
+            memcpy(p, "SELECTOR", 8);
+        else if ((p = strstr(alt, "SELECTOR")) != NULL)
+            memcpy(p, "SELECTER", 8);
         if (p) sblob = slurp(u, "mainbg", alt, ".NSCR", &slen);
         if (!sblob) return -1;
     }
@@ -193,8 +198,15 @@ static int load_page(ds10_ui *u, const char *name, int engine)
      * palette does - the slot is what differs, not the offset.
      */
     {
-        uint8_t *pblob = slurp(u, "mainbg", name, ".NCLR", &glen);
+        /* Most pages have no palette of their own, so a miss here is normal
+         * and must not leave an error behind for the caller to report. */
+        char keep[sizeof u->err];
+        uint8_t *pblob;
         ds10_nclr pal;
+
+        snprintf(keep, sizeof keep, "%s", u->err);
+        pblob = slurp(u, "mainbg", name, ".NCLR", &glen);
+        if (!pblob) snprintf(u->err, sizeof u->err, "%s", keep);
 
         if (pblob && ds10_nclr_parse(&pal, pblob, glen) == 0) {
             uint8_t *pb = engine ? u->gpu.vram.h : u->gpu.vram.g;
@@ -878,6 +890,8 @@ int ds10_ui_page(ds10_ui *u, const char *bottom, const char *top)
         draw_page(u, bottom, 0);
         claim_knob_slots(u, bottom);
     }
+    /* Whatever the last page drew on the 3D plane is not this one's. */
+    memset(u->gpu.plane3d, 0, sizeof u->gpu.plane3d);
     if (top) {
         snprintf(u->shown[1], sizeof u->shown[1], "%s", top);
         rc |= load_page(u, top, 1);
@@ -1318,22 +1332,70 @@ void ds10_ui_seq_grid(ds10_ui *u, const char *page, const int *note,
     park_from(u, 0, slot);
 }
 
-/* The drum grid: one row per drum, on for a step that sounds. */
+/* The drum grid.
+ *
+ * These markers are not sprites. 51_ALL_DRUMS turns the 3D engine on and
+ * draws them as flat quads, which the compositor takes as BG0 - the captured
+ * frame has one live sprite on the whole screen and 660 opaque pixels on the
+ * 3D plane, at exactly this grid. The reason is capacity: sixteen steps by
+ * four drums is sixty-four markers, and OAM holds 128 entries in total. The
+ * piano roll needs at most one marker per step, so it uses sprites.
+ *
+ * Every marker is the same 11 by 10 block and the same in every cell, so
+ * putting the block straight into the plane is exact without any of the 3D
+ * pipeline. Its four colours are 6-bit per channel, as the plane is: a light
+ * face, a lighter top and bottom edge, a dark left edge and a black shadow
+ * down the right and along the bottom.
+ */
+#define MARK_W 11
+#define MARK_H 10
+static const uint32_t MARK_COLOR[4] = {
+    0x1F000000u, 0x1F171717u, 0x1F333333u, 0x1F3B3B3Bu,
+};
+static const char MARK_PIX[MARK_H][MARK_W + 1] = {
+    "bddddddddba",
+    "bccccccccba",
+    "bccccccccba",
+    "bccccccccba",
+    "bccccccccba",
+    "bccccccccba",
+    "bccccccccba",
+    "bddddddddba",
+    "bbbbbbbbbba",
+    "aaaaaaaaaaa",
+};
+
+static void mark_3d(ds10_ui *u, int x0, int y0)
+{
+    int x, y;
+
+    for (y = 0; y < MARK_H; y++)
+        for (x = 0; x < MARK_W; x++) {
+            int px = x0 + x, py = y0 + y;
+
+            if (px < 0 || px >= DS10_SCR_W || py < 0 || py >= DS10_SCR_H)
+                continue;
+            u->gpu.plane3d[py * DS10_SCR_W + px] =
+                MARK_COLOR[MARK_PIX[y][x] - 'a'];
+        }
+}
+
 void ds10_ui_drum_grid(ds10_ui *u, const char *page, const uint8_t *on,
                        int nrows, int nsteps, int cursor)
 {
     int slot = u->free_slot[0], r, i;
-    char bank[32];
 
-    snprintf(bank, sizeof bank, "%s_c", page);
+    (void)page;
+    memset(u->gpu.plane3d, 0, sizeof u->gpu.plane3d);
     if (nsteps > SEQ_COLS) nsteps = SEQ_COLS;
     if (nrows > DSEQ_ROWS) nrows = DSEQ_ROWS;
     for (r = 0; r < nrows; r++)
         for (i = 0; i < nsteps; i++) {
             if (!on[r * SEQ_COLS + i]) continue;
-            put_cell(u, 0, &slot, bank, SEQ_MARK_CELL, SEQ_X0 + i * SEQ_CELL,
-                     SEQ_Y0 + r * SEQ_CELL, 2, SEQ_MARK_BASE);
+            mark_3d(u, SEQ_X0 + i * SEQ_CELL, SEQ_Y0 + r * SEQ_CELL);
         }
+    /* The cursor above the grid is a sprite here as it is on the piano
+     * roll - the one live entry the captured frame has. */
     if (cursor >= 0 && cursor < SEQ_COLS)
         put_cell(u, 0, &slot, "CHARACTER_c", SEQ_CURSOR_CELL,
                  SEQ_X0 + 1 + cursor * SEQ_CELL, SEQ_CURSOR_Y, 1,

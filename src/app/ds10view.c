@@ -59,25 +59,38 @@ int main(int argc, char **argv)
         return 2;
     }
     if (argc > 4) {
+        /* "cursor/a:b,a:b,...". On the piano roll a pair is step:note; on the
+         * drum grid it is row:step, and a row may appear more than once. */
         int note[16], i, cursor = -1;
+        uint8_t on[4 * 16];
+        int drums = strcmp(bot, "51_ALL_DRUMS") == 0;
         const char *p = argv[4];
 
         for (i = 0; i < 16; i++) note[i] = -1;
+        memset(on, 0, sizeof on);
         if (strchr(p, '/')) {
             cursor = atoi(p);
             p = strchr(p, '/') + 1;
         }
         while (*p) {
-            int step = atoi(p);
             const char *colon = strchr(p, ':');
+            int a, b;
 
             if (!colon) break;
-            if (step >= 0 && step < 16) note[step] = atoi(colon + 1);
+            a = atoi(p);
+            b = atoi(colon + 1);
+            if (drums) {
+                if (a >= 0 && a < 4 && b >= 0 && b < 16) on[a * 16 + b] = 1;
+            } else if (a >= 0 && a < 16) {
+                note[a] = b;
+            }
             p = strchr(colon, ',');
             if (!p) break;
             p++;
         }
-        ds10_ui_seq_grid(u, bot, note, 16, ds10_ui_seq_top_default(), cursor);
+        if (drums) ds10_ui_drum_grid(u, bot, on, 4, 16, cursor);
+        else ds10_ui_seq_grid(u, bot, note, 16, ds10_ui_seq_top_default(),
+                              cursor);
     }
     ds10_ui_frame(u, top, bottom);
 

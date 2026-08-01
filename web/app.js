@@ -230,7 +230,7 @@ function onMove(ev) {
   }
   if (paint) {
     const [x, y] = screenPos(ev);
-    if (pageOf("bottom") === "62_DRUM_SEQ_GATE") drumTouch(x, y, false);
+    if (pageOf("bottom") === "51_ALL_DRUMS") drumTouch(x, y, false);
     else gridTouch(x, y, false);
     return;
   }
@@ -252,7 +252,7 @@ function onDown(which, ev) {
     ev.target.setPointerCapture(ev.pointerId);
     return;
   }
-  if (page === "62_DRUM_SEQ_GATE") {
+  if (page === "51_ALL_DRUMS") {
     drumTouch(x, y, true);
     ev.target.setPointerCapture(ev.pointerId);
     return;

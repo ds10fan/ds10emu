@@ -967,7 +967,7 @@ static void refresh(void)
             note[i] = ds10_editor_get_note(&ed, track, i);
         ds10_ui_seq_grid(ui, page_bottom, note, ds10_editor_get_steps(&ed),
                          seq_top, cursor);
-    } else if (strcmp(page_bottom, "62_DRUM_SEQ_GATE") == 0) {
+    } else if (strcmp(page_bottom, "51_ALL_DRUMS") == 0) {
         uint8_t on[DS10_SONG_DRUMS * DS10_SONG_STEPS];
         int r;
 
@@ -985,6 +985,11 @@ static void refresh(void)
         for (i = 0; i < DS10_SONG_TRACKS; i++)
             ds10_ui_mixer_fader(ui, i, ds10_editor_get_mixer(&ed, 17 + i));
     }
+    /* The map's bottom bar is live too, and drawing the page puts the
+     * captured labels back, so it has to be redrawn with it. */
+    if (strcmp(page_top, "90_MAP") == 0)
+        ds10_ui_map_labels(ui, ds10_web_get_name(), (int)ed.song.swing,
+                           (int)ed.song.tempo);
 }
 
 EMSCRIPTEN_KEEPALIVE

@@ -44,6 +44,8 @@ M.onRuntimeInitialized = () => {
     knobGet: c('ds10_web_knob_get', 'number', ['number']),
     knobSet: c('ds10_web_knob_set', null, ['number', 'number']),
     knobHit: c('ds10_web_knob_hit', 'number', ['number', 'number']),
+    mixerSet: c('ds10_web_mixer_set', null, ['number', 'number']),
+    mixerGet: c('ds10_web_mixer_get', 'number', ['number']),
     seqHit: c('ds10_web_seq_hit', 'number', ['number', 'number']),
     setTrack: c('ds10_web_set_track', null, ['number']),
     setPattern: c('ds10_web_set_pattern', null, ['number']),
@@ -127,9 +129,23 @@ M.onRuntimeInitialized = () => {
   check(offscreen === 0, 'an off-screen note draws nothing');
   api.seqStep(0, 1, -1);
 
-  /* Drums, on their own tracks. */
+  /* Drums, on their own tracks and their own page. Those markers are on the
+   * 3D plane rather than in OAM, so this is a separate path through the
+   * renderer and worth its own check. */
+  check(api.page('51_ALL_DRUMS', '90_MAP') === 0, 'the drum page opens');
+  const noDrums = screen();
   for (let s = 0; s < 16; s += 4) api.seqStep(2, s, 60);
   check(api.seqNote(2, 0) === 60, 'a drum step is set');
+  const withDrums = screen();
+  let lit = 0;
+  for (let r = 0; r < 4; r++)
+    for (let s = 0; s < 16; s++)
+      if (cellInk(withDrums, s, r) !== cellInk(noDrums, s, r)) lit++;
+  check(lit === 4, 'four drum cells lit, got ' + lit);
+  for (let s = 0; s < 16; s += 4)
+    check(cellInk(withDrums, s, 0) > cellInk(noDrums, s, 0),
+          'drum 1 step ' + s + ' shows');
+  api.page('60_SYN_SEQ_PIANO', '90_MAP');
 
   /* Knobs pick up where they are rather than jumping. */
   api.page('61_SYN_EDIT', '90_MAP');
@@ -141,6 +157,31 @@ M.onRuntimeInitialized = () => {
   check(Buffer.compare(Buffer.from(screen()),
                        Buffer.from(knobScreen)) !== 0,
         'turning the knob changes the screen');
+
+  /* The mixer's faders follow the stored volumes. The handle is the brightest
+   * thing in the channel strip, so where its row of ink is says where it is. */
+  api.page('30_MIXER', '90_MAP');
+  function handleRow(ch) {
+    const fb = screen();
+    let best = -1, bestInk = 0;
+    for (let y = 80; y < 190; y++) {
+      let ink = 0;
+      for (let x = 10 + 43 * ch; x < 10 + 43 * ch + 32; x++) {
+        const i = (y * 256 + x) * 4;
+        ink += fb[i] + fb[i + 1] + fb[i + 2];
+      }
+      if (ink > bestInk) { bestInk = ink; best = y; }
+    }
+    return best;
+  }
+  api.mixerSet(17, 127);
+  const top = handleRow(0);
+  api.mixerSet(17, 0);
+  const bottom = handleRow(0);
+  check(bottom > top + 40, 'the fader moves down as the volume falls: '
+        + top + ' -> ' + bottom);
+  api.mixerSet(17, 127);
+  check(handleRow(0) === top, 'and comes back');
 
   /* It has to make a sound. Play the pattern and check the output is not
    * silence - then clear it and check that it is. */

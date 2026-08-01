@@ -7,7 +7,7 @@ turns that into a list of "cell, where, how" per page. That is what the
 reimplementation draws from - a list it can redraw when something moves, not a
 frozen frame of OAM.
 
-    python3 tools/pages.py out/sweep data/pages.bin
+    python3 tools/pages.py out/sweep out/sweep2 data/pages.bin
 
 A page is identified by looking for its tile image in the frame's VRAM, so the
 naming is the game's own. Items that cannot be attributed to a cell are kept
@@ -131,7 +131,7 @@ def is_state(page, rec):
     if rec[0] != 0:
         return False
     name, idx, prio, flags, affine, base, x, y, mtx = rec[1]
-    if page in ("60_SYN_SEQ_PIANO", "62_DRUM_SEQ_GATE"):
+    if page in ("60_SYN_SEQ_PIANO", "51_ALL_DRUMS"):
         if name == page + "_c" and idx == 7:
             return True
         if name == "CHARACTER_c" and idx == 4 and (y >> 12) == 20:
@@ -140,8 +140,9 @@ def is_state(page, rec):
 
 
 def main():
-    srcdir = sys.argv[1] if len(sys.argv) > 1 else "out/sweep"
-    out = sys.argv[2] if len(sys.argv) > 2 else "data/pages.bin"
+    """pages.py <snapdir> [snapdir ...] <out.bin>"""
+    args = sys.argv[1:] or ["out/sweep", "data/pages.bin"]
+    srcdirs, out = args[:-1], args[-1]
     index = page_index("data/nitrofs/mainbg")
     banks = []
     for f in sorted(glob.glob("data/nitrofs/mainobj/*.NCER")):
@@ -150,7 +151,10 @@ def main():
             banks.append((os.path.basename(f)[:-5], cl))
 
     seen = {}
-    for p in sorted(glob.glob(os.path.join(srcdir, "*.snap"))):
+    snaps = []
+    for d in srcdirs:
+        snaps += sorted(glob.glob(os.path.join(d, "*.snap")))
+    for p in snaps:
         s = snap.load(p)
         bot, top = identify(s, index)
         for name, engine, half in ((bot, 0, s.oam[:1024]),
@@ -188,4 +192,6 @@ def main():
               % (name, "AB"[engine], ncell, len(rec) - ncell))
 
 
-main()
+
+if __name__ == "__main__":
+    main()

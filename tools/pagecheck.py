@@ -2,7 +2,7 @@
 """pagecheck - render each page with the reimplementation and compare it
 against what melonDS produced for the same page.
 
-    python3 tools/pagecheck.py [snapshotdir]
+    python3 tools/pagecheck.py [snapshotdir ...]
 
 For every distinct pair of pages in the capture, this runs out/ds10view and
 diffs both screens against the captured framebuffers. A page whose sprite
@@ -74,16 +74,22 @@ def diff(mine, ref):
 # the grid's origin, its cell size and its row-to-note mapping are all right.
 #
 # Six markers at steps 0,2,3,4,6,7 on rows 9,9,5,2,0,0, and the top row is A4.
+# 51_ALL_DRUMS draws its markers on the 3D plane rather than with sprites,
+# so its pairs are row:step.
 SEQ_STATE = {
     "60_SYN_SEQ_PIANO": "0/0:60,2:60,3:64,4:67,6:69,7:69",
+    "51_ALL_DRUMS": "0/2:0,2:4,2:8,2:12,3:0,3:6",
 }
 
 
 def main():
-    srcdir = sys.argv[1] if len(sys.argv) > 1 else "out/sweep"
+    srcdirs = sys.argv[1:] or ["out/sweep"]
     index = page_index("data/nitrofs/mainbg")
     seen, rows, bad = set(), [], 0
-    for p in sorted(glob.glob(os.path.join(srcdir, "*.snap"))):
+    snaps = []
+    for d in srcdirs:
+        snaps += sorted(glob.glob(os.path.join(d, "*.snap")))
+    for p in snaps:
         s = snap.load(p)
         bot, top = identify(s, index)
         if not bot or not top or (bot, top) in seen:
