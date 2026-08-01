@@ -813,8 +813,17 @@ int ds10_web_factory_patch(int n)
         return -1;
     }
     fclose(f);
-    for (i = 0; i < NSYN; i++)
-        ds10_patch_load(&voice[i], (const int8_t *)(blob + 0x20), &tables.t);
+    /* Into the pattern as well as the voice, and only the selected track -
+     * otherwise the next bar line pushes the pattern's own patch back and the
+     * choice is lost. */
+    {
+        int track = ed.track < NSYN ? ed.track : 0;
+
+        for (i = 0; i < DS10_SONG_KNOBS; i++)
+            ds10_editor_knob(&ed, track, i, ((const int8_t *)blob)[0x20 + i]);
+        ds10_patch_load(&voice[track], (const int8_t *)(blob + 0x20),
+                        &tables.t);
+    }
     return 0;
 }
 

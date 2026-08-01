@@ -50,6 +50,7 @@ M.onRuntimeInitialized = () => {
     setTrack: c('ds10_web_set_track', null, ['number']),
     setPattern: c('ds10_web_set_pattern', null, ['number']),
     patternClear: c('ds10_web_pattern_clear', null, ['number']),
+    factoryPatch: c('ds10_web_factory_patch', 'number', ['number']),
     setTempo: c('ds10_web_set_tempo', null, ['number']),
     getTempo: c('ds10_web_get_tempo', 'number', []),
     setName: c('ds10_web_set_name', null, ['string']),
@@ -157,6 +158,21 @@ M.onRuntimeInitialized = () => {
   check(Buffer.compare(Buffer.from(screen()),
                        Buffer.from(knobScreen)) !== 0,
         'turning the knob changes the screen');
+
+  /* A factory patch has to land in the pattern, not only in the voice, or the
+   * next bar line pushes the pattern's own patch back over it. */
+  {
+    const before = api.knobGet(11);
+    let moved = false;
+    for (let n = 0; n < 8 && !moved; n++) {
+      api.factoryPatch(n);
+      if (api.knobGet(11) !== before) moved = true;
+    }
+    check(moved, 'a factory patch reaches the pattern');
+  }
+  api.song('ds10init');
+  api.page('60_SYN_SEQ_PIANO', '90_MAP');
+  for (const [s, r] of MELODY) api.seqStep(0, s, api.rowNote(r));
 
   /* The mixer's faders follow the stored volumes. The handle is the brightest
    * thing in the channel strip, so where its row of ink is says where it is. */
