@@ -234,7 +234,6 @@ function send(m) { if (worklet) worklet.port.postMessage(m); }
 function transport(on) {
   trace("transport " + (on ? "start" : "stop"));
   playing = !!on;
-  if (!playing) api.setViewPattern(-1);   /* back to what is being edited */
   api.seqPlay(playing ? 1 : 0);
   send({type: "play", on: playing});
   if (!playing) { cursor = -1; api.setCursor(-1); }
@@ -257,10 +256,14 @@ async function startAudio() {
       if (m.type === "cursor") {
         cursor = m.step;
         api.setCursor(m.step);
-        /* Draw whatever is sounding. In song mode the chain moves on without
-         * the edit selection, and the notes on screen used to stay put while
-         * different ones were heard. */
-        api.setViewPattern(playing ? m.pattern : -1);
+        /* In song mode the selection follows the chain, so the grid, the
+         * pattern buttons and an edit all refer to the same pattern. In
+         * pattern mode the selection is yours. */
+        if (playing && api.songMode() && m.pattern !== api.pattern()) {
+          api.followPattern(m.pattern);
+          api.seqFollow();
+          repanel();
+        }
       }
       else if (m.type === "ready") trace("worklet ready at " + m.rate + " Hz");
       else if (m.type === "error") report("worklet: " + m.what);
@@ -717,8 +720,7 @@ function boot() {
                           ["number", "number"]),
     seqPlay: Module.cwrap("ds10_web_seq_play", null, ["number"]),
     setCursor: Module.cwrap("ds10_web_set_cursor", null, ["number"]),
-    setViewPattern: Module.cwrap("ds10_web_set_view_pattern", null,
-                                 ["number"]),
+    followPattern: Module.cwrap("ds10_web_follow_pattern", null, ["number"]),
     instantPattern: Module.cwrap("ds10_web_instant_pattern", "number", []),
     setInstantPattern: Module.cwrap("ds10_web_set_instant_pattern", null,
                                     ["number"]),

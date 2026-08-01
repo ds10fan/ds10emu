@@ -947,12 +947,20 @@ int ds10_web_play_pattern(void)
     return ed.pattern;
 }
 
-/* The pattern to draw, which the page sets from the worklet's. -1 means the
- * one being edited. */
-static int view_pattern = -1;
-
+/* Follow the chain: change which pattern is selected without touching the
+ * transport or reinstalling anything.
+ *
+ * In song mode the selection tracks what is sounding, so what is drawn and
+ * what an edit lands on are the same pattern. Drawing the playing one while
+ * the selection stayed put was worse than either - a tap edited a pattern you
+ * were not looking at. In pattern mode the selection is yours and this is not
+ * called. */
 EMSCRIPTEN_KEEPALIVE
-void ds10_web_set_view_pattern(int p) { view_pattern = p; }
+void ds10_web_follow_pattern(int p)
+{
+    if (p < 0 || p >= DS10_SONG_PATTERNS) return;
+    ed.pattern = p;
+}
 
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_cursor(void)
@@ -1228,12 +1236,6 @@ static void refresh(void)
     int cursor = ds10_web_cursor();
     int track = ed.track < NSYN ? ed.track : 0;
     int i;
-    /* Draw whatever is sounding, then put the edit selection back. Every
-     * getter reads ed.pattern, so this is the one place that swaps it. */
-    int edit_pattern = ed.pattern;
-
-    if (view_pattern >= 0 && view_pattern < DS10_SONG_PATTERNS)
-        ed.pattern = view_pattern;
 
     if (strcmp(page_bottom, "60_SYN_SEQ_PIANO") == 0) {
         int note[DS10_SONG_STEPS];
@@ -1274,7 +1276,6 @@ static void refresh(void)
     if (strcmp(page_top, "90_MAP") == 0)
         ds10_ui_map_labels(ui, ds10_web_get_name(), (int)ed.song.swing,
                            (int)ed.song.tempo);
-    ed.pattern = edit_pattern;
 }
 
 /* Which synth the map box under a touch selects, or -1. The map's per-synth
