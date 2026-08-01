@@ -1219,6 +1219,29 @@ int ds10_web_mapbutton_hit(int x, int y) { return ds10_ui_mapbutton_hit(x, y); }
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_clear_hit(int x, int y) { return ds10_ui_clear_hit(x, y); }
 
+/* A drum's own 31-knob patch. Changing one means re-rendering that drum's
+ * one-second buffer, which is what makes it audible. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_drum_knob(int drum, int knob)
+{
+    return ds10_editor_get_drum_knob(&ed, drum, knob);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_drum_knob(int drum, int knob, int value)
+{
+    ds10_editor_drum_knob(&ed, drum, knob, value);
+}
+
+/* Render the drum buffers again after their patches change. Separate from the
+ * setter so a slider drag does not re-render four one-second buffers on every
+ * pixel; the caller does it when the finger lifts. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_drums_rerender(void)
+{
+    if (audio_ready && song_loaded) render_drums();
+}
+
 /* Which knob an automation lane drives - the KAOSS pad's two axes. */
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_set_lane_knob(int lane, int knob)

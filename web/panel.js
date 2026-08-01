@@ -368,9 +368,39 @@ function buildPanel() {
   const drums = [];
   for (let d = 0; d < 4; d++)
     drums.push(button("DRUM " + (d + 1), () => send({type: "drum", n: d})));
+  /* Each drum has its own 31-knob patch, kept in the song's tail rather than
+   * per pattern, so it sounds the same all the way through. Editing one means
+   * its one-second buffer has to be rendered again. */
+  let editDrum = 0;
+  const drumSel = [];
+  for (let d = 0; d < 4; d++)
+    drumSel.push(button("edit " + (d + 1), () => {
+      editDrum = d;
+      panelSync();
+    }));
+  const drumKnobs = el("div", {cls: "panel-body"});
+  const rebuildDrum = () => {
+    drumKnobs.textContent = "";
+    for (let k = 0; k < 31; k++) {
+      const lo = api.knobMin(k), n = api.knobRange(k);
+      drumKnobs.appendChild(
+        slider(api.knobName(k) || ("knob " + k), lo, lo + n - 1,
+               () => api.drumKnob(editDrum, k),
+               (v) => api.setDrumKnob(editDrum, k, v),
+               () => { api.drumsRerender(); sendSong();
+                       send({type: "drum", n: editDrum}); }));
+    }
+  };
+  syncers.push(() => {
+    drumSel.forEach((b, i) => b.classList.toggle("on", i === editDrum));
+    rebuildDrum();
+  });
   host.appendChild(group("drums", [
     el("div", {cls: "hint", text: "audition"}),
     el("div", {cls: "row"}, drums),
+    el("div", {cls: "hint", text: "which drum the knobs below edit"}),
+    el("div", {cls: "row"}, drumSel),
+    drumKnobs,
   ]));
 
   /* --- keyboard --------------------------------------------------------- */

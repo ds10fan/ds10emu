@@ -108,6 +108,17 @@ int main(void)
     ds10_editor_chain_set(&e, 50, 2);
     check(ds10_editor_bars(&e) == 4, "a set past the end appends");
 
+    /* The drums' own patches live in the song's tail, which the parser
+     * round-trips verbatim rather than naming - so an edit there is the one
+     * most likely to be quietly dropped. */
+    ds10_editor_drum_knob(&e, 0, 11, 77);
+    ds10_editor_drum_knob(&e, 3, 23, 44);
+    check(ds10_editor_get_drum_knob(&e, 0, 11) == 77, "drum knob reads back");
+    check(ds10_editor_get_drum_knob(&e, 3, 23) == 44, "and the fourth drum");
+    check(ds10_editor_get_drum_knob(&e, 1, 11) != 77 ||
+          ds10_editor_get_drum_knob(&e, 0, 11) == 77,
+          "the drums have separate patches");
+
     /* Round trip: what we wrote has to parse, hash and all, and come back
      * with every edit intact. */
     wrote = ds10_editor_export(&e, out);
@@ -131,6 +142,8 @@ int main(void)
     check(back.pattern[0].step[0][0].gate == 6, "gate survives");
     check(back.pattern[0].step[0][2].vel == 100, "velocity survives");
     check(back.pattern[0].step[0][4].pan == 20, "pan survives");
+    check(ds10_song_drum_knobs(&back, 0)[11] == 77, "a drum knob survives");
+    check(ds10_song_drum_knobs(&back, 3)[23] == 44, "and the fourth drum's");
 
     /* Writing the same song twice gives the same bytes - no uninitialised
      * padding leaking into the hash. */

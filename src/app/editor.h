@@ -61,6 +61,13 @@ int ds10_editor_get_pan(const ds10_editor *e, int track, int step);
 int ds10_editor_get_lane(const ds10_editor *e, int track, int lane, int step);
 void ds10_editor_lane(ds10_editor *e, int track, int lane, int step, int v);
 
+/* A drum's patch. The four drums have their own 31-knob patches, kept in the
+ * song's tail rather than per pattern, so a drum sounds the same throughout a
+ * song. Changing one means the drum's one-second buffer has to be rendered
+ * again, which is the caller's job. */
+int ds10_editor_get_drum_knob(const ds10_editor *e, int drum, int knob);
+void ds10_editor_drum_knob(ds10_editor *e, int drum, int knob, int value);
+
 /* Which knob a lane drives. */
 int ds10_editor_get_lane_knob(const ds10_editor *e, int track, int lane);
 void ds10_editor_lane_knob(ds10_editor *e, int track, int lane, int knob);

@@ -109,6 +109,25 @@ void ds10_editor_lane(ds10_editor *e, int track, int lane, int step, int v)
     e->changed++;
 }
 
+int ds10_editor_get_drum_knob(const ds10_editor *e, int drum, int knob)
+{
+    if (drum < 0 || drum >= DS10_SONG_DRUMS || knob < 0 ||
+        knob >= DS10_SONG_KNOBS)
+        return 0;
+    return ds10_song_drum_knobs(&e->song, drum)[knob];
+}
+
+void ds10_editor_drum_knob(ds10_editor *e, int drum, int knob, int value)
+{
+    if (drum < 0 || drum >= DS10_SONG_DRUMS || knob < 0 ||
+        knob >= DS10_SONG_KNOBS)
+        return;
+    /* The accessor is const because nothing else writes here; this is the
+     * one place that does, and it writes the same bytes it reads. */
+    ((int8_t *)ds10_song_drum_knobs(&e->song, drum))[knob] = (int8_t)value;
+    e->changed++;
+}
+
 int ds10_editor_get_lane_knob(const ds10_editor *e, int track, int lane)
 {
     if (!lane_ok(track, lane, 0)) return -1;
