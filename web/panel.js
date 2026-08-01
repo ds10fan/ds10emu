@@ -37,6 +37,54 @@ const NOTE_NAME_P = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A",
                      "A#", "B"];
 const GATE_NAME = ["", "25%", "50%", "75%", "100%", "LEGATO", "RETRIG"];
 
+/* The pad's scales.
+ *
+ * The names are the ROM's own, read out of the string table at 0x02084e54 -
+ * all thirty-one of them, in order. The intervals are not: the ROM does not
+ * keep them as plain runs and I could not find the table, so these are the
+ * conventional sets. The seven modes, the pentatonics, the blues scales,
+ * whole tone and the interval-only ones are unambiguous; RAGA1 to RAGA3 are
+ * KORG's own naming and those three are guesses.
+ */
+const SCALES = [
+  ["CHROMA", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]],
+  ["IONIAN", [0, 2, 4, 5, 7, 9, 11]],
+  ["DORIAN", [0, 2, 3, 5, 7, 9, 10]],
+  ["PHRYGI", [0, 1, 3, 5, 7, 8, 10]],
+  ["LYDIAN", [0, 2, 4, 6, 7, 9, 11]],
+  ["MIXLYD", [0, 2, 4, 5, 7, 9, 10]],
+  ["AEOLIA", [0, 2, 3, 5, 7, 8, 10]],
+  ["LOCRIA", [0, 1, 3, 5, 6, 8, 10]],
+  ["MBLUES", [0, 2, 3, 4, 7, 9]],
+  ["mBLUES", [0, 3, 5, 6, 7, 10]],
+  ["DIM", [0, 2, 3, 5, 6, 8, 9, 11]],
+  ["COMDIM", [0, 1, 3, 4, 6, 7, 9, 10]],
+  ["MPENTA", [0, 2, 4, 7, 9]],
+  ["mPENTA", [0, 3, 5, 7, 10]],
+  ["RAGA1", [0, 1, 4, 5, 7, 8, 11]],
+  ["RAGA2", [0, 2, 3, 6, 7, 9, 10]],
+  ["RAGA3", [0, 1, 3, 6, 7, 8, 11]],
+  ["SPANISH", [0, 1, 3, 4, 5, 7, 8, 10]],
+  ["GYPSY", [0, 2, 3, 6, 7, 8, 11]],
+  ["ARABIA", [0, 1, 4, 5, 7, 8, 11]],
+  ["EGYPT", [0, 2, 5, 7, 10]],
+  ["HAWAII", [0, 2, 3, 7, 9]],
+  ["PELOG", [0, 1, 3, 7, 8]],
+  ["JAPAN", [0, 1, 5, 7, 8]],
+  ["RYUKYU", [0, 4, 5, 7, 11]],
+  ["WHOLE", [0, 2, 4, 6, 8, 10]],
+  ["m3RD", [0, 3]],
+  ["M3RD", [0, 4]],
+  ["4TH", [0, 5]],
+  ["5TH", [0, 7]],
+  ["OCTAVE", [0]],
+];
+const KEY_NAME = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#",
+                  "B"];
+/* OFF, HLD and SMT, as the pad's own button cycles them. HLD applies once a
+ * step; SMT applies continuously. */
+const PAD_RATE = ["OFF", "HLD", "SMT"];
+
 let panelSync = () => {};
 
 function el(tag, attrs, kids) {
@@ -363,17 +411,46 @@ function buildPanel() {
    * saves - cutoff and peak on 3289 patterns, well ahead of anything else.
    * The slots themselves are the page's; the format has room for one pair per
    * pattern, not three. */
-  const PAD_SLOT = [[11, 12], [13, 24], [11, 14]];
-  let padSlot = 0;
+  const PAD_SLOT = [
+    {note: false, xy: [11, 12], key: 0, scale: 1},
+    {note: false, xy: [13, 24], key: 0, scale: 1},
+    {note: true, xy: [11, 12], key: 0, scale: 12},
+  ];
+  let padSlot = 0, padRate = 2, padLastStep = -1;
+  const slot = () => PAD_SLOT[padSlot];
   const slotBtns = [];
   for (let i = 0; i < 3; i++)
     slotBtns.push(button(String(i + 1), () => {
       padSlot = i;
-      api.setLaneKnob(0, PAD_SLOT[i][0]);
-      api.setLaneKnob(1, PAD_SLOT[i][1]);
-      sendSong();
+      if (!PAD_SLOT[i].note) {
+        api.setLaneKnob(0, PAD_SLOT[i].xy[0]);
+        api.setLaneKnob(1, PAD_SLOT[i].xy[1]);
+        sendSong();
+      }
       panelSync();
     }));
+  const noteBtn = button("note / gate", () => {
+    slot().note = !slot().note;
+    if (!slot().note) {
+      api.setLaneKnob(0, slot().xy[0]);
+      api.setLaneKnob(1, slot().xy[1]);
+      sendSong();
+    }
+    panelSync();
+  });
+  const rateBtn = button("SMT", () => {
+    padRate = (padRate + 1) % 3;
+    panelSync();
+  });
+  /* SET: the key and the scale the note mode quantises to. */
+  const keySel = el("select", {onchange: (e) => { slot().key = +e.target.value; }});
+  for (let k = 0; k < 12; k++)
+    keySel.appendChild(el("option", {value: String(k), text: KEY_NAME[k]}));
+  const scaleSel = el("select", {onchange: (e) => {
+    slot().scale = +e.target.value;
+  }});
+  for (let i = 0; i < SCALES.length; i++)
+    scaleSel.appendChild(el("option", {value: String(i), text: SCALES[i][0]}));
   const laneSel = [];
   for (let lane = 0; lane < 2; lane++) {
     const sel = el("select", {onchange: (e) => {
@@ -394,6 +471,32 @@ function buildPanel() {
     const fx = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
     const fy = Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height));
     const vx = Math.round(fx * 127), vy = Math.round((1 - fy) * 127);
+    pad.style.backgroundPosition = (fx * 100) + "% " + (fy * 100) + "%";
+
+    /* OFF does nothing, HLD once a step, SMT on every movement. */
+    if (padRate === 0) return;
+    if (padRate === 1) {
+      if (cursor === padLastStep) return;
+      padLastStep = cursor;
+    }
+
+    if (slot().note) {
+      /* Across the pad is the scale, up it is the gate. */
+      const sc = SCALES[slot().scale][1];
+      const span = sc.length * 2;                  /* two octaves of it */
+      const i = Math.min(span - 1, Math.floor(fx * span));
+      const n = 48 + slot().key + sc[i % sc.length] + 12 * Math.floor(i / sc.length);
+      const gate = 1 + Math.min(4, Math.floor((1 - fy) * 5));
+      if (n !== padNote) {
+        if (padNote >= 0)
+          send({type: "note", voice: track(), note: padNote, on: 0});
+        send({type: "note", voice: track(), note: n, on: 1});
+        padNote = n;
+      }
+      padRead.textContent = NOTE_NAME_P[n % 12] + (Math.floor(n / 12) - 1)
+                          + "   gate " + GATE_NAME[gate];
+      return;
+    }
     const kx = api.laneKnob(0), ky = api.laneKnob(1);
     /* Clamp into each knob's own range, as the knob setter would. */
     const put = (k, v) => {
@@ -409,8 +512,8 @@ function buildPanel() {
     /* And into the automation lanes, if recording. */
     send({type: "lane", lane: 0, value: vx});
     send({type: "lane", lane: 1, value: vy});
-    pad.style.backgroundPosition = (fx * 100) + "% " + (fy * 100) + "%";
   };
+  let padNote = -1;
   let padDown = false;
   pad.addEventListener("pointerdown", (e) => {
     padDown = true;
@@ -420,20 +523,39 @@ function buildPanel() {
   });
   pad.addEventListener("pointermove", (e) => { if (padDown) padSet(e); });
   for (const ev of ["pointerup", "pointercancel"])
-    pad.addEventListener(ev, () => { if (padDown) { padDown = false;
-                                                    sendSong(); } });
+    pad.addEventListener(ev, () => {
+      if (!padDown) return;
+      padDown = false;
+      padLastStep = -1;
+      if (padNote >= 0) {
+        send({type: "note", voice: track(), note: padNote, on: 0});
+        padNote = -1;
+      }
+      sendSong();
+    });
   syncers.push(() => {
     laneSel[0].value = String(api.laneKnob(0));
     laneSel[1].value = String(api.laneKnob(1));
     slotBtns.forEach((b, i) => b.classList.toggle("on", i === padSlot));
+    noteBtn.classList.toggle("on", slot().note);
+    rateBtn.textContent = PAD_RATE[padRate];
+    rateBtn.classList.toggle("on", padRate !== 0);
+    keySel.value = String(slot().key);
+    scaleSel.value = String(slot().scale);
   });
   host.appendChild(group("kaoss pad", [
     el("div", {cls: "hint", text: "three modes, each a pair of knobs"}),
     el("div", {cls: "row"}, slotBtns),
     el("div", {cls: "hint", text: "the two the pattern's automation lanes "
                                   + "drive; recorded while record is on"}),
+    el("div", {cls: "row"}, [noteBtn, rateBtn]),
     el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "x"}), laneSel[0]]),
     el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "y"}), laneSel[1]]),
+    el("div", {cls: "hint", text: "note mode: across is the scale, up is "
+                                  + "the gate"}),
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "key"}), keySel]),
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "scale"}),
+                               scaleSel]),
     pad, padRead,
   ]));
 
