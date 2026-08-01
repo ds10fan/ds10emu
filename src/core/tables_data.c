@@ -8,7 +8,15 @@
 
 #include "tables.h"
 
-/* 0x0207F1E0 in the ARM9 image, 128 entries */
+/* 0x0207F1E0, 128 entries.
+ *
+ * Envelope rate, indexed by an ATTACK, DECAY or RELEASE knob 0..127.
+ *
+ * The value is what the envelope adds to its 24-bit accumulator each frame, so
+ * it falls as the knob rises: entry 0 is 0xFFFFFF, a whole stage in one frame,
+ * and the last entries take minutes. Sustain uses the same table for its
+ * approach rate.
+ */
 static const uint32_t env_rate[128] = {
     16777215, 14735831, 12942834, 11368002, 9984789, 8769879,
     7702795, 6765550, 5942345, 5219304, 4584240, 4026448,
@@ -34,14 +42,27 @@ static const uint32_t env_rate[128] = {
     129, 50,
 };
 
-/* 0x0207FDC4 in the ARM9 image, 16 entries */
+/* 0x0207FDC4, 16 entries.
+ *
+ * LFO phase increment for a tempo-synced rate, indexed by the note division.
+ *
+ * Sixteen divisions. The voice is told the BPM by the sequencer's opcode 4
+ * broadcast and scales this by it; a voice that never hears that broadcast runs
+ * every synced LFO at 120.
+ */
 static const uint32_t lfo_bpm[16] = {
     2239695, 4479391, 8958783, 17917568, 23890091, 35835137,
     47780183, 53752706, 71670276, 95560368, 107505414, 143340552,
     215010829, 286681105, 430021658, 573362210,
 };
 
-/* 0x0207FFC4 in the ARM9 image, 128 entries */
+/* 0x0207FFC4, 128 entries.
+ *
+ * LFO phase increment for a free-running rate, indexed by MG FREQ 0..127.
+ *
+ * Phase is 32-bit and wraps, so the increment is the frequency: entry n gives
+ * n's rate directly with no BPM involved. The effect's LFO shares this table.
+ */
 static const uint32_t lfo_free[128] = {
     88, 29084, 59836, 92451, 127043, 163730,
     202641, 243908, 287676, 334096, 383329, 435544,
@@ -67,7 +88,13 @@ static const uint32_t lfo_free[128] = {
     791715907, 839713430,
 };
 
-/* 0x0207F344 in the ARM9 image, 128 entries */
+/* 0x0207F344, 128 entries.
+ *
+ * Portamento coefficient, indexed by the PORTA knob 0..127.
+ *
+ * Each frame the current pitch moves this fraction of the way to the target, so
+ * entry 0 arrives immediately and the top entries glide for seconds.
+ */
 static const uint32_t porta[128] = {
     32767, 31145, 27820, 24687, 21973, 19485,
     17033, 14497, 12037, 9886, 8218, 6981,
@@ -93,7 +120,13 @@ static const uint32_t porta[128] = {
     5, 3,
 };
 
-/* 0x020805C4 in the ARM9 image, 128 entries */
+/* 0x020805C4, 128 entries.
+ *
+ * Filter resonance, indexed by the PEAK knob 0..127.
+ *
+ * Feeds the filter's feedback term. The top of the range self-oscillates, which
+ * is why the last entries climb steeply.
+ */
 static const uint32_t peak[128] = {
     0, 33682843, 67099419, 100249728, 133133769, 165751543,
     198103049, 230188287, 262007258, 293559961, 324846397, 355866565,
@@ -119,7 +152,14 @@ static const uint32_t peak[128] = {
     2147181434, 2147314568,
 };
 
-/* 0x0207E950 in the ARM9 image, 130 entries */
+/* 0x0207E950, 130 entries.
+ *
+ * Oscillator frequency ratio, indexed by semitone.
+ *
+ * Successive entries are in the ratio 1.05946, which is 2^(1/12), so this is an
+ * equal-tempered scale in 20.12 fixed point. It holds for the first 119 steps
+ * and then saturates.
+ */
 static const int32_t pitch[130] = {
     1072928, 1136727, 1204321, 1275933, 1351804, 1432187,
     1517349, 1607575, 1703167, 1804442, 1911740, 2025418,
@@ -145,7 +185,13 @@ static const int32_t pitch[130] = {
     -29720, -28713, -27724, -26753,
 };
 
-/* 0x0207EB38 in the ARM9 image, 128 entries */
+/* 0x0207EB38, 128 entries.
+ *
+ * Bipolar modulation depth, indexed by a modulation-intensity knob 0..127.
+ *
+ * Bipolar: the middle of the range is no modulation and the two halves are
+ * opposite signs, which is what lets one knob invert an envelope or an LFO.
+ */
 static const int32_t depth[128] = {
     -32768, -32768, -31786, -30744, -29720, -28713,
     -27724, -26753, -25800, -24576, -23946, -23046,
@@ -171,7 +217,13 @@ static const int32_t depth[128] = {
     31786, 32767,
 };
 
-/* 0x0207ED38 in the ARM9 image, 128 entries */
+/* 0x0207ED38, 128 entries.
+ *
+ * First of a pair of modulation coefficients, indexed by knob value 0..127.
+ *
+ * mod_a and mod_b are used together by the knob handler when it routes a
+ * modulation source to a destination.
+ */
 static const int16_t mod_a[128] = {
     -32767, -32767, -31991, -31224, -30464, -29713, -28970, -28235,
     -27508, -26790, -26080, -25378, -24685, -24000, -23323, -22654,
@@ -191,7 +243,10 @@ static const int16_t mod_a[128] = {
     27508, 28235, 28970, 29713, 30464, 31224, 31991, 32767,
 };
 
-/* 0x0207EE38 in the ARM9 image, 128 entries */
+/* 0x0207EE38, 128 entries.
+ *
+ * The other half of that pair. See mod_a.
+ */
 static const int16_t mod_b[128] = {
     0, 0, 131, 264, 399, 536, 675, 817,
     960, 1106, 1253, 1403, 1555, 1708, 1864, 2022,
@@ -211,7 +266,14 @@ static const int16_t mod_b[128] = {
     30087, 30464, 30843, 31224, 31607, 31991, 32378, 32767,
 };
 
-/* 0x020807C4 in the ARM9 image, 152 entries */
+/* 0x020807C4, 152 entries.
+ *
+ * Filter cutoff coefficient, indexed by the CUTOFF knob.
+ *
+ * Also 2^(1/12) per step while the values are small, then it saturates: entry
+ * 150 is 2147391259, just under 0x7FFFFFFF. That saturation is why the count is
+ * 151 rather than 128 - the published figure, which this confirms.
+ */
 static const int32_t coef[152] = {
     2123409, 2249673, 2383446, 2525173, 2675327, 2834411,
     3002953, 3181518, 3370701, 3571133, 3783484, 4008461,
@@ -241,12 +303,20 @@ static const int32_t coef[152] = {
     2147391259, 1092638790,
 };
 
-/* 0x0207F044 in the ARM9 image, 3 entries */
+/* 0x0207F044, 3 entries.
+ *
+ * Starting LFO phase offset, one per effect type.
+ *
+ * Three entries, for the three effects: delay, flanger and chorus.
+ */
 static const int32_t fx_lfo_phase[3] = {
     0, 2147483647, 238609294,
 };
 
-/* 0x0207EF44 in the ARM9 image, 128 entries */
+/* 0x0207EF44, 128 entries.
+ *
+ * Flanger feedback, indexed by the FEEDBACK knob 0..127.
+ */
 static const int16_t fx_flanger_fb[128] = {
     0, 518, 1031, 1541, 2047, 2549, 3046, 3539,
     4028, 4513, 4994, 5471, 5944, 6412, 6877, 7337,
@@ -266,7 +336,12 @@ static const int16_t fx_flanger_fb[128] = {
     32693, 32716, 32734, 32749, 32759, 32765, 32767, 0,
 };
 
-/* 0x0207F0C4 in the ARM9 image, 128 entries */
+/* 0x0207F0C4, 128 entries.
+ *
+ * Effect modulation depth, indexed by the DEPTH knob 0..127.
+ *
+ * How far the effect's LFO sweeps its delay line.
+ */
 static const int16_t fx_depth[128] = {
     0, 2, 8, 18, 32, 50, 73, 99,
     130, 164, 203, 245, 292, 343, 398, 457,
@@ -286,13 +361,23 @@ static const int16_t fx_depth[128] = {
     29254, 29744, 30237, 30735, 31237, 31743, 32253, 32767,
 };
 
-/* 0x0207F144 in the ARM9 image, 12 entries */
+/* 0x0207F144, 12 entries.
+ *
+ * Tempo-synced delay times, indexed by note division.
+ *
+ * Twelve divisions. The delay length is the BPM scaled by one of these.
+ */
 static const uint32_t fx_delay_div[12] = {
     122730, 245460, 327280, 490920, 654560, 981840,
     1309120, 1472760, 1963680, 2618240, 2945520, 3927360,
 };
 
-/* 0x0207FFC4 in the ARM9 image, 128 entries */
+/* 0x0207FFC4, 128 entries.
+ *
+ * The effect LFO's free-running rate, indexed by its knob 0..127.
+ *
+ * The same address as the synth's lfo_free: one table, two users.
+ */
 static const uint32_t fx_lfo_rate[128] = {
     88, 29084, 59836, 92451, 127043, 163730,
     202641, 243908, 287676, 334096, 383329, 435544,
@@ -318,7 +403,15 @@ static const uint32_t fx_lfo_rate[128] = {
     791715907, 839713430,
 };
 
-/* 0x0207ED38 in the ARM9 image, 128 entries */
+/* 0x0207ED38, 128 entries.
+ *
+ * Drum playback rate, indexed by note - root + 64.
+ *
+ * A drum is not synthesised per note: its patch is rendered once into a
+ * one-second buffer at note 60 and the voice resamples that buffer at this
+ * rate. Entry 64 is exactly 1024, unity, so the root note plays back
+ * untouched.
+ */
 static const uint32_t drum_pitch[128] = {
     812, 861, 912, 966, 1024, 1084,
     1149, 1217, 1290, 1366, 1448, 1534,
@@ -344,7 +437,15 @@ static const uint32_t drum_pitch[128] = {
     1176986, 1246974,
 };
 
-/* the state a voice's constructor leaves behind */
+/* 93 entries.
+ *
+ * The state a voice's constructor leaves behind, field by field.
+ *
+ * None of it is zero, and starting from a memset does not reproduce the
+ * original - which is why this is captured rather than assumed. Reloading it is
+ * also what makes a pattern change deterministic, because the knob handler's
+ * side effects depend on what was there before.
+ */
 static const int32_t voice_init[93] = {
     0, 0, 0, 0, 0, 2147483647,
     0, 0, 2, 3, 1, 0,
@@ -364,7 +465,10 @@ static const int32_t voice_init[93] = {
     0, 120, 0,
 };
 
-/* the same for the mixer */
+/* 21 entries.
+ *
+ * The same for the mixer.
+ */
 static const int32_t mixer_init[21] = {
     28672, 0, 0, 0, 0, 0,
     0, 0, 0, 0, 0, 0,
@@ -372,7 +476,10 @@ static const int32_t mixer_init[21] = {
     0, 2, 0,
 };
 
-/* and for the effect */
+/* 40 entries.
+ *
+ * And for the effect.
+ */
 static const int32_t fx_init[40] = {
     0, 0, 0, 0, 0, 0,
     0, 0, 1, 0, 0, 0,
@@ -383,24 +490,81 @@ static const int32_t fx_init[40] = {
     0, 32767, 32767, 0,
 };
 
-/* each knob's minimum, from the synth's knob descriptors */
+/* 31 entries.
+ *
+ * Each synth knob's minimum, from the knob descriptors.
+ */
 static const int32_t knob_min[31] = {
-    -2, -63, 0, -63, -63, -63,
-    0, 0, -63, 0, 0, 0,
-    0, 0, -63, -63, 0, -63,
-    0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0,
-    0,
+     -2,   /*  0 OCTAVE */
+    -63,   /*  1 PITCH EG INT */
+      0,   /*  2 PORTA */
+    -63,   /*  3 PITCH IN INT */
+    -63,   /*  4 VCO1 P.IN INT */
+    -63,   /*  5 VCO2 P.IN INT */
+      0,   /*  6 VCO1 WAVE */
+      0,   /*  7 VCO2 WAVE */
+    -63,   /*  8 VCO2 PITCH */
+      0,   /*  9 BALANCE */
+      0,   /* 10 VCO SYNC */
+      0,   /* 11 CUTOFF */
+      0,   /* 12 PEAK */
+      0,   /* 13 FILTER TYPE */
+    -63,   /* 14 VCF EG INT */
+    -63,   /* 15 CUTOFF IN INT */
+      0,   /* 16 VCA EG */
+    -63,   /* 17 VCA IN INT */
+      0,   /* 18 DRIVE */
+      0,   /* 19 LEVEL */
+      0,   /* 20 ATTACK */
+      0,   /* 21 DECAY */
+      0,   /* 22 SUSTAIN */
+      0,   /* 23 RELEASE */
+      0,   /* 24 MG FREQ */
+      0,   /* 25 MG BPM */
+      0,   /* 26 PITCH IN */
+      0,   /* 27 VCO1 P.IN */
+      0,   /* 28 VCO2 P.IN */
+      0,   /* 29 CUTOFF IN */
+      0,   /* 30 VCA IN */
 };
 
-/* and its range; an automation lane uses the pair as offset and scale */
+/* 31 entries.
+ *
+ * And its range. An automation lane uses the pair as offset and scale, so a
+ * recorded 0..127 lane sweeps exactly that knob's range.
+ */
 static const int32_t knob_range[31] = {
-    5, 127, 128, 127, 127, 127,
-    4, 4, 127, 128, 2, 128,
-    128, 3, 127, 127, 2, 127,
-    128, 128, 128, 128, 128, 128,
-    128, 2, 7, 7, 7, 7,
-    7,
+      5,   /*  0 OCTAVE */
+    127,   /*  1 PITCH EG INT */
+    128,   /*  2 PORTA */
+    127,   /*  3 PITCH IN INT */
+    127,   /*  4 VCO1 P.IN INT */
+    127,   /*  5 VCO2 P.IN INT */
+      4,   /*  6 VCO1 WAVE */
+      4,   /*  7 VCO2 WAVE */
+    127,   /*  8 VCO2 PITCH */
+    128,   /*  9 BALANCE */
+      2,   /* 10 VCO SYNC */
+    128,   /* 11 CUTOFF */
+    128,   /* 12 PEAK */
+      3,   /* 13 FILTER TYPE */
+    127,   /* 14 VCF EG INT */
+    127,   /* 15 CUTOFF IN INT */
+      2,   /* 16 VCA EG */
+    127,   /* 17 VCA IN INT */
+    128,   /* 18 DRIVE */
+    128,   /* 19 LEVEL */
+    128,   /* 20 ATTACK */
+    128,   /* 21 DECAY */
+    128,   /* 22 SUSTAIN */
+    128,   /* 23 RELEASE */
+    128,   /* 24 MG FREQ */
+      2,   /* 25 MG BPM */
+      7,   /* 26 PITCH IN */
+      7,   /* 27 VCO1 P.IN */
+      7,   /* 28 VCO2 P.IN */
+      7,   /* 29 CUTOFF IN */
+      7,   /* 30 VCA IN */
 };
 
 int ds10_tables_builtin(ds10_table_set *s)

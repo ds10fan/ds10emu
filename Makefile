@@ -358,10 +358,10 @@ src/core/tables_data.c: data/tables.bin tools/mktables.py
 web: web/build/ds10.js web/build/ds10audio.js
 web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \
                    data/pages.bin data/tables.bin web/index.html \
-                   web/app.js
+                   web/app.js web/panel.js web/worklet.js
 	@mkdir -p web/build
 	$(EMCC) $(WEB_FLAGS) -o web/build/ds10.js $(WEB_SRC)
-	@cp web/index.html web/app.js web/worklet.js web/build/
+	@cp web/index.html web/app.js web/worklet.js web/panel.js web/build/
 
 # Serve it. The page is static, so anything that serves files will do.
 serve: web

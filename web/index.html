@@ -40,6 +40,32 @@
   button.on { background: #2f6f4f; border-color: #3d8a63; }
   #status { font-family: ui-monospace, monospace; font-size: .8rem;
             color: #7d8794; min-height: 1.2em; }
+  #panel { width: min(560px, calc(100vw - 1rem)); display: flex;
+           flex-direction: column; gap: .35rem; }
+  #panel details { background: #181b20; border: 1px solid #262b33;
+                   border-radius: 5px; }
+  #panel summary { padding: .4rem .6rem; cursor: pointer; font-weight: 600;
+                   font-size: .85rem; }
+  .panel-body { padding: .1rem .6rem .6rem; display: flex;
+                flex-direction: column; gap: .3rem; }
+  .ctl { display: grid; grid-template-columns: 8.5rem 1fr 2.7rem;
+         align-items: center; gap: .4rem; font-size: .78rem; }
+  .ctl .nm { color: #9aa4b2; }
+  .ctl .val { font-family: ui-monospace, monospace; text-align: right; }
+  .ctl input[type=range] { width: 100%; min-height: 1.6rem; padding: 0; }
+  .grid16 { display: grid; grid-template-columns: repeat(8, 1fr); gap: .2rem; }
+  .grid16 button { padding: .3rem 0; font-size: .72rem; min-height: 2.1rem; }
+  .steps { display: flex; flex-direction: column; gap: .15rem; }
+  .step { display: grid; grid-template-columns: 1.4rem repeat(4, 1fr);
+          gap: .2rem; align-items: center; font-size: .72rem; }
+  .step input, .step select { min-height: 1.7rem; padding: .1rem .2rem;
+                              font-size: .72rem; width: 100%; }
+  .keys { display: grid; grid-template-columns: repeat(12, 1fr); gap: .15rem; }
+  .keys button { padding: .35rem 0; font-size: .62rem; min-height: 2rem; }
+  .keys button.black { background: #101216; color: #8b94a2; }
+  .hint { color: #6b7480; font-size: .72rem; }
+  button.cursor { outline: 2px solid #d0a020; }
+
   /* Big enough to hit with a thumb. */
   select, button, input { min-height: 2rem; }
   @media (max-width: 560px) {
@@ -62,6 +88,8 @@ move around. <kbd>space</kbd> starts and stops.</p>
   <canvas id="bottom" width="256" height="192"></canvas>
 </div>
 <div id="status">loading&hellip;</div>
+
+<div id="panel"></div>
 
 <div class="row">
   <button id="play">play</button>
@@ -107,3 +135,4 @@ delete self.TextDecoder;
 <script src="ds10.js"></script>
 <script>self.TextDecoder = __TextDecoder;</script>
 <script src="app.js"></script>
+<script src="panel.js"></script>

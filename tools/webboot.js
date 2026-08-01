@@ -24,16 +24,20 @@ for (const m of fs.readFileSync(repo + '/web/index.html', 'utf8')
 
 const listeners = {};
 function element(id) {
+  const kids = [];
   return {
     id: id,
     value: '',
     textContent: '',
     files: [],
     style: {},
+    dataset: {},
     width: 256,
     height: 192,
+    children: kids,
     classList: {add() {}, remove() {}, toggle() {}},
-    appendChild() {},
+    setAttribute() {},
+    appendChild(c) { kids.push(c); return c; },
     addEventListener(ev, fn) { (listeners[id] = listeners[id] || {})[ev] = fn; },
     getContext() {
       return {putImageData() {}, createImageData() { return {}; }};
@@ -113,7 +117,11 @@ const boot = () => {
   ran = true;
   /* The page's own startup, verbatim. A throw here is what leaves the real
    * page black. */
-  const src = fs.readFileSync(repo + '/web/app.js', 'utf8');
+  /* app.js and panel.js share a scope in the browser, so concatenate them -
+   * the panel is generated at run time, and a missing entry point in it only
+   * shows when it is built. */
+  const src = fs.readFileSync(repo + '/web/app.js', 'utf8') + '\n'
+            + fs.readFileSync(repo + '/web/panel.js', 'utf8');
   const run = new Function(src);
   try {
     run();
@@ -162,6 +170,14 @@ const boot = () => {
   if (decoderCalls) {
     console.error('FAIL: the module called TextDecoder ' + decoderCalls
                   + ' times; Chrome would have thrown');
+    process.exit(1);
+  }
+  /* The panel is generated, so a missing entry point only shows when it
+   * runs. Count what it built, or a stub DOM that silently swallows the
+   * whole thing would pass. */
+  const panel = els.panel ? els.panel.children.length : 0;
+  if (panel < 6) {
+    console.error('FAIL: the panel built ' + panel + ' sections, expected 8');
     process.exit(1);
   }
   console.log('PASS: the page starts up, no TextDecoder, status '

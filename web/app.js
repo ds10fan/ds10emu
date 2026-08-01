@@ -160,6 +160,10 @@ function show() {
 
 function say(s) { status.textContent = s; }
 
+/* The panel reads everything back from the C side, so anything the screens
+ * change has to poke it. */
+function repanel() { if (typeof panelSync === "function") panelSync(); }
+
 function goto(page) {
   $("pick-bottom").value = page;
   show();
@@ -396,6 +400,7 @@ function onDown(which, ev) {
   try {
     onDownInner(which, ev, page, x, y);
   } finally {
+    repanel();
     trace("touch " + which + " (" + x + "," + y + ") on " + page
           + " -> " + outcome);
   }
@@ -675,6 +680,22 @@ function boot() {
     getName: Module.cwrap("ds10_web_get_name", "string", []),
     setName: Module.cwrap("ds10_web_set_name", null, ["string"]),
     chainSet: Module.cwrap("ds10_web_chain_set", null, ["number", "number"]),
+    chainGet: Module.cwrap("ds10_web_chain_get", "number", ["number"]),
+    chainRemove: Module.cwrap("ds10_web_chain_remove", null, ["number"]),
+    patternCopy: Module.cwrap("ds10_web_pattern_copy", null,
+                              ["number", "number"]),
+    stepGate: Module.cwrap("ds10_web_step_gate", "number",
+                           ["number", "number"]),
+    setStepGate: Module.cwrap("ds10_web_set_step_gate", null,
+                              ["number", "number", "number"]),
+    stepVel: Module.cwrap("ds10_web_step_vel", "number",
+                          ["number", "number"]),
+    setStepVel: Module.cwrap("ds10_web_set_step_vel", null,
+                             ["number", "number", "number"]),
+    stepPan: Module.cwrap("ds10_web_step_pan", "number",
+                          ["number", "number"]),
+    setStepPan: Module.cwrap("ds10_web_set_step_pan", null,
+                             ["number", "number", "number"]),
     export: Module.cwrap("ds10_web_export", "number", []),
     exportBuf: Module.cwrap("ds10_web_export_buf", "number", []),
   };
@@ -809,6 +830,9 @@ function boot() {
   else { api.seqFollow(); syncControls(); }
   show();
   loop();
+  /* Every capability as plain HTML, so a control that does nothing on the DS
+   * screens can be told apart from a function that does nothing. */
+  if (typeof buildPanel === "function") buildPanel();
   trace("boot: first frame drawn, status " + status.textContent);
 }
 
