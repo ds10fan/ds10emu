@@ -29,7 +29,8 @@ class DS10Processor extends AudioWorkletProcessor {
       this.M = M;
       this.api = {
         audioInit: c("ds10_web_audio_init", "number", []),
-        songBytes: c("ds10_web_song_bytes", "number", ["number", "number"]),
+        songIn: c("ds10_web_song_in", "number", []),
+        songLoad: c("ds10_web_song_load", "number", ["number"]),
         render: c("ds10_web_audio", "number", ["number"]),
         buf: c("ds10_web_audio_buf", "number", []),
         rate: c("ds10_web_rate", "number", []),
@@ -44,8 +45,6 @@ class DS10Processor extends AudioWorkletProcessor {
         setTempo: c("ds10_web_set_tempo", null, ["number"]),
         setSwing: c("ds10_web_set_swing", null, ["number"]),
         cursor: c("ds10_web_cursor", "number", []),
-        malloc: c("malloc", "number", ["number"]),
-        free: c("free", null, ["number"]),
       };
       this.api.audioInit();
       for (const m of this.pending) this.handle(m);
@@ -62,11 +61,10 @@ class DS10Processor extends AudioWorkletProcessor {
     switch (m.type) {
     case "song": {
       /* The page's whole song, after any edit. Cheap enough to send in full:
-       * 12 KB, and it keeps the two copies from ever drifting. */
-      const p = a.malloc(m.bytes.length);
-      this.M.HEAPU8.set(m.bytes, p);
-      a.songBytes(p, m.bytes.length);
-      a.free(p);
+       * 12 KB, and it keeps the two copies from ever drifting. It goes into a
+       * static buffer because this build exports no allocator. */
+      this.M.HEAPU8.set(m.bytes, a.songIn());
+      a.songLoad(m.bytes.length);
       a.setPattern(m.pattern | 0);
       a.setTrack(m.track | 0);
       a.setSongMode(m.songMode ? 1 : 0);

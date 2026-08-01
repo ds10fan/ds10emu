@@ -383,6 +383,8 @@ out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c src/app/cell.c \
 # than DSP ones.
 test-webedit: web out/songplay
 	@node tools/webedit.js
+	@node tools/webboot.js
+	@node tools/webaudio.js
 
 test-websong: web out/songplay
 	@./out/songplay -b 3 -o out/ref_demo.wav \

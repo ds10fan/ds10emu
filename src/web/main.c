@@ -649,6 +649,22 @@ const char *ds10_web_get_name(void)
     return nm;
 }
 
+/* A song coming the other way: the page writes into this and says how long
+ * it is. A static buffer rather than an allocation, because the audio build
+ * exports no allocator - cwrap("malloc") there is undefined, and a worklet
+ * that tried it threw on every song and so never played one. */
+static uint8_t import_buf[16 + 12252];
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t *ds10_web_song_in(void) { return import_buf; }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song_load(int len)
+{
+    if (len <= 0 || len > (int)sizeof import_buf) return -1;
+    return ds10_web_song_bytes(import_buf, len);
+}
+
 /* Write the song out as a file the hardware would load, and hand the page its
  * address and length so it can offer it as a download. */
 static uint8_t export_buf[16 + 12252];
