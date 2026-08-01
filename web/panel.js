@@ -81,6 +81,12 @@ const SCALES = [
 ];
 const KEY_NAME = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#",
                   "B"];
+/* The pad is on two surfaces - this panel and 71_KAOSS - and only one of them
+ * knows what a slot means, so these are how the screen reaches it. They are
+ * assigned when the panel is built. */
+let padTouch = null, padRelease = null, padSelect = null, padSetRate = null,
+    padNextScale = null;
+
 /* OFF, HLD and SMT, as the pad's own button cycles them. HLD applies once a
  * step; SMT applies continuously. */
 const PAD_RATE = ["OFF", "HLD", "SMT"];
@@ -339,8 +345,32 @@ function buildPanel() {
                                },
                                sendSong);
   const mix = [];
+  /* Mute and solo, which the mixer, the pattern picker and 51_ALL_DRUMS all
+   * carry a strip of. They are the transport's, not the song's, so nothing
+   * about them is written to a file. */
+  const msBtns = [];
+  for (let t = 0; t < TRACK_NAME.length; t++) {
+    const m = button("M", () => {
+      api.setMute(t, api.mute(t) ? 0 : 1);
+      sendMutes();
+    });
+    const s = button("S", () => {
+      api.setSolo(t, api.solo(t) ? 0 : 1);
+      sendMutes();
+    });
+    msBtns.push([m, s]);
+    mix.push(el("label", {cls: "ctl"},
+                [el("span", {cls: "nm", text: TRACK_NAME[t]}),
+                 el("div", {cls: "row"}, [m, s])]));
+  }
   for (let m = 17; m <= 22; m++) mix.push(mixCtl(m));
   for (let m = 9; m <= 14; m++) mix.push(mixCtl(m));
+  syncers.push(() => {
+    msBtns.forEach(([m, s], t) => {
+      m.classList.toggle("on", !!api.mute(t));
+      s.classList.toggle("on", !!api.solo(t));
+    });
+  });
   host.appendChild(group("mixer", mix));
 
   /* --- the effect ------------------------------------------------------- */
@@ -419,16 +449,18 @@ function buildPanel() {
   let padSlot = 0, padRate = 2, padLastStep = -1;
   const slot = () => PAD_SLOT[padSlot];
   const slotBtns = [];
+  const pickSlot = (i) => {
+    padSlot = i;
+    api.setPadSlot(i);
+    if (!PAD_SLOT[i].note) {
+      api.setLaneKnob(0, PAD_SLOT[i].xy[0]);
+      api.setLaneKnob(1, PAD_SLOT[i].xy[1]);
+      sendSong();
+    }
+    panelSync();
+  };
   for (let i = 0; i < 3; i++)
-    slotBtns.push(button(String(i + 1), () => {
-      padSlot = i;
-      if (!PAD_SLOT[i].note) {
-        api.setLaneKnob(0, PAD_SLOT[i].xy[0]);
-        api.setLaneKnob(1, PAD_SLOT[i].xy[1]);
-        sendSong();
-      }
-      panelSync();
-    }));
+    slotBtns.push(button(String(i + 1), () => pickSlot(i)));
   const noteBtn = button("note / gate", () => {
     slot().note = !slot().note;
     if (!slot().note) {
@@ -438,10 +470,7 @@ function buildPanel() {
     }
     panelSync();
   });
-  const rateBtn = button("SMT", () => {
-    padRate = (padRate + 1) % 3;
-    panelSync();
-  });
+  const rateBtn = button("SMT", () => padSetRate((padRate + 1) % 3));
   /* SET: the key and the scale the note mode quantises to. */
   const keySel = el("select", {onchange: (e) => { slot().key = +e.target.value; }});
   for (let k = 0; k < 12; k++)
@@ -466,17 +495,18 @@ function buildPanel() {
   }
   const padRead = el("span", {cls: "val", text: ""});
   const pad = el("div", {cls: "pad"});
-  const padSet = (ev) => {
-    const r = pad.getBoundingClientRect();
-    const fx = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
-    const fy = Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height));
+  /* The pad's two axes as fractions, wherever they came from: this element,
+   * or the pad on 71_KAOSS, which is the same control on the other surface.
+   * Returns what it did, for the status line. */
+  const padApply = (fx, fy) => {
     const vx = Math.round(fx * 127), vy = Math.round((1 - fy) * 127);
     pad.style.backgroundPosition = (fx * 100) + "% " + (fy * 100) + "%";
+    api.setPad(vx, vy);
 
     /* OFF does nothing, HLD once a step, SMT on every movement. */
-    if (padRate === 0) return;
+    if (padRate === 0) return "pad OFF";
     if (padRate === 1) {
-      if (cursor === padLastStep) return;
+      if (cursor === padLastStep) return padRead.textContent;
       padLastStep = cursor;
     }
 
@@ -495,7 +525,7 @@ function buildPanel() {
       }
       padRead.textContent = NOTE_NAME_P[n % 12] + (Math.floor(n / 12) - 1)
                           + "   gate " + GATE_NAME[gate];
-      return;
+      return padRead.textContent;
     }
     const kx = api.laneKnob(0), ky = api.laneKnob(1);
     /* Clamp into each knob's own range, as the knob setter would. */
@@ -512,6 +542,29 @@ function buildPanel() {
     /* And into the automation lanes, if recording. */
     send({type: "lane", lane: 0, value: vx});
     send({type: "lane", lane: 1, value: vy});
+    return padRead.textContent;
+  };
+  const padSet = (ev) => {
+    const r = pad.getBoundingClientRect();
+    return padApply(Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)),
+                    Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height)));
+  };
+  /* The same pad is on 71_KAOSS, and the screens call in here rather than
+   * keeping a second copy of what a slot means. */
+  padTouch = padApply;
+  padRelease = () => {
+    padLastStep = -1;
+    if (padNote >= 0) {
+      send({type: "note", voice: track(), note: padNote, on: 0});
+      padNote = -1;
+    }
+  };
+  padSelect = pickSlot;
+  padSetRate = (n) => { padRate = n; api.setPadRate(n); panelSync(); };
+  padNextScale = () => {
+    slot().scale = (slot().scale + 1) % SCALES.length;
+    panelSync();
+    return SCALES[slot().scale][0];
   };
   let padNote = -1;
   let padDown = false;
@@ -526,11 +579,7 @@ function buildPanel() {
     pad.addEventListener(ev, () => {
       if (!padDown) return;
       padDown = false;
-      padLastStep = -1;
-      if (padNote >= 0) {
-        send({type: "note", voice: track(), note: padNote, on: 0});
-        padNote = -1;
-      }
+      padRelease();
       sendSong();
     });
   syncers.push(() => {

@@ -172,37 +172,55 @@ Remaining, roughly in order:
 
 - **The rest of the behaviour.** Wired now: the map's boxes, the keyboard, the
   synth edit and patch-bay knobs, the KAOSS pad, the mixer, the FX page, both
-  step grids, and the transport. Their hit boxes come from the decompiled
-  tables, not from measurements.
+  step grids, and the top bar every page carries. Their hit boxes come from
+  the decompiled tables where there is one, and from the frames the page's own
+  tile image draws where there is not - `tools/probe_frames.py` finds those,
+  which is not measuring by eye.
 
-  Not wired: the two controls in the middle of the sequencer's top bar, which
-  did not respond to a tap at all, and the CLEAR prompt's own dialog. The
-  transport, the arrangement and the pattern length are still driven from HTML
-  controls rather than from the screen. `31_SONG` draws but is not
-  interactive, and nothing on the map opens it.
+  The bar is `ds10_ui_bar_hit`, one table per page, because the slot does not
+  fix the role: x 162 is SOLO on the sequencer, CLR on 51_ALL_DRUMS and RECORD
+  on the keyboard. Wired from it: the transport, record, solo, CLR, the
+  sub-mode cycle, the screen swap, the pad's three assignments and its rate,
+  the keyboard's octave and synth selector, and COPY and LOCK on 32_PATTERN.
 
-  `tools/probe_buttons.py` finds them by tapping rather than by reading. Two
-  are identified so far, and the first is wired:
+  The two that no probe could read are now settled as far as they can be:
 
-  - the sub-mode button, between x 41 and 58 at y 8, which cycles NOTE, GATE,
-    VOLUME, PAN and the two automation lanes. All five variants are captured
-    and drawn from the pattern, and editable through the same grid.
-  - CLR, x 130 to 158, which raises a modal CLEAR ALL DATA prompt. The prompt
-    itself is not drawn, so the browser asks in its own dialog instead.
-  - the map button, x 222 to 255, which brings the navigation map to the touch
-    screen as the L shoulder does. Wired.
+  - the triangle at x 193 is the **transport**. `tools/probe_buttons.py` diffs
+    one later frame against a baseline, which a running sequencer can match
+    exactly; `tools/probe_play.py` instead asks whether consecutive frames
+    differ - whether the screen is *moving* - and it moves after the first tap
+    and stops after the second.
+  - the **S** changes nothing on screen at all. `tools/probe_ram.py` diffs main
+    RAM across a tap, masking whatever churns on its own, and finds it
+    toggling bit 1 of one global byte at `0x0208cf70` and nothing else, back
+    and forth over four taps. What that byte means is **not proven**. It is
+    taken as solo for the track the page is editing, because it is on exactly
+    those pages that edit one track and absent from every page that carries a
+    mute and solo strip of its own.
 
-  Nothing between those two changed anything the probe could see, so the two
-  controls drawn there are not simple buttons.
+  Mute and solo themselves are the sequencer's runtime state, not the song's -
+  the original's per-track `+0x22`, 0 to play the pattern and 1 to mute it - so
+  they silence the pattern and not the channel, and nothing about them is
+  saved.
 
-  `32_PATTERN` is wired the same way - its sixteen buttons select the pattern
-  and the marker follows, reproducing the captured frame. What is left on that
-  page is the mute and solo strip along the bottom, and its live text.
+  Not wired: the CLEAR prompt's own modal dialog, which the browser asks for
+  instead. `31_SONG` draws but is not interactive, and nothing on the map opens
+  it - its grid's rows and columns have not been pinned down, so the
+  arrangement is still edited from the panel. The drum edit pages' wide left
+  button and 61_SYN_EDIT's are unidentified.
+
+  What the pages draw for themselves and this does not follow: the piano keys
+  down the left of the roll do not move when the roll is scrolled, so their
+  labels are only right at the default position.
 
   The probe cannot yet tell a control that clears the pattern from one that
   redraws it, because a tap on the grid toggles the cell, so re-entering the
   same notes before each probe alternates the baseline. That needs a run which
   enters notes once and never taps the grid again.
+- **Where the piano roll's two octaves end.** The scrollbar is wired, and the
+  one thing the capture pins is where its handle sits at rest: five twelfths
+  down, so the default top row A4 is scroll position five and the range runs
+  D5 to D#3. The ends are that inference, not a reading.
 - **Which octave the keyboard starts on.** The layout says it starts on an F;
   F3 is an assumption, not a reading.
 

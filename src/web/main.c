@@ -120,6 +120,36 @@ int ds10_web_track_notes(int t)
     return n;
 }
 
+/* Mute and solo.
+ *
+ * Neither is in the song file. The original keeps them in the sequencer's own
+ * per-track block - `+0x22` of the 36-byte record at seq + 0x64 + track*0x24,
+ * where 0 plays the pattern and 1 mutes it - so they belong to the running
+ * transport and nothing about them is saved. Muting there rather than at the
+ * mixer is also why a muted track still answers the keyboard: it is the
+ * pattern that is silenced, not the channel.
+ */
+static uint8_t track_mute[DS10_SONG_TRACKS], track_solo[DS10_SONG_TRACKS];
+
+/* Whether live input is being written into the pattern under the playhead;
+ * where the pad was last touched, so 71_KAOSS can draw its cursor there; and
+ * which of the pad's three assignments is selected and how often it applies.
+ * All of them are the transport's or the screen's, not the song's, and the
+ * live redraw needs them, so they are declared here with it. */
+static int recording;
+static int pad_x = -1, pad_y = -1;
+static int pad_slot, pad_rate = 2;
+
+static int track_audible(int track)
+{
+    int i, any = 0;
+
+    if (track < 0 || track >= DS10_SONG_TRACKS) return 1;
+    for (i = 0; i < DS10_SONG_TRACKS; i++) any |= track_solo[i];
+    if (any) return track_solo[track];
+    return !track_mute[track];
+}
+
 /* Whether the transport follows the arrangement or loops the one pattern
  * being edited. Entering notes is done against a looping pattern, which is
  * what the original's pattern mode is for. */
@@ -399,13 +429,12 @@ int ds10_web_song(const char *name)
     FILE *f;
     static uint8_t blob[16 + 12252];
     long n;
-    int i;
 
     if (!audio_ready && ds10_web_audio_init() < 0) return -1;
     snprintf(path, sizeof path, "/data/nitrofs/demo/%s.dat", name);
     f = fopen(path, "rb");
     if (!f) {
-        /* Songs pulled out of songs/*.SAV live alongside the ROM's own. */
+        /* Songs pulled out of the .SAV files live beside the ROM's own. */
         snprintf(path, sizeof path, "/data/saves/%s.dat", name);
         f = fopen(path, "rb");
     }
@@ -823,8 +852,13 @@ int ds10_web_audio(int frames)
                      * voice acts on - the tempo included - takes its
                      * argument from the payload word. */
                     if (op == DS10_EV_NOTE_ON && dest >= 0 &&
-                        dest < DS10_SONG_TRACKS)
+                        dest < DS10_SONG_TRACKS) {
                         track_notes[dest]++;
+                        /* A muted track's pattern does not sound. Its
+                         * note-offs still go through, or a note held when the
+                         * mute went on would never stop. */
+                        if (!track_audible(dest)) continue;
+                    }
                     if (dest < NSYN && (op == DS10_EV_NOTE_ON ||
                                         op == DS10_EV_NOTE_OFF)) {
                         ds10_voice_event(&voice[dest], op, note, 0,
@@ -1231,11 +1265,81 @@ const char *ds10_web_map_hit(int x, int y)
  * the page itself. This runs every frame, so the screen always agrees with
  * what is loaded - which is what makes it usable for entering a song rather
  * than only for looking at one. */
+/* What 52_FX's own tile image already draws as chosen, so a different choice
+ * can paint it out. */
+#define FX_DEFAULT_TYPE 0     /* DELAY */
+#define FX_DEFAULT_ROUTE 2    /* SYN 1 + 2 */
+#define PAD_SLOT_W 16         /* the pad's 1, 2 and 3, as the page frames them */
+
+/* Light the button on the bar for `id` if the page has one. */
+static void bar_led(int id, int on)
+{
+    int x, y, h;
+
+    if (!on) return;
+    if (ds10_ui_bar_box(page_bottom, id, &x, &y, &h) == 0)
+        ds10_ui_led(ui, x, y, h);
+}
+
+/* Everything on the page whose state is a lit indicator rather than a value:
+ * the transport, record, solo, which effect is chosen and where it is routed,
+ * the mute and solo strips, and which of the pad's three is selected. */
+static void draw_leds(void)
+{
+    int t, x, y, h, i;
+
+    bar_led(DS10_BAR_PLAY, seq_playing);
+    bar_led(DS10_BAR_REC, recording);
+    bar_led(DS10_BAR_SOLO, track_solo[ed.track]);
+    /* The pad's three: its page comes up with the first one lit, so the
+     * choice is a frame and the stale dot is painted out. */
+    if (ds10_ui_bar_box(page_bottom, DS10_BAR_SLOT1, &x, &y, &h) == 0) {
+        if (pad_slot != 0) ds10_ui_led_off(ui, x, y, h);
+        if (ds10_ui_bar_box(page_bottom, DS10_BAR_SLOT1 + pad_slot,
+                            &x, &y, &h) == 0)
+            ds10_ui_outline(ui, x, y, PAD_SLOT_W, h);
+    }
+    /* OFF is the pad doing nothing, so its button is dark. */
+    bar_led(DS10_BAR_RATE, pad_rate != 0);
+
+    if (strcmp(page_bottom, "52_FX") == 0 ||
+        strcmp(page_bottom, "54_DRUM_FX") == 0) {
+        /* The page's own image already has one dot lit - the default the
+         * screen comes up on - so the one that is really chosen is drawn and
+         * the stale one is painted out. */
+        for (i = 0; i < 2; i++) {
+            int want = ds10_editor_get_mixer(&ed, i ? 0 : 1);
+            int stale = i ? FX_DEFAULT_ROUTE : FX_DEFAULT_TYPE;
+            int w;
+
+            if (want != stale &&
+                (w = ds10_ui_fx_button_box(page_bottom, i, stale, &x, &y, &h)))
+                ds10_ui_led_off(ui, x, y, h);
+            w = ds10_ui_fx_button_box(page_bottom, i, want, &x, &y, &h);
+            if (w) ds10_ui_outline(ui, x, y, w, h);
+        }
+    }
+    for (t = 0; t < DS10_SONG_TRACKS; t++) {
+        /* 51_ALL_DRUMS' four rows are the drums, so its strip starts there. */
+        i = strcmp(page_bottom, "51_ALL_DRUMS") == 0 ? t - NSYN : t;
+        if (i < 0) continue;
+        if (track_mute[t] && ds10_ui_ms_box(page_bottom, i, 0, &x, &y, &h) == 0)
+            ds10_ui_led(ui, x, y, h);
+        if (track_solo[t] && ds10_ui_ms_box(page_bottom, i, 1, &x, &y, &h) == 0)
+            ds10_ui_led(ui, x, y, h);
+    }
+}
+
 static void refresh(void)
 {
     int cursor = ds10_web_cursor();
     int track = ed.track < NSYN ? ed.track : 0;
     int i;
+
+    /* The 3D plane is a plain framebuffer under the sprites and nothing else
+     * clears it, so every frame starts from empty - otherwise a pad cursor or
+     * a lit button would smear across the page it was drawn on. */
+    ds10_ui_plane_clear(ui);
 
     if (strcmp(page_bottom, "60_SYN_SEQ_PIANO") == 0) {
         int note[DS10_SONG_STEPS];
@@ -1270,7 +1374,14 @@ static void refresh(void)
     } else if (strcmp(page_bottom, "30_MIXER") == 0) {
         for (i = 0; i < DS10_SONG_TRACKS; i++)
             ds10_ui_mixer_fader(ui, i, ds10_editor_get_mixer(&ed, 17 + i));
+    } else if (strcmp(page_bottom, "71_KAOSS") == 0) {
+        ds10_ui_kaoss_mark(ui, pad_x, pad_y);
     }
+    /* The scrollbar's handle says where in the two octaves the window is, and
+     * on a touch screen it is also the only way to move it. */
+    if (strncmp(page_bottom, "60_SYN_SEQ_", 11) == 0)
+        ds10_ui_seq_scroll_draw(ui, ds10_ui_seq_scroll_pos(seq_top));
+    draw_leds();
     /* The map's bottom bar is live too, and drawing the page puts the
      * captured labels back, so it has to be redrawn with it. */
     if (strcmp(page_top, "90_MAP") == 0)
@@ -1303,6 +1414,114 @@ int ds10_web_mapbutton_hit(int x, int y) { return ds10_ui_mapbutton_hit(x, y); }
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_clear_hit(int x, int y) { return ds10_ui_clear_hit(x, y); }
 
+/* The top bar of whatever page the touch screen is showing. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_bar_hit(int x, int y)
+{
+    return ds10_ui_bar_hit(page_bottom, x, y);
+}
+
+/* The name of a bar button, in the order the enum declares them, so the page
+ * can build its own table from this rather than repeating the list. */
+EMSCRIPTEN_KEEPALIVE
+const char *ds10_web_bar_name(int id)
+{
+    static const char *const NAME[DS10_BAR_IDS] = {
+        "SWAP", "PLAY", "REC", "SOLO", "CLR", "MODE", "SLOT1", "SLOT2",
+        "SLOT3", "SET", "RATE", "OCT_DOWN", "OCT_UP", "SYNTH", "COPY",
+        "LOCK", "EDIT",
+    };
+
+    return id >= 0 && id < DS10_BAR_IDS ? NAME[id] : "";
+}
+
+/* The sequencer's scrollbar and its strip of keys. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_scroll_hit(int x, int y) { return ds10_ui_seq_scroll_hit(x, y); }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_seq_key_hit(int x, int y) { return ds10_ui_seq_key_hit(x, y); }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_scroll_top(int pos) { return ds10_ui_seq_scroll_top(pos); }
+
+/* 52_FX's type and routing buttons: (group << 8) | index, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_fx_button_hit(int x, int y)
+{
+    int group = 0, index = ds10_ui_fx_button_hit(page_bottom, x, y, &group);
+
+    return index < 0 ? -1 : (group << 8) | index;
+}
+
+/* Mute and solo: (solo << 8) | track, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_ms_hit(int x, int y)
+{
+    int track = 0, solo = ds10_ui_ms_hit(page_bottom, x, y, &track);
+
+    if (solo < 0) return -1;
+    /* 51_ALL_DRUMS numbers its four rows from the first drum. */
+    if (strcmp(page_bottom, "51_ALL_DRUMS") == 0) track += NSYN;
+    return (solo << 8) | track;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_mute(int track)
+{
+    if (track < 0 || track >= DS10_SONG_TRACKS) return 0;
+    return track_mute[track];
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_solo(int track)
+{
+    if (track < 0 || track >= DS10_SONG_TRACKS) return 0;
+    return track_solo[track];
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_mute(int track, int on)
+{
+    if (track < 0 || track >= DS10_SONG_TRACKS) return;
+    track_mute[track] = (uint8_t)(on ? 1 : 0);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_solo(int track, int on)
+{
+    if (track < 0 || track >= DS10_SONG_TRACKS) return;
+    track_solo[track] = (uint8_t)(on ? 1 : 0);
+}
+
+/* Whether a track should sound: any solo anywhere silences the rest. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_track_audible(int track) { return track_audible(track); }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_pad(int vx, int vy) { pad_x = vx; pad_y = vy; }
+
+/* The pad's three assignments and its rate: the selection is kept here so the
+ * DS screen and the HTML panel cannot disagree about it. What each slot drives
+ * is the page's business. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_pad_slot(void) { return pad_slot; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_pad_slot(int n)
+{
+    if (n >= 0 && n < 3) pad_slot = n;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_pad_rate(void) { return pad_rate; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_pad_rate(int n)
+{
+    if (n >= 0 && n < 3) pad_rate = n;
+}
+
 /* Recording.
  *
  * The point of it is that the selection follows the chain: with the song
@@ -1315,13 +1534,16 @@ int ds10_web_clear_hit(int x, int y) { return ds10_ui_clear_hit(x, y); }
  * is under the playhead; it tells the page, which owns the song that gets
  * written to a file.
  */
-static int recording;
-
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_set_record(int on) { recording = on ? 1 : 0; }
 
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_record(void) { return recording; }
+
+/* Whether the transport is running, so a caller that did not start it - the
+ * page's own play button is on the C side's bar now - can tell. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_playing(void) { return seq_playing; }
 
 /* Returns (pattern << 8) | step, or -1 if nothing was recorded. */
 EMSCRIPTEN_KEEPALIVE

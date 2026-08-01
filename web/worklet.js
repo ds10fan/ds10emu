@@ -56,6 +56,8 @@ class DS10Processor extends AudioWorkletProcessor {
         seqStep: c("ds10_web_seq_step", null, ["number", "number", "number"]),
         instant: c("ds10_web_set_instant_pattern", null, ["number"]),
         setRecord: c("ds10_web_set_record", null, ["number"]),
+        setMute: c("ds10_web_set_mute", null, ["number", "number"]),
+        setSolo: c("ds10_web_set_solo", null, ["number", "number"]),
         recNote: c("ds10_web_record_note", "number", ["number", "number"]),
         recLane: c("ds10_web_record_lane", "number", ["number", "number"]),
       };
@@ -113,6 +115,14 @@ class DS10Processor extends AudioWorkletProcessor {
       break;
     }
     case "record":     a.setRecord(m.on ? 1 : 0); break;
+    case "mutes":
+      /* Mute and solo are the transport's, not the song's, so they are sent
+       * rather than arriving with the bytes. */
+      for (let i = 0; i < (m.mute || []).length; i++) {
+        a.setMute(i, m.mute[i]);
+        a.setSolo(i, m.solo[i]);
+      }
+      break;
     /* One step, rather than the whole song. Painting a run across the grid
      * posted 12 KB per cell, and each reload reset the voices under whatever
      * was sounding - which is what made entering notes glitch. */

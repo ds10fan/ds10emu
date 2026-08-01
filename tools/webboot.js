@@ -221,6 +221,20 @@ const boot = () => {
       fails2.push(label + ' set mixer ' + id + ' to ' + mixerGet(id)
                   + ', wanted ' + want);
   }
+  /* The mixer's own mute and solo, which is the same state the screens'
+   * strips drive. */
+  {
+    const muteGet = cw('ds10_web_mute', 'number', ['number']);
+    const b = byText('M');
+
+    if (!b) fails2.push('the panel has no mute button');
+    else {
+      b.dispatch('click');
+      if (!muteGet(0)) fails2.push('the panel M did not mute track 0');
+      b.dispatch('click');
+      if (muteGet(0)) fails2.push('the panel M did not unmute track 0');
+    }
+  }
   /* The two KAOSS lane pickers. */
   const sels = all.filter((e) => e.tag === '<select>' && e._on.change);
   const lane = sels.filter((e) => e.children.length === 31);
@@ -236,6 +250,84 @@ const boot = () => {
     for (const f of fails2) console.error('FAIL: ' + f);
     process.exit(1);
   }
+  /* The DS screens themselves.
+   *
+   * Everything above drives the HTML panel; a page whose own buttons do
+   * nothing looks exactly the same from there. So this taps the canvas where
+   * each control is drawn and checks what it changed on the C side. The
+   * canvas reports itself as 512 by 384, so a client coordinate is twice a
+   * screen one.
+   */
+  {
+    const tap = (page, x, y) => {
+      els["pick-bottom"].value = page;
+      listeners["pick-bottom"].change({target: els["pick-bottom"]});
+      els.bottom.dispatch("pointerdown", {
+        target: els.bottom, clientX: x * 2, clientY: y * 2, pointerId: 1,
+      });
+      els.bottom.dispatch("pointerup", {
+        target: els.bottom, clientX: x * 2, clientY: y * 2, pointerId: 1,
+        type: "pointerup",
+      });
+    };
+    const g = (n) => cw(n, "number", []);
+    const g1 = (n) => cw(n, "number", ["number"]);
+    const playing = g("ds10_web_playing");
+    const solo = g1("ds10_web_solo");
+    const mute = g1("ds10_web_mute");
+    const mixer = g1("ds10_web_mixer_get");
+    const seqTop = g("ds10_web_seq_top");
+    const bad = [];
+
+    /* The transport, which is the triangle at x 193 on every page that has
+     * one. Nothing else on the page starts it. */
+    tap("60_SYN_SEQ_PIANO", 206, 9);
+    if (!playing()) bad.push("the play button did not start the transport");
+    tap("60_SYN_SEQ_PIANO", 206, 9);
+    if (playing()) bad.push("the play button did not stop it again");
+
+    /* SOLO, on the track the page is editing. */
+    tap("60_SYN_SEQ_PIANO", 175, 9);
+    if (!solo(0)) bad.push("the S button did not solo the track");
+    tap("60_SYN_SEQ_PIANO", 175, 9);
+    if (solo(0)) bad.push("the S button did not clear the solo");
+
+    /* The screen swap. */
+    tap("61_SYN_EDIT", 236, 9);
+    if (els["pick-bottom"].value !== "90_MAP")
+      bad.push("the swap button left the bottom on "
+               + els["pick-bottom"].value);
+    els["pick-top"].value = "90_MAP";
+
+    /* 52_FX: the effect and where it is routed, which are mixer knobs 1
+     * and 0. */
+    tap("52_FX", 44, 116);                 /* CHORUS */
+    if (mixer(1) !== 2) bad.push("CHORUS set the type to " + mixer(1));
+    tap("52_FX", 212, 61);                 /* SYN 2 */
+    if (mixer(0) !== 1) bad.push("SYN 2 set the route to " + mixer(0));
+    tap("52_FX", 44, 54);                  /* back to DELAY */
+
+    /* The mixer's mute and solo strip: M for DRUM 1 is the third pair. */
+    tap("30_MIXER", 106, 66);
+    if (!mute(2)) bad.push("the mixer's M did not mute the track");
+    tap("30_MIXER", 106, 66);
+    if (mute(2)) bad.push("the mixer's M did not unmute it");
+
+    /* The sequencer's scrollbar, which is the only way to reach the rest of
+     * the range without a keyboard. */
+    const was = seqTop();
+    tap("60_SYN_SEQ_PIANO", 8, 40);
+    if (seqTop() === was)
+      bad.push("the scrollbar did not move the window from " + was);
+
+    if (bad.length) {
+      for (const b of bad) console.error("FAIL: " + b);
+      process.exit(1);
+    }
+    console.log("  screens: transport, solo, swap, fx, mute, scroll all "
+                + "respond");
+  }
+
   /* One of the saved songs must load, or the whole songs/ directory is
    * listed and unreachable. */
   try {

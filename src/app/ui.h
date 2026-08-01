@@ -116,6 +116,92 @@ int ds10_ui_seq_value_row(int mode, int value);
 int ds10_ui_mapbutton_hit(int x, int y);
 int ds10_ui_clear_hit(int x, int y);
 
+/* The strip of buttons along the top of nearly every page.
+ *
+ * Every page draws its own set into the same slots, and the slot does not fix
+ * the role: x 162 is SOLO on the sequencer, CLR on 51_ALL_DRUMS and RECORD on
+ * the keyboard. So the layout is a table per page, and it is read off the
+ * rendered pages by tools/probe_frames.py, which finds each button by the
+ * frame the page's own tile image draws around it.
+ */
+enum {
+    DS10_BAR_NONE = -1,
+    DS10_BAR_SWAP = 0,   /* the up and down arrows: exchange the two screens */
+    DS10_BAR_PLAY,
+    DS10_BAR_REC,
+    DS10_BAR_SOLO,
+    DS10_BAR_CLR,
+    DS10_BAR_MODE,       /* the sequencer's sub-mode cycle */
+    DS10_BAR_SLOT1,      /* the KAOSS pad's three assignments */
+    DS10_BAR_SLOT2,
+    DS10_BAR_SLOT3,
+    DS10_BAR_SET,        /* the pad's key and scale */
+    DS10_BAR_RATE,       /* SMT / HLD */
+    DS10_BAR_OCT_DOWN,
+    DS10_BAR_OCT_UP,
+    DS10_BAR_SYNTH,      /* the keyboard's synth selector */
+    DS10_BAR_COPY,
+    DS10_BAR_LOCK,
+    DS10_BAR_EDIT,
+    DS10_BAR_IDS
+};
+
+/* Which of them is under the touch, or DS10_BAR_NONE. */
+int ds10_ui_bar_hit(const char *page, int x, int y);
+
+/* Where that button is, and how tall, so its indicator can be lit. Returns 0
+ * if the page has one. */
+int ds10_ui_bar_box(const char *page, int id, int *x, int *y, int *h);
+
+/* Light a button's indicator - the small dot every button carries at its left,
+ * which the page draws dark and turns red when the button is engaged. `bh` is
+ * the button's height, because the dot is centred in it. Drawn on the 3D
+ * plane, which is cleared per frame. */
+void ds10_ui_led(ds10_ui *u, int x, int y, int bh);
+
+/* And put one out, for a page whose tile image draws a default as chosen -
+ * 52_FX comes up with DELAY and SYN 1 + 2 lit whatever the song says. */
+void ds10_ui_led_off(ds10_ui *u, int x, int y, int bh);
+
+/* A red frame round a button, which is how one of a group is shown chosen. */
+void ds10_ui_outline(ds10_ui *u, int x, int y, int bw, int bh);
+void ds10_ui_plane_clear(ds10_ui *u);
+
+/* The sequencer's scrollbar, down the left of the grid. The window is twelve
+ * of twenty-four rows, so the handle has thirteen positions; the hit returns
+ * the top row, 0 at the top, or -1 off the bar. */
+int ds10_ui_seq_scroll_hit(int x, int y);
+void ds10_ui_seq_scroll_draw(ds10_ui *u, int pos);
+
+/* The note on the top row for a scroll position, and back. */
+int ds10_ui_seq_scroll_top(int pos);
+int ds10_ui_seq_scroll_pos(int top);
+
+/* The strip of piano keys between the scrollbar and the grid. Returns the row
+ * 0..11, or -1. Tapping one sounds that row's note on the original. */
+int ds10_ui_seq_key_hit(int x, int y);
+
+/* 52_FX and 54_DRUM_FX's buttons, from the tables at 0x020869ac and
+ * 0x02086808: `group` comes back 0 for the effect type and 1 for the routing,
+ * and the return is the index within it - which is the value the mixer knob
+ * takes. -1 for a touch on neither. */
+int ds10_ui_fx_button_hit(const char *page, int x, int y, int *group);
+
+/* Where one of them is. Returns its width, or 0 if the page has no such
+ * button. */
+int ds10_ui_fx_button_box(const char *page, int group, int index,
+                          int *x, int *y, int *h);
+
+/* The mute and solo strips on 30_MIXER, 32_PATTERN and 51_ALL_DRUMS. Writes
+ * the track and returns 0 for mute, 1 for solo, -1 for neither. */
+int ds10_ui_ms_hit(const char *page, int x, int y, int *track);
+int ds10_ui_ms_box(const char *page, int track, int solo, int *x, int *y,
+                   int *h);
+
+/* Draw the KAOSS pad's cursor at the two axis values. The original leaves a
+ * trail; this draws the one point. */
+void ds10_ui_kaoss_mark(ds10_ui *u, int vx, int vy);
+
 /* Hit-test 32_PATTERN's sixteen buttons. Returns 0..15, or -1. */
 int ds10_ui_pattern_hit(int x, int y);
 void ds10_ui_pattern_box(int n, int *x, int *y);

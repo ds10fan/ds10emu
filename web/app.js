@@ -31,6 +31,9 @@ const TOP_PAGES = [
   "AD4_CAVIA", "01_MAIN_MENU",
 ];
 const TRACKS = ["SYN 1", "SYN 2", "DRUM 1", "DRUM 2", "DRUM 3", "DRUM 4"];
+/* 52_FX's two groups of buttons, captioned as the ROM's table captions them. */
+const FX_LABEL = [["DELAY", "FLANGER", "CHORUS"],
+                  ["SYN 1", "SYN 2", "SYN 1 + 2", "DRUMS", "ALL", "OFF"]];
 /* The sequencer's six sub-modes, in the order its button steps them. */
 const MODES = ["NOTE", "GATE", "VOLUME", "PAN", "KAOSS 1", "KAOSS 2"];
 
@@ -327,6 +330,18 @@ function dragTo(ev) {
    * and "the knob needs a drag", and the two look identical from outside. */
   if (drag.moves++ === 0) trace("first move on " + drag.kind + " " + drag.id);
 
+  if (drag.kind === "scroll") {
+    /* The scrollbar is absolute, not relative: the handle follows the finger,
+     * as a scrollbar does. The x is pinned inside the bar so a finger that
+     * drifts sideways does not drop off it. */
+    const pos = api.scrollHit(8, Math.round(pointerY(ev)));
+    if (pos >= 0) {
+      api.setSeqTop(api.scrollTop(pos));
+      say("row " + noteName(api.seqTop()) + " at the top");
+    }
+    return;
+  }
+
   /* Up increases, and a full screen height covers the range about twice,
    * which is roughly what the device feels like. */
   const moved = (drag.y - pointerY(ev)) / 96;
@@ -348,16 +363,24 @@ function dragTo(ev) {
   }
 }
 
-/* The pad drives whichever two knobs the pattern's automation lanes name -
- * across the ROM's songs that is almost always cutoff and peak. */
+/* The pad.
+ *
+ * What it does is the panel's business - a slot is either a pair of knobs or
+ * the note and gate of a scale - so this hands the two axes there and only
+ * keeps the cursor, which the C side draws on the pad itself. Without that
+ * the page looked dead: everything it changed was on some other screen.
+ */
 function kaossSet(h) {
+  const vx = h & 0xFF, vy = h >> 8;
+  api.setPad(vx, vy);
+  if (typeof padTouch === "function") { say(padTouch(vx / 127, 1 - vy / 127)); return; }
   const kx = api.laneKnob(0), ky = api.laneKnob(1);
-  api.knobSet(kx, h & 0xFF);
-  api.knobSet(ky, h >> 8);
-  send({type: "knob", track: api.track(), id: kx, value: h & 0xFF});
-  send({type: "knob", track: api.track(), id: ky, value: h >> 8});
-  say("KAOSS  " + api.knobName(kx) + " " + (h & 0xFF) + "   "
-      + api.knobName(ky) + " " + (h >> 8));
+  api.knobSet(kx, vx);
+  api.knobSet(ky, vy);
+  send({type: "knob", track: api.track(), id: kx, value: vx});
+  send({type: "knob", track: api.track(), id: ky, value: vy});
+  say("KAOSS  " + api.knobName(kx) + " " + vx + "   "
+      + api.knobName(ky) + " " + vy);
 }
 
 function mixerName(id) {
@@ -454,6 +477,131 @@ function onMove(ev) {
 
 let outcome = "";
 
+/* The top bar.
+ *
+ * The same band on every page, and the C side says which button is there:
+ * the two that were unknown are the transport - found by tapping it on the
+ * hardware and watching the screen move - and the S, which changes one byte
+ * and nothing visible, taken as solo. See ds10_ui_bar_hit.
+ */
+function barTouch(page, x, y) {
+  const id = api.barHit(x, y);
+  if (id < 0) return false;
+  const name = BAR_NAMES[id] || String(id);
+  outcome = "bar " + name;
+  switch (id) {
+  case BAR.SWAP:
+    /* The up and down arrows exchange the screens, which is how the map -
+     * which lives on the top one - gets somewhere a finger can reach. */
+    swapScreens();
+    return true;
+  case BAR.PLAY:
+    transport(!playing);
+    syncControls();
+    say(playing ? "playing" : "stopped");
+    return true;
+  case BAR.REC:
+    api.setRecord(api.record() ? 0 : 1);
+    send({type: "record", on: !!api.record()});
+    syncControls();
+    say(api.record() ? "RECORD armed" : "record off");
+    return true;
+  case BAR.SOLO: {
+    const t = api.track(), was = api.solo(t);
+    api.setSolo(t, was ? 0 : 1);
+    sendMutes();
+    say(TRACKS[t] + (was ? "  solo off" : "  SOLO"));
+    return true;
+  }
+  case BAR.CLR:
+    /* The original raises a modal CLEAR ALL DATA prompt. That prompt is not
+     * drawn yet, so this asks in the browser instead. */
+    if (window.confirm("CLEAR ALL DATA?")) {
+      api.patternClear(-1);
+      sendSong();
+      say("pattern " + (api.pattern() + 1) + " cleared");
+    }
+    return true;
+  case BAR.MODE:
+    goto(api.seqModeNext());
+    say(MODES[api.seqMode()]);
+    return true;
+  case BAR.SLOT1: case BAR.SLOT2: case BAR.SLOT3:
+    api.setPadSlot(id - BAR.SLOT1);
+    if (typeof padSelect === "function") padSelect(id - BAR.SLOT1);
+    syncControls();
+    say("pad " + (id - BAR.SLOT1 + 1));
+    return true;
+  case BAR.SET:
+    /* The key and scale dialog is not drawn, so this steps the scale and
+     * says which one, which is the part that changes what you hear. */
+    if (typeof padNextScale === "function") say("SCALE  " + padNextScale());
+    syncControls();
+    return true;
+  case BAR.RATE:
+    api.setPadRate((api.padRate() + 1) % 3);
+    if (typeof padSetRate === "function") padSetRate(api.padRate());
+    syncControls();
+    say(["OFF", "HLD", "SMT"][api.padRate()]);
+    return true;
+  case BAR.OCT_DOWN: setOctave(octave - 1); return true;
+  case BAR.OCT_UP: setOctave(octave + 1); return true;
+  case BAR.SYNTH: {
+    const n = api.track() === 0 ? 1 : 0;
+    api.setTrack(n);
+    send({type: "track", n: n});
+    api.seqFollow();
+    syncControls();
+    say(TRACKS[n]);
+    return true;
+  }
+  case BAR.COPY:
+    /* 32_PATTERN's COPY takes the pattern being edited to the next one you
+     * touch; the original works the same way, with LOCK holding the source. */
+    copyFrom = api.pattern();
+    say("COPY pattern " + (copyFrom + 1) + " - now touch where to put it");
+    return true;
+  case BAR.LOCK:
+    locked = !locked;
+    say(locked ? "LOCK on - the pattern will not change" : "LOCK off");
+    return true;
+  case BAR.EDIT:
+    goto("53_DRUMEDIT");
+    return true;
+  default:
+    outcome = "bar " + name + " (nothing wired)";
+    return true;
+  }
+}
+
+/* The ids ds10_ui_bar_hit returns. The names come from the C side rather than
+ * being repeated here, so the two cannot drift apart. */
+const BAR_NAMES = [];
+const BAR = {};
+
+let copyFrom = -1;   /* 32_PATTERN's COPY, waiting for a destination */
+let locked = false;  /* its LOCK, which pins the pattern being edited */
+
+function swapScreens() {
+  const b = $("pick-bottom"), t = $("pick-top");
+  const was = b.value;
+  b.value = t.value;
+  t.value = was;
+  show();
+}
+
+/* Mute and solo live on the C side and have to reach the worklet, which is
+ * the copy that makes the sound. */
+function sendMutes() {
+  const mute = [], solo = [];
+  for (let i = 0; i < TRACKS.length; i++) {
+    mute.push(api.mute(i));
+    solo.push(api.solo(i));
+  }
+  send({type: "mutes", mute: mute, solo: solo});
+  repanel();
+}
+
 function onDown(which, ev) {
   const page = pageOf(which);
   const [x, y] = screenPos(ev);
@@ -469,6 +617,11 @@ function onDown(which, ev) {
 }
 
 function onDownInner(which, ev, page, x, y) {
+  startAudio();
+  /* The strip of buttons along the top of the page, which the map has too -
+   * its only one is the screen swap, and without it a map brought down to the
+   * touch screen could not be sent back up. */
+  if (barTouch(page, x, y)) return;
 
   if (page === "90_MAP") {
     const next = api.mapHit(x, y);
@@ -486,35 +639,43 @@ function onDownInner(which, ev, page, x, y) {
     syncControls();
     return;
   }
-  startAudio();
-  /* Every page carries the same button at the right of its top bar, and it
-   * brings the map to this screen - the L shoulder's job on the device.
-   * Wiring it on the sequencer alone left every other page with no way back,
-   * which is what "eventually you cannot swap the screens" was. */
-  if (page !== "90_MAP" && api.mapButtonHit(x, y)) {
-    outcome = "map button";
-    goto("90_MAP");
-    return;
-  }
-  if ((page.startsWith("60_SYN_SEQ_") || page === "51_ALL_DRUMS") &&
-      api.clearHit(x, y)) {
-    /* The original raises a modal CLEAR ALL DATA prompt here. That prompt is
-     * not drawn yet, so this asks in the browser instead. */
-    outcome = "clear";
-    if (window.confirm("CLEAR ALL DATA?")) {
-      api.patternClear(-1);
-      sendSong();
-      say("pattern " + (api.pattern() + 1) + " cleared");
+  /* The mute and solo strips, which three pages carry. */
+  {
+    const h = api.msHit(x, y);
+    if (h >= 0) {
+      const track = h & 0xFF, solo = h >> 8;
+      const was = solo ? api.solo(track) : api.mute(track);
+      if (solo) api.setSolo(track, was ? 0 : 1);
+      else api.setMute(track, was ? 0 : 1);
+      sendMutes();
+      outcome = (solo ? "solo " : "mute ") + track + " " + (was ? "off" : "on");
+      say(TRACKS[track] + (solo ? "  SOLO " : "  MUTE ") + (was ? "off" : "on"));
+      return;
     }
-    return;
   }
   if (page.startsWith("60_SYN_SEQ_")) {
-    /* The page's own sub-mode button, which steps NOTE, GATE, VOL, PAN and
-     * the two automation lanes. */
-    if (api.seqModeHit(x, y)) {
-      outcome = "sub-mode";
-      goto(api.seqModeNext());
-      say(MODES[api.seqMode()]);
+    /* The scrollbar down the left, which is the only way to reach the rest of
+     * the two octaves without a keyboard. */
+    const pos = api.scrollHit(x, y);
+    if (pos >= 0) {
+      drag = {kind: "scroll", id: 0, from: pos, y: pointerY(ev), moves: 0};
+      api.setSeqTop(api.scrollTop(pos));
+      outcome = "scroll " + pos;
+      say("row " + noteName(api.seqTop()) + " at the top");
+      ev.target.setPointerCapture(ev.pointerId);
+      return;
+    }
+    /* The keys beside it sound the row, so you can find the note by ear
+     * before putting it on the grid. */
+    const row = api.seqKeyHit(x, y);
+    if (row >= 0) {
+      const note = api.rowNote(row);
+      noteOff();
+      send({type: "note", voice: api.track() < 2 ? api.track() : 0,
+            note: note, on: 1});
+      held = note;
+      outcome = "key row " + row;
+      say(noteName(note));
       return;
     }
     if (api.seqMode() === 0) gridTouch(x, y, true);
@@ -531,19 +692,35 @@ function onDownInner(which, ev, page, x, y) {
   if (page === "32_PATTERN") {
     const n = api.patternHit(x, y);
     outcome = "pattern " + n;
-    if (n >= 0) {
-      api.setPattern(n);
-      send({type: "pattern", n: n});
-      api.seqFollow();
-      syncControls();
-      say("pattern " + (n + 1));
+    if (n < 0) return;
+    if (copyFrom >= 0 && copyFrom !== n) {
+      api.patternCopy(copyFrom, n);
+      sendSong();
+      say("pattern " + (copyFrom + 1) + " copied to " + (n + 1));
+      copyFrom = -1;
+      return;
     }
+    copyFrom = -1;
+    if (locked) { say("LOCK is on"); return; }
+    api.setPattern(n);
+    send({type: "pattern", n: n});
+    api.seqFollow();
+    syncControls();
+    say("pattern " + (n + 1));
     return;
   }
   if (page === "33_DRUM_SELECTER") {
     const n = api.drumHit(x, y);
     outcome = "drum " + n;
-    if (n >= 0) { send({type: "drum", n: n}); say("DRUM" + (n + 1)); }
+    if (n >= 0) {
+      /* The panel both auditions the drum and makes it the one the edit
+       * pages work on, which is what the page's own EDIT button then opens. */
+      api.setTrack(2 + n);
+      send({type: "track", n: 2 + n});
+      send({type: "drum", n: n});
+      syncControls();
+      say("DRUM" + (n + 1));
+    }
     return;
   }
   if (page === "70_PATCH" || page === "63_DRUM_EDIT_PATCH") {
@@ -554,6 +731,7 @@ function onDownInner(which, ev, page, x, y) {
   }
   if (page === "71_KAOSS") {
     const h = api.kaossHit(x, y);
+    outcome = "kaossHit " + h;
     if (h < 0) return;
     kaoss = true;
     kaossSet(h);
@@ -561,7 +739,22 @@ function onDownInner(which, ev, page, x, y) {
     return;
   }
   if (page === "52_FX" || page === "54_DRUM_FX") {
-    const id = api.fxHit(x, y, 0);   /* delay; the type selector is unwired */
+    /* The type and routing buttons, out of the ROM's own table. Their index
+     * within the group is the value the mixer knob takes. */
+    const b = api.fxButtonHit(x, y);
+    if (b >= 0) {
+      const group = b >> 8, index = b & 0xFF;
+      api.mixerSet(group ? 0 : 1, index);
+      send({type: "mixer", id: group ? 0 : 1, value: index});
+      sendSong();
+      syncControls();
+      outcome = (group ? "fx route " : "fx type ") + index;
+      say((group ? "ROUTE  " : "EFFECT  ") + FX_LABEL[group][index]);
+      return;
+    }
+    /* Which three knobs are showing depends on the type, so the hit test
+     * needs it - passing 0 made every page edit the delay's parameters. */
+    const id = api.fxHit(x, y, api.mixerGet(1));
     outcome = "fxHit " + id;
     if (id >= 0) startDrag(ev, "mixer", id, api.mixerGet(id));
     return;
@@ -579,12 +772,8 @@ function onDownInner(which, ev, page, x, y) {
     return;
   }
   if (page.startsWith("81_KEY")) {
-    const b = api.keyButton(x, y);
-    outcome = "keyButton " + b;
-    if (b === 0 || b === 1) {
-      setOctave(octave + (b ? 1 : -1));
-      return;
-    }
+    /* The OCT buttons and the synth selector are on the top bar, so they
+     * were handled above; what is left down here is the keyboard. */
     const note = api.keyHit(x, y, octave);
     outcome = "key note " + note;
     if (note >= 0) {
@@ -612,6 +801,9 @@ function syncControls() { repanel(); }
 function loadSong(name) {
   if (api.song(name) < 0) { say("error: " + api.error()); return; }
   startAudio();
+  /* Loading leaves the C side's transport running, because that is what the
+   * audio copy wants; this one has to be told what the page thinks. */
+  api.seqPlay(1);
   /* Scroll the roll to whatever the loaded pattern actually uses, or the
    * notes would be off the top or bottom of the window and it would look
    * empty. The ROM's own songs run from 34 to 80. */
@@ -639,6 +831,7 @@ async function openFile(e) {
   }
   if (api.song("opened") < 0) { report(f.name + ": " + api.error()); return; }
   startAudio();
+  api.seqPlay(1);
   api.seqFollow();
   playing = true;
   sendSong(true);
@@ -689,6 +882,26 @@ function boot() {
                                ["number", "number"]),
     clearHit: Module.cwrap("ds10_web_clear_hit", "number",
                            ["number", "number"]),
+    barHit: Module.cwrap("ds10_web_bar_hit", "number", ["number", "number"]),
+    barName: Module.cwrap("ds10_web_bar_name", "string", ["number"]),
+    scrollHit: Module.cwrap("ds10_web_scroll_hit", "number",
+                            ["number", "number"]),
+    seqKeyHit: Module.cwrap("ds10_web_seq_key_hit", "number",
+                            ["number", "number"]),
+    fxButtonHit: Module.cwrap("ds10_web_fx_button_hit", "number",
+                              ["number", "number"]),
+    msHit: Module.cwrap("ds10_web_ms_hit", "number", ["number", "number"]),
+    mute: Module.cwrap("ds10_web_mute", "number", ["number"]),
+    solo: Module.cwrap("ds10_web_solo", "number", ["number"]),
+    setMute: Module.cwrap("ds10_web_set_mute", null, ["number", "number"]),
+    setSolo: Module.cwrap("ds10_web_set_solo", null, ["number", "number"]),
+    audible: Module.cwrap("ds10_web_track_audible", "number", ["number"]),
+    setPad: Module.cwrap("ds10_web_set_pad", null, ["number", "number"]),
+    padSlot: Module.cwrap("ds10_web_pad_slot", "number", []),
+    setPadSlot: Module.cwrap("ds10_web_set_pad_slot", null, ["number"]),
+    padRate: Module.cwrap("ds10_web_pad_rate", "number", []),
+    setPadRate: Module.cwrap("ds10_web_set_pad_rate", null, ["number"]),
+    scrollTop: Module.cwrap("ds10_web_scroll_top", "number", ["number"]),
     pattern: Module.cwrap("ds10_web_pattern", "number", []),
     keyHit: Module.cwrap("ds10_web_key_hit", "number",
                          ["number", "number", "number"]),
@@ -800,8 +1013,20 @@ function boot() {
   if (api.init() < 0) { report("init failed: " + api.error()); return; }
   trace("boot: ui initialised");
 
-  fill($("pick-bottom"), BOTTOM_PAGES, "60_SYN_SEQ_PIANO");
-  fill($("pick-top"), TOP_PAGES, "90_MAP");
+  for (let i = 0; ; i++) {
+    const n = api.barName(i);
+    if (!n) break;
+    BAR_NAMES.push(n);
+    BAR[n] = i;
+  }
+  trace("boot: " + BAR_NAMES.length + " bar buttons");
+
+  /* Both pickers list everything: the swap button exchanges the two, and a
+   * page the other picker does not carry would not take. */
+  const ALL_PAGES = BOTTOM_PAGES.concat(
+      TOP_PAGES.filter((p) => BOTTOM_PAGES.indexOf(p) < 0));
+  fill($("pick-bottom"), ALL_PAGES, "60_SYN_SEQ_PIANO");
+  fill($("pick-top"), ALL_PAGES, "90_MAP");
 
   for (const id of ["pick-bottom", "pick-top"])
     $(id).addEventListener("change", show);
@@ -823,6 +1048,7 @@ function boot() {
         else if (e.type === "pointercancel")
           trace("pointercancel during " + (drag ? "a drag" : "no drag"));
         noteOff();
+        if (kaoss && typeof padRelease === "function") padRelease();
         drag = null;
         paint = null;
         kaoss = false;
@@ -853,7 +1079,7 @@ function boot() {
    * rather than needing a song chosen first. No AudioContext yet: the
    * browser wants a gesture before one will run. */
   if (api.song("ds10init") < 0) say("error: " + api.error());
-  else { api.seqFollow(); syncControls(); }
+  else { api.seqPlay(0); api.seqFollow(); syncControls(); }
   show();
   loop();
   /* Every capability as plain HTML, so a control that does nothing on the DS

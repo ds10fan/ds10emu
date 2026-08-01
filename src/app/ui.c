@@ -1065,6 +1065,8 @@ static const int FX_KNOB_X[4] = {64, 118, 172, 226};
 #define SEQ_Y0 35
 #define SEQ_COLS 16
 #define SEQ_ROWS 12
+#define SEQ_RANGE 24    /* the scrollable height, in rows: two octaves */
+#define SEQ_TOP_DEFAULT 69      /* A4 on the top row, as the capture had it */
 /* The one sprite the captured frame puts above the grid, at the first
  * column's left edge. */
 #define SEQ_CURSOR_CELL 4
@@ -1390,6 +1392,487 @@ int ds10_ui_clear_hit(int x, int y)
     return x >= 130 && x < 159 && y >= 2 && y < 18;
 }
 
+/* The top bar.
+ *
+ * The buttons are drawn by the page's own tile image, so their rectangles are
+ * in the rendered page exactly - tools/probe_frames.py walks a page and
+ * reports every closed frame it finds, which is where the x below come from.
+ * They are all at y 3 and 11 high; the hit box is the band y 2..17, because
+ * the real thing answered a tap at both y 8 and y 15 (tools/probe_buttons.py)
+ * and the drawn frame is only part of what it accepts.
+ *
+ * Two of these were unknown until they were tapped on the hardware:
+ *
+ *   the triangle at x 193 is the transport. tools/probe_play.py taps it and
+ *   watches for the screen to *move* rather than to differ - a running
+ *   sequencer moves its cursor, and a single frame taken later can look
+ *   identical to the baseline. It moves after the first tap and stops after
+ *   the second.
+ *
+ *   the "S" changes nothing on screen at all, and tools/probe_ram.py - which
+ *   diffs main RAM across a tap, masking whatever churns on its own - finds
+ *   it toggling bit 1 of one global byte at 0x0208cf70 and nothing else, back
+ *   and forth over four taps. What that byte means is not proven. It is taken
+ *   here as SOLO for the track the page is editing, because it is on exactly
+ *   those pages that edit one track and absent from every page that carries
+ *   its own mute and solo strip: 51_ALL_DRUMS has one per drum row, 30_MIXER
+ *   and 32_PATTERN have one per channel, and none of the three has an S.
+ */
+#define BAR_Y0 2
+#define BAR_Y1 18
+#define BAR_W 26
+
+static const struct { const char *page; int x, w, id; } BAR_BUTTON[] = {
+    /* the sequencer, both variants of it */
+    {"60_SYN_SEQ_",  42, 13, DS10_BAR_MODE},
+    {"60_SYN_SEQ_", 131, 26, DS10_BAR_CLR},
+    {"60_SYN_SEQ_", 162, 26, DS10_BAR_SOLO},
+    {"62_DRUM_SEQ",  42, 13, DS10_BAR_MODE},
+    {"62_DRUM_SEQ", 131, 26, DS10_BAR_CLR},
+    {"62_DRUM_SEQ", 162, 26, DS10_BAR_SOLO},
+    /* the pad: three assignments, the key and scale, the rate, solo, record */
+    {"71_KAOSS",      4, 16, DS10_BAR_SLOT1},
+    {"71_KAOSS",     25, 16, DS10_BAR_SLOT2},
+    {"71_KAOSS",     46, 16, DS10_BAR_SLOT3},
+    {"71_KAOSS",     67, 26, DS10_BAR_SET},
+    {"71_KAOSS",     98, 26, DS10_BAR_RATE},
+    {"71_KAOSS",    131, 26, DS10_BAR_SOLO},
+    {"71_KAOSS",    162, 26, DS10_BAR_REC},
+    /* the keyboard */
+    {"81_KEY",        4, 27, DS10_BAR_OCT_DOWN},
+    {"81_KEY",       35, 27, DS10_BAR_OCT_UP},
+    {"81_KEY",       66, 60, DS10_BAR_SYNTH},
+    {"81_KEY",      131, 26, DS10_BAR_SOLO},
+    {"81_KEY",      162, 26, DS10_BAR_REC},
+    /* the two synth editors */
+    {"61_SYN_EDIT", 162, 26, DS10_BAR_SOLO},
+    {"70_PATCH",    162, 26, DS10_BAR_SOLO},
+    /* the drums */
+    {"51_ALL_DRUMS",    162, 26, DS10_BAR_CLR},
+    {"33_DRUM_SELECTER",  4, 27, DS10_BAR_EDIT},
+    {"33_DRUM_SELECTER", 162, 26, DS10_BAR_REC},
+    /* the pattern picker, and the song */
+    {"32_PATTERN",    4, 27, DS10_BAR_COPY},
+    {"32_PATTERN",   34, 32, DS10_BAR_LOCK},
+    {"31_SONG",     162, 26, DS10_BAR_CLR},
+};
+
+/* Which pages have the transport. The four drum edit pages have only the
+ * screen swap. */
+static const char *const BAR_NO_PLAY[] = {
+    "53_DRUMEDIT", "54_DRUM_FX", "55_DRUMEDITMAP", "63_DRUM_EDIT_PATCH",
+};
+
+#define BAR_PLAY_X 193
+#define BAR_SWAP_X 224
+
+static int has_play(const char *page)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof BAR_NO_PLAY / sizeof BAR_NO_PLAY[0]; i++)
+        if (strcmp(page, BAR_NO_PLAY[i]) == 0) return 0;
+    return 1;
+}
+
+int ds10_ui_bar_hit(const char *page, int x, int y)
+{
+    size_t i;
+
+    if (!page || y < BAR_Y0 || y >= BAR_Y1) return DS10_BAR_NONE;
+    /* The swap is on every page including the map, which is how a screen that
+     * has been brought down gets sent back up. */
+    if (x >= BAR_SWAP_X) return DS10_BAR_SWAP;
+    if (strcmp(page, "90_MAP") == 0) return DS10_BAR_NONE;
+    if (has_play(page) && x >= BAR_PLAY_X && x < BAR_PLAY_X + BAR_W)
+        return DS10_BAR_PLAY;
+    for (i = 0; i < sizeof BAR_BUTTON / sizeof BAR_BUTTON[0]; i++) {
+        const char *p = BAR_BUTTON[i].page;
+
+        if (strncmp(page, p, strlen(p)) != 0) continue;
+        if (x >= BAR_BUTTON[i].x && x < BAR_BUTTON[i].x + BAR_BUTTON[i].w)
+            return BAR_BUTTON[i].id;
+    }
+    return DS10_BAR_NONE;
+}
+
+int ds10_ui_bar_box(const char *page, int id, int *x, int *y, int *h)
+{
+    size_t i;
+
+    if (!page) return -1;
+    *y = 3;
+    *h = 11;
+    if (id == DS10_BAR_SWAP) { *x = BAR_SWAP_X; return 0; }
+    if (id == DS10_BAR_PLAY && has_play(page)) { *x = BAR_PLAY_X; return 0; }
+    for (i = 0; i < sizeof BAR_BUTTON / sizeof BAR_BUTTON[0]; i++) {
+        const char *p = BAR_BUTTON[i].page;
+
+        if (BAR_BUTTON[i].id != id) continue;
+        if (strncmp(page, p, strlen(p)) != 0) continue;
+        *x = BAR_BUTTON[i].x;
+        return 0;
+    }
+    return -1;
+}
+
+/* A button's indicator.
+ *
+ * Every button on the bar and on the FX page carries a small dot at its left,
+ * and the pages that come up with something already chosen - LOCK on
+ * 32_PATTERN, DELAY on 52_FX - draw that dot and the frame around it in red.
+ * So lighting the dot is what the original does to say "this one is on", and
+ * a four-pixel block at the button's origin plus (3,3) lands on it.
+ *
+ * It goes on the 3D plane rather than into OAM because the plane is a plain
+ * framebuffer under the sprites: nothing has to be allocated a slot, and the
+ * page's own sprites still draw over it.
+ */
+#define LED_DX 4
+#define LED_SIZE 4
+/* The plane holds the renderer's own 18-bit colour, which is red in the low
+ * byte - r | g << 8 | b << 16, see ds10_col15to18 - with the alpha above it.
+ * Writing 0xRRGGBB here gets you the blue you did not ask for. */
+#define LED_COLOR 0x1F00003Fu
+
+void ds10_ui_led(ds10_ui *u, int bx, int by, int bh)
+{
+    int x, y, dy = (bh - LED_SIZE) / 2;
+
+    for (y = 0; y < LED_SIZE; y++)
+        for (x = 0; x < LED_SIZE; x++) {
+            int px = bx + LED_DX + x, py = by + dy + y;
+
+            if (px < 0 || px >= DS10_SCR_W || py < 0 || py >= DS10_SCR_H)
+                continue;
+            u->gpu.plane3d[py * DS10_SCR_W + px] = LED_COLOR;
+        }
+}
+
+/* Putting one out is not the reverse of lighting it: a lit dot on these pages
+ * is a red glow several pixels across, not the four the core covers, so this
+ * paints the whole of that corner in the interior grey. The bevelled dot the
+ * page draws there is lost, and a flat dark patch reads as off, which is what
+ * it is. */
+void ds10_ui_led_off(ds10_ui *u, int bx, int by, int bh)
+{
+    int x, y;
+
+    for (y = 2; y < bh - 2; y++)
+        for (x = 2; x < LED_DX + LED_SIZE + 1; x++) {
+            int px = bx + x, py = by + y;
+
+            if (px < 0 || px >= DS10_SCR_W || py < 0 || py >= DS10_SCR_H)
+                continue;
+            u->gpu.plane3d[py * DS10_SCR_W + px] = 0x1F181818u;
+        }
+}
+
+/* A frame round a button, for the pages that show which one of a group is
+ * chosen. The page's own image already has one of them lit, so a dot alone
+ * would be two marks saying different things. */
+void ds10_ui_outline(ds10_ui *u, int bx, int by, int bw, int bh)
+{
+    int x, y;
+
+    for (x = 0; x < bw; x++)
+        for (y = 0; y < bh; y += bh - 1) {
+            int px = bx + x, py = by + y;
+
+            if (px >= 0 && px < DS10_SCR_W && py >= 0 && py < DS10_SCR_H)
+                u->gpu.plane3d[py * DS10_SCR_W + px] = LED_COLOR;
+        }
+    for (y = 0; y < bh; y++)
+        for (x = 0; x < bw; x += bw - 1) {
+            int px = bx + x, py = by + y;
+
+            if (px >= 0 && px < DS10_SCR_W && py >= 0 && py < DS10_SCR_H)
+                u->gpu.plane3d[py * DS10_SCR_W + px] = LED_COLOR;
+        }
+}
+
+void ds10_ui_plane_clear(ds10_ui *u)
+{
+    memset(u->gpu.plane3d, 0, sizeof u->gpu.plane3d);
+}
+
+/* The sequencer's scrollbar.
+ *
+ * The constructor's 0x138 is the scrollable height - twenty-four rows against
+ * the twelve on screen - so the handle has thirteen positions. Everything else
+ * here is read off the rendered page, pixel by pixel, because the page draws
+ * both the groove and the handle itself: the groove is the four columns at
+ * x 8..12 running from y 34 to 186, and the handle is the eleven rows at
+ * y 97..107, x 5..15, with a two-pixel shadow below and to the right.
+ *
+ * Which means the handle cannot just be drawn where it belongs - the one the
+ * page drew has to be painted out first, or there are two of them. So this
+ * repaints the whole groove and then puts the handle back at the position it
+ * is actually at. The greys are the page's own, converted from what it
+ * renders to the six bits a colour component has.
+ */
+#define SCROLL_X0 3
+#define SCROLL_X1 20
+#define SCROLL_Y0 SEQ_Y0
+#define SCROLL_H 11
+#define SCROLL_BOTTOM 186
+#define SCROLL_TRAVEL (SCROLL_BOTTOM - SCROLL_Y0 - SCROLL_H)
+#define SCROLL_POSITIONS (SEQ_RANGE - SEQ_ROWS)
+
+/* Where the window sits in the range, and back.
+ *
+ * The page draws the handle at y 97, which is five twelfths of the way down -
+ * so the top note that frame shows, A4, is scroll position five, and the
+ * twenty-four-row range runs from D5 down to D#3. Only that one handle
+ * position is evidence; the two ends are what it implies.
+ */
+#define SCROLL_DEFAULT 5
+
+int ds10_ui_seq_scroll_top(int pos)
+{
+    if (pos < 0) pos = 0;
+    if (pos > SCROLL_POSITIONS) pos = SCROLL_POSITIONS;
+    return SEQ_TOP_DEFAULT + SCROLL_DEFAULT - pos;
+}
+
+int ds10_ui_seq_scroll_pos(int top)
+{
+    int pos = SEQ_TOP_DEFAULT + SCROLL_DEFAULT - top;
+
+    if (pos < 0) pos = 0;
+    if (pos > SCROLL_POSITIONS) pos = SCROLL_POSITIONS;
+    return pos;
+}
+
+int ds10_ui_seq_scroll_hit(int x, int y)
+{
+    int pos;
+
+    if (x < SCROLL_X0 || x >= SCROLL_X1) return -1;
+    if (y < SCROLL_Y0 || y > SCROLL_BOTTOM) return -1;
+    /* The finger is the middle of the handle. */
+    pos = (y - SCROLL_Y0 - SCROLL_H / 2) * SCROLL_POSITIONS / SCROLL_TRAVEL;
+    if (pos < 0) pos = 0;
+    if (pos > SCROLL_POSITIONS) pos = SCROLL_POSITIONS;
+    return pos;
+}
+
+/* The handle, as the page draws it: eleven rows over x 5..15, then its
+ * shadow. Six-bit greys - 22, 36, 50 and 58 - and 0 for the shadow. */
+#define HANDLE_W 12
+#define HANDLE_X 5
+static const uint32_t SCROLL_GREY[5] = {
+    0x1F000000u, 0x1F161616u, 0x1F242424u, 0x1F323232u, 0x1F3A3A3Au,
+};
+static const char HANDLE_PIX[SCROLL_H][HANDLE_W + 1] = {
+    "bdddddddddb0",
+    "cccccccccccc",
+    "ceeeeeeeee c",
+    "ceeeeeeeee c",
+    "cddddddddd c",
+    "bbbbbbbbbbb0",
+    "cddddddddd c",
+    "ceeeeeeeee c",
+    "ceeeeeeeee c",
+    "cccccccccc c",
+    "bdddddddddb0",
+};
+
+void ds10_ui_seq_scroll_draw(ds10_ui *u, int pos)
+{
+    int x, y, y0;
+
+    if (pos < 0) pos = 0;
+    if (pos > SCROLL_POSITIONS) pos = SCROLL_POSITIONS;
+    /* The empty groove, over the whole run of it, which is what paints out
+     * the handle the page drew. */
+    for (y = SCROLL_Y0 - 1; y <= SCROLL_BOTTOM; y++)
+        for (x = SCROLL_X0; x < SCROLL_X1 - 2; x++) {
+            uint32_t c = 0x1F060606u;
+
+            if (x == 8) c = 0x1F040404u;
+            else if (x >= 9 && x <= 11) c = 0x1F000000u;
+            else if (x == 12) c = 0x1F0E0E0Eu;
+            u->gpu.plane3d[y * DS10_SCR_W + x] = c;
+        }
+    y0 = SCROLL_Y0 + pos * SCROLL_TRAVEL / SCROLL_POSITIONS;
+    for (y = 0; y < SCROLL_H; y++)
+        for (x = 0; x < HANDLE_W; x++) {
+            int px = HANDLE_X + x, py = y0 + y;
+            char c = HANDLE_PIX[y][x];
+
+            if (c == ' ') continue;
+            if (py < 0 || py >= DS10_SCR_H) continue;
+            u->gpu.plane3d[py * DS10_SCR_W + px] =
+                c == '0' ? 0x1F000000u : SCROLL_GREY[c - 'a'];
+        }
+}
+
+/* The strip of piano keys between the scrollbar and the grid, one per row. */
+#define SEQ_KEY_X0 22
+#define SEQ_KEY_X1 39
+
+int ds10_ui_seq_key_hit(int x, int y)
+{
+    int row;
+
+    if (x < SEQ_KEY_X0 || x >= SEQ_KEY_X1) return -1;
+    if (y < SEQ_Y0) return -1;
+    row = (y - SEQ_Y0) / SEQ_CELL;
+    return row < SEQ_ROWS ? row : -1;
+}
+
+/* 52_FX's buttons, out of the ROM's own tables rather than measured: nine
+ * entries of 36 bytes at 0x020869ac, each x, y, w, h, the label's position,
+ * two index bytes, the caption and a group id. 54_DRUM_FX has the same table
+ * for its three type buttons at 0x02086808, shifted right because that page
+ * has no routing column.
+ *
+ * The index within a group is the value the mixer knob takes - route 0..5 in
+ * knob 0, type 0..2 in knob 1 - which is what the audio side found on its own
+ * from the songs.
+ */
+static const struct { int x, y, w, h, group, index; } FX_BUTTON[] = {
+    { 11,  47, 66, 14, 0, 0},   /* DELAY */
+    { 51,  78, 66, 14, 0, 1},   /* FLANGER */
+    { 11, 109, 66, 14, 0, 2},   /* CHORUS */
+    {139,  38, 66, 14, 1, 0},   /* SYN 1 */
+    {179,  54, 66, 14, 1, 1},   /* SYN 2 */
+    {139,  70, 66, 14, 1, 2},   /* SYN 1 + 2 */
+    {179,  86, 66, 14, 1, 3},   /* DRUMS */
+    {139, 102, 66, 14, 1, 4},   /* ALL */
+    {179, 118, 66, 14, 1, 5},   /* OFF */
+};
+/* 54_DRUM_FX's three, from 0x02086808. Same rows, 64 pixels further right. */
+#define FX_DRUM_DX 64
+#define FX_DRUM_TYPES 3
+
+static int fx_drum_page(const char *page)
+{
+    return page && strcmp(page, "54_DRUM_FX") == 0;
+}
+
+int ds10_ui_fx_button_hit(const char *page, int x, int y, int *group)
+{
+    size_t i, n = sizeof FX_BUTTON / sizeof FX_BUTTON[0];
+    int dx = 0;
+
+    if (fx_drum_page(page)) { n = FX_DRUM_TYPES; dx = FX_DRUM_DX; }
+    for (i = 0; i < n; i++) {
+        int bx = FX_BUTTON[i].x + dx;
+
+        if (x < bx || x >= bx + FX_BUTTON[i].w) continue;
+        if (y < FX_BUTTON[i].y || y >= FX_BUTTON[i].y + FX_BUTTON[i].h)
+            continue;
+        *group = FX_BUTTON[i].group;
+        return FX_BUTTON[i].index;
+    }
+    return -1;
+}
+
+int ds10_ui_fx_button_box(const char *page, int group, int index,
+                          int *x, int *y, int *h)
+{
+    size_t i, n = sizeof FX_BUTTON / sizeof FX_BUTTON[0];
+    int dx = 0;
+
+    if (fx_drum_page(page)) { n = FX_DRUM_TYPES; dx = FX_DRUM_DX; }
+    for (i = 0; i < n; i++)
+        if (FX_BUTTON[i].group == group && FX_BUTTON[i].index == index) {
+            *x = FX_BUTTON[i].x + dx;
+            *y = FX_BUTTON[i].y;
+            *h = FX_BUTTON[i].h;
+            return FX_BUTTON[i].w;
+        }
+    return 0;
+}
+
+/* The mute and solo strips.
+ *
+ * Three pages carry one. The mixer's and the pattern picker's are six pairs at
+ * the channel pitch the faders already use, 43 pixels; 51_ALL_DRUMS puts its
+ * four beside the grid rows, at the grid's own 13-pixel pitch. All three are
+ * framed by the page image, so tools/probe_frames.py gives the rectangles.
+ *
+ * Mute and solo are not in the song file. The original keeps them in the
+ * sequencer's per-track block - `+0x22` of the 36-byte record at seq + 0x64 +
+ * track*0x24, 0 to play and 1 to mute - so they are a property of the running
+ * transport, not of the document, and nothing about them is saved.
+ */
+static const struct {
+    const char *page;
+    int x, y, w, h, step, rows, solo_dx, solo_dy;
+} MS_STRIP[] = {
+    {"30_MIXER",       3,  62, 34, 9, 43, 6, 0, 11},
+    {"32_PATTERN",     3, 160, 34, 9, 43, 6, 0, 11},
+    {"51_ALL_DRUMS",   3,  34, 17, 11, 0, 4, 19, 0},
+};
+
+int ds10_ui_ms_hit(const char *page, int x, int y, int *track)
+{
+    size_t i;
+    int t;
+
+    if (!page) return -1;
+    for (i = 0; i < sizeof MS_STRIP / sizeof MS_STRIP[0]; i++) {
+        int solo;
+
+        if (strcmp(page, MS_STRIP[i].page) != 0) continue;
+        for (t = 0; t < MS_STRIP[i].rows; t++)
+            for (solo = 0; solo < 2; solo++) {
+                /* 51_ALL_DRUMS stacks the rows down the grid and puts solo
+                 * beside mute; the other two put solo under mute. */
+                int bx = MS_STRIP[i].x + t * MS_STRIP[i].step
+                       + solo * MS_STRIP[i].solo_dx;
+                int by = MS_STRIP[i].y + solo * MS_STRIP[i].solo_dy
+                       + (MS_STRIP[i].step ? 0 : t * SEQ_CELL);
+
+                if (x < bx || x >= bx + MS_STRIP[i].w) continue;
+                if (y < by || y >= by + MS_STRIP[i].h) continue;
+                *track = t;
+                return solo;
+            }
+    }
+    return -1;
+}
+
+int ds10_ui_ms_box(const char *page, int track, int solo, int *x, int *y,
+                   int *h)
+{
+    size_t i;
+
+    if (!page) return -1;
+    for (i = 0; i < sizeof MS_STRIP / sizeof MS_STRIP[0]; i++) {
+        if (strcmp(page, MS_STRIP[i].page) != 0) continue;
+        if (track < 0 || track >= MS_STRIP[i].rows) return -1;
+        *x = MS_STRIP[i].x + track * MS_STRIP[i].step
+           + solo * MS_STRIP[i].solo_dx;
+        *y = MS_STRIP[i].y + solo * MS_STRIP[i].solo_dy
+           + (MS_STRIP[i].step ? 0 : track * SEQ_CELL);
+        *h = MS_STRIP[i].h;
+        return 0;
+    }
+    return -1;
+}
+
+/* The pad's cursor. The original draws crosshairs across the whole pad; this
+ * draws the same, on the 3D plane, so a touch is visible on the screen it
+ * happened on rather than only in whatever the two knobs do. */
+#define KAOSS_COLOR 0x1F2F3F1Fu   /* r 0x1F, g 0x3F, b 0x2F - see LED_COLOR */
+
+void ds10_ui_kaoss_mark(ds10_ui *u, int vx, int vy)
+{
+    int x, y, cx, cy;
+
+    if (vx < 0 || vy < 0) return;
+    cx = KAOSS_X + vx * (KAOSS_W - 1) / 127;
+    cy = KAOSS_Y + (127 - vy) * (KAOSS_H - 1) / 127;
+    for (x = KAOSS_X; x < KAOSS_X + KAOSS_W; x++)
+        u->gpu.plane3d[cy * DS10_SCR_W + x] = KAOSS_COLOR;
+    for (y = KAOSS_Y; y < KAOSS_Y + KAOSS_H; y++)
+        u->gpu.plane3d[y * DS10_SCR_W + cx] = KAOSS_COLOR;
+}
+
 /* The sequencer's sub-mode button.
  *
  * This one is not in any table. The screens that place widgets through the
@@ -1459,8 +1942,6 @@ int ds10_ui_seq_hit(int x, int y, int *step, int *row)
  */
 #define SEQ_MARK_CELL 7
 #define SEQ_MARK_BASE 0x200
-#define SEQ_RANGE 24            /* the scrollable height, in rows */
-#define SEQ_TOP_DEFAULT 69      /* A4 on the top row, as the capture had it */
 
 int ds10_ui_seq_top_default(void) { return SEQ_TOP_DEFAULT; }
 
