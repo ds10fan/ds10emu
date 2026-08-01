@@ -1781,6 +1781,21 @@ A factory patch's 31 knobs sit at offset `0x20` of its 63-byte
 
 ### The map's boxes
 
+The table is `{i16 x, y, w, h}`, then eight halfwords, then the caption
+inline, at a stride of **0x44**. The third halfword after the rectangle is the
+index into the screen table; the rest are the neighbours the D-pad moves to.
+`0x02086f08` is the same table with the DRUMS submenu's four entries in front
+of it.
+
+The first ten screen-table entries are five pairs - sequencer, edit, patch,
+KAOSS, keyboard - and a pair is the synth 1 and synth 2 variants of one page.
+So the low bit of the index is which synth the box selects, which is what
+makes SYN2 EDIT open synth 2's patch.
+
+MENU and SONG are drawn on the map but are in neither table, and `31_SONG` is
+not in the twenty-entry screen table at all, so nothing on the map opens it.
+
+
 `0x02062914` builds 90_MAP out of two tables of 0x44-byte entries. Each carries
 a rectangle, an inline caption and an index into the twenty-entry screen table
 at `0x02085f80`, which is what names the page the box opens:
@@ -2077,6 +2092,35 @@ shared widget helper, so there is no table to read them out of, and their
 rectangles live inside the update's own code. The button responds between
 x 41 and 58 at y 8, which is where tapping does and does not reach it rather
 than a rectangle read out of the ROM.
+
+The four value pages draw the same marker on the same grid as the piano roll,
+one per step, at the row for that step's value:
+
+| page | rows | mapping |
+|---|---|---|
+| GATE | 5, LEGATO to 25% | `row = 5 - gate` |
+| VOLUME | 12, MAX to MIN | `(11 - row) * 127 / 11` |
+| PAN | 5, L2 to R2 | `row * 128 / 4`, clamped |
+
+Each is pinned by the data rather than measured. Every velocity on every step
+of every song in the ROM is one of exactly twelve values - 0, 11, 23, 34, 46,
+57, 69, 80, 92, 103, 115, 127 - which is that integer division over twelve
+rows and nothing else. The gate byte runs 1 to 6 against five rows, and the
+sixth is retrigger, which `song.h` already had as distinct from the four
+lengths and the tie.
+
+The check on all three is that the blank template's defaults land on a row
+rather than between two: gate 3 is the 75% row, velocity 127 is MAX, pan 64
+is C. A mapping that put the untouched value between rows would be the wrong
+one.
+
+A rest draws no value marker on any of them. All three captured pages carry
+nine markers, and those are exactly the nine steps of that pattern which
+sound, though the bytes exist on every step.
+
+Two other buttons are identified but not read: CLR, at about x 132 y 8, raises
+a modal CLEAR ALL DATA prompt with YES and NO - modal enough that it swallows
+the map key, which is what made the first three probe runs useless.
 
 These markers are **state**, so `tools/pages.py` takes them out of the display
 list rather than freezing the captured pattern into the page, and `make

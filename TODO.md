@@ -183,13 +183,14 @@ Remaining, roughly in order:
   `31_SONG` are drawn but not interactive; the arrangement is edited from HTML
   too.
 
-  `tools/probe_buttons.py` finds them by tapping rather than by reading, and
-  has identified one: the button between x 41 and 58 at y 8 on the sequencer
-  cycles its sub-mode, PIANO to GATE to VOL to PAN and through two KAOSS pages
-  which are the pattern's two automation lanes. Wiring it needs those five
-  variants captured - the sweep can reach them now that the button is known -
-  and a way to draw a per-step value rather than a marker. The editor model
-  already has the operations: `ds10_editor_gate`, `_vel` and `_pan`.
+  `tools/probe_buttons.py` finds them by tapping rather than by reading. Two
+  are identified so far, and the first is wired:
+
+  - the sub-mode button, between x 41 and 58 at y 8, which cycles NOTE, GATE,
+    VOLUME, PAN and the two automation lanes. All five variants are captured
+    and drawn from the pattern, and editable through the same grid.
+  - CLR, at about x 132 y 8, which raises a modal CLEAR ALL DATA prompt with
+    YES and NO. Not wired: the prompt would have to be drawn too.
 
   The probe cannot yet tell a control that clears the pattern from one that
   redraws it, because a tap on the grid toggles the cell, so re-entering the
