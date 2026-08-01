@@ -1271,6 +1271,46 @@ int ds10_ui_drumseq_hit(int x, int y, int *step, int *row)
     return 0;
 }
 
+/* The sequencer's sub-mode button.
+ *
+ * This one is not in any table. The screens that place widgets through the
+ * shared helper have their rectangles in a table the constructor walks; this
+ * page does not call it, and its update has no coordinate compares either, so
+ * the button was found by tapping the real thing - tools/probe_buttons.py -
+ * and its edges by tools/probe_edge.py, which boots once per candidate point
+ * so each tap is independent.
+ *
+ * It steps a six-position cycle. The two positions that show the KAOSS page
+ * are the pattern's two automation lanes, which is why the song format
+ * carries exactly two.
+ */
+#define SEQ_MODE_X 42
+#define SEQ_MODE_Y 2
+#define SEQ_MODE_W 17
+#define SEQ_MODE_H 14
+
+static const char *const SEQ_MODE_PAGE[] = {
+    "60_SYN_SEQ_PIANO", "60_SYN_SEQ_GATE", "60_SYN_SEQ_VOL",
+    "60_SYN_SEQ_PAN", "60_SYN_SEQ_KAOSS", "60_SYN_SEQ_KAOSS",
+};
+
+int ds10_ui_seq_modes(void)
+{
+    return (int)(sizeof SEQ_MODE_PAGE / sizeof SEQ_MODE_PAGE[0]);
+}
+
+const char *ds10_ui_seq_mode_page(int mode)
+{
+    if (mode < 0 || mode >= ds10_ui_seq_modes()) mode = 0;
+    return SEQ_MODE_PAGE[mode];
+}
+
+int ds10_ui_seq_mode_hit(int x, int y)
+{
+    return x >= SEQ_MODE_X && x < SEQ_MODE_X + SEQ_MODE_W &&
+           y >= SEQ_MODE_Y && y < SEQ_MODE_Y + SEQ_MODE_H;
+}
+
 int ds10_ui_seq_hit(int x, int y, int *step, int *row)
 {
     int c = (x - SEQ_X0) / SEQ_CELL, r = (y - SEQ_Y0) / SEQ_CELL;
@@ -1325,6 +1365,88 @@ void ds10_ui_seq_grid(ds10_ui *u, const char *page, const int *note,
     /* The cursor above the grid. The captured frame has one sprite there, at
      * the first column, and nothing else sits in that band - but the frame's
      * transport was stopped, so that it follows the step is inference. */
+    if (cursor >= 0 && cursor < SEQ_COLS)
+        put_cell(u, 0, &slot, "CHARACTER_c", SEQ_CURSOR_CELL,
+                 SEQ_X0 + 1 + cursor * SEQ_CELL, SEQ_CURSOR_Y, 1,
+                 SEQ_MARK_BASE);
+    park_from(u, 0, slot);
+}
+
+/* The value sub-modes.
+ *
+ * They draw the same cell 7 on the same grid as the piano roll, one marker
+ * per step, at the row for that step's value. What differs is the row count
+ * and the mapping, and each one is pinned by the data rather than guessed:
+ *
+ * GATE has five rows - LEGATO, 100%, 75%, 50%, 25% - so row = 5 - gate. The
+ * gate byte runs 1 to 6, and the sixth is retrigger, which song.h already had
+ * as distinct from the four lengths and the tie; it has no row of its own and
+ * draws on LEGATO.
+ *
+ * VOLUME has twelve, MAX at the top. Every velocity on every step of every
+ * song in the ROM is one of exactly twelve values, and those values are
+ * (11 - row) * 127 / 11 in integer division - 0, 11, 23, 34, 46, 57, 69, 80,
+ * 92, 103, 115, 127. Twelve rows and that rounding reproduce the set exactly.
+ *
+ * PAN has five, L2 L1 C R1 R2, at row * 128 / 4 clamped: 0, 32, 64, 96, 127.
+ *
+ * The check on all three is that the blank template's defaults land on a row
+ * rather than between two: gate 3 is the 75% row, velocity 127 is MAX, and
+ * pan 64 is C. A mapping that put the untouched value between rows would be
+ * the wrong one.
+ */
+static const struct { int rows; } SEQ_MODE[] = {
+    {SEQ_ROWS}, {5}, {12}, {5}, {12}, {12},
+};
+
+int ds10_ui_seq_mode_rows(int mode)
+{
+    if (mode < 0 || mode >= ds10_ui_seq_modes()) mode = 0;
+    return SEQ_MODE[mode].rows;
+}
+
+int ds10_ui_seq_row_value(int mode, int row)
+{
+    int n = ds10_ui_seq_mode_rows(mode);
+
+    if (row < 0 || row >= n) return -1;
+    switch (mode) {
+    case 1: return 5 - row;                        /* gate */
+    case 3: return row * 128 / 4 > 127 ? 127 : row * 128 / 4;   /* pan */
+    default: return (n - 1 - row) * 127 / (n - 1); /* velocity, lanes */
+    }
+}
+
+int ds10_ui_seq_value_row(int mode, int value)
+{
+    int n = ds10_ui_seq_mode_rows(mode), r, best = -1, bestd = 1 << 30;
+
+    if (value < 0) return -1;
+    /* The nearest row, so a value the editor did not write - a song made on
+     * hardware, or the retrigger gate - still shows somewhere sensible. */
+    for (r = 0; r < n; r++) {
+        int d = ds10_ui_seq_row_value(mode, r) - value;
+
+        if (d < 0) d = -d;
+        if (d < bestd) { bestd = d; best = r; }
+    }
+    return best;
+}
+
+void ds10_ui_seq_values(ds10_ui *u, const int *value, int nsteps, int mode,
+                        int cursor)
+{
+    int slot = u->free_slot[0], i;
+
+    if (nsteps > SEQ_COLS) nsteps = SEQ_COLS;
+    for (i = 0; i < nsteps; i++) {
+        int row = ds10_ui_seq_value_row(mode, value[i]);
+
+        if (row < 0) continue;
+        put_cell(u, 0, &slot, "60_SYN_SEQ_PIANO_c", SEQ_MARK_CELL,
+                 SEQ_X0 + i * SEQ_CELL, SEQ_Y0 + row * SEQ_CELL, 2,
+                 SEQ_MARK_BASE);
+    }
     if (cursor >= 0 && cursor < SEQ_COLS)
         put_cell(u, 0, &slot, "CHARACTER_c", SEQ_CURSOR_CELL,
                  SEQ_X0 + 1 + cursor * SEQ_CELL, SEQ_CURSOR_Y, 1,

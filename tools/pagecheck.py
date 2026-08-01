@@ -76,9 +76,14 @@ def diff(mine, ref):
 # Six markers at steps 0,2,3,4,6,7 on rows 9,9,5,2,0,0, and the top row is A4.
 # 51_ALL_DRUMS draws its markers on the 3D plane rather than with sprites,
 # so its pairs are row:step.
+# The value pages' pairs are step:row. All three show the same nine steps -
+# the ones that sound - which is what says a rest draws no value marker.
 SEQ_STATE = {
     "60_SYN_SEQ_PIANO": "0/0:60,2:60,3:64,4:67,6:69,7:69",
     "51_ALL_DRUMS": "0/2:0,2:4,2:8,2:12,3:0,3:6",
+    "60_SYN_SEQ_GATE": "0/0:2,2:0,3:0,4:0,6:0,7:0,8:0,10:0,12:0",
+    "60_SYN_SEQ_VOL": "0/0:0,2:0,3:0,4:0,6:0,7:0,8:0,10:0,12:0",
+    "60_SYN_SEQ_PAN": "0/0:2,2:2,3:2,4:2,6:2,7:2,8:2,10:2,12:2",
 }
 
 

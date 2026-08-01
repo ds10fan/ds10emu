@@ -796,6 +796,80 @@ int ds10_web_row_note(int row) { return ds10_ui_seq_row_note(seq_top, row); }
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_cursor(void) { return seq_playing ? seq.step : -1; }
 
+/* Which of the sequencer's six sub-modes is showing. The button that steps
+ * them is the page's own, at ds10_ui_seq_mode_hit. */
+static int seq_mode;
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_seq_mode(void) { return seq_mode; }
+
+EMSCRIPTEN_KEEPALIVE
+const char *ds10_web_seq_mode_page(void)
+{
+    return ds10_ui_seq_mode_page(seq_mode);
+}
+
+EMSCRIPTEN_KEEPALIVE
+const char *ds10_web_seq_mode_next(void)
+{
+    seq_mode = (seq_mode + 1) % ds10_ui_seq_modes();
+    return ds10_ui_seq_mode_page(seq_mode);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_seq_mode_hit(int x, int y)
+{
+    return ds10_ui_seq_mode_hit(x, y);
+}
+
+/* The value the current sub-mode edits, for a step, or -1 where there is
+ * nothing to show.
+ *
+ * A rest has no value marker on any of these pages: the captured frames put
+ * nine markers on GATE, VOLUME and PAN, and those are exactly the nine steps
+ * of that pattern which sound. The bytes are still there on a rest - the
+ * blank template gives every step gate 3, velocity 127 and pan 64 - so this
+ * is the page's choice, not the format's. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_step_value(int track, int step)
+{
+    if (seq_mode >= 1 && seq_mode <= 3 &&
+        ds10_editor_get_note(&ed, track, step) < 0)
+        return -1;
+    switch (seq_mode) {
+    case 1: return ds10_editor_get_gate(&ed, track, step);
+    case 2: return ds10_editor_get_vel(&ed, track, step);
+    case 3: return ds10_editor_get_pan(&ed, track, step);
+    case 4:
+    case 5: return ds10_editor_get_lane(&ed, track, seq_mode - 4, step);
+    default: return ds10_editor_get_note(&ed, track, step);
+    }
+}
+
+/* Set it from a row of the grid, which is what a tap on a value page means. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_step_row(int step, int row)
+{
+    int track = ed.track < NSYN ? ed.track : 0;
+    int v = ds10_ui_seq_row_value(seq_mode, row);
+
+    switch (seq_mode) {
+    case 1: ds10_editor_gate(&ed, track, step, v); break;
+    case 2: ds10_editor_vel(&ed, track, step, v); break;
+    case 3: ds10_editor_pan(&ed, track, step, v); break;
+    case 4:
+    case 5:
+        /* Tapping the row a lane is already on clears it, so a lane can be
+         * emptied - which is what -1 in the raw byte means. */
+        ds10_editor_lane(&ed, track, seq_mode - 4, step,
+                         ds10_editor_get_lane(&ed, track, seq_mode - 4,
+                                              step) == v ? -1 : v);
+        break;
+    default: return;
+    }
+    rebuild(ed.pattern);
+}
+
 /* Which drum panel a touch is on, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_drum_hit(int x, int y) { return ds10_ui_drum_hit(x, y); }
@@ -997,6 +1071,13 @@ static void refresh(void)
             note[i] = ds10_editor_get_note(&ed, track, i);
         ds10_ui_seq_grid(ui, page_bottom, note, ds10_editor_get_steps(&ed),
                          seq_top, cursor);
+    } else if (strncmp(page_bottom, "60_SYN_SEQ_", 11) == 0) {
+        int value[DS10_SONG_STEPS];
+
+        for (i = 0; i < DS10_SONG_STEPS; i++)
+            value[i] = ds10_web_step_value(track, i);
+        ds10_ui_seq_values(ui, value, ds10_editor_get_steps(&ed), seq_mode,
+                           cursor);
     } else if (strcmp(page_bottom, "51_ALL_DRUMS") == 0) {
         uint8_t on[DS10_SONG_DRUMS * DS10_SONG_STEPS];
         int r;

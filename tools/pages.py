@@ -40,6 +40,15 @@ import snap
 
 VERSION = 4
 
+# The sheets src/app/ui.c actually loads into OBJ VRAM. A cell taken from any
+# other bank still names tiles, but they resolve through whichever sheet is at
+# that base - so prefer these when more than one bank explains a run.
+LOADED = {"CHARACTER_c": 3, "CHARACTER_S": 2, "DS10FONT": 1}
+
+# The step grid, from src/app/ui.c - the same numbers the
+# constructor gives.
+SEQ_X0, SEQ_Y0, SEQ_CELL, SEQ_CURSOR_Y = 45, 35, 13, 20
+
 
 def page_index(assetdir):
     out = []
@@ -90,11 +99,21 @@ def build(half, banks):
             slot += 1
             continue
         best = None
+        bestkey = None
         for base in cellmod.TILE_BASES:
             for name, cl in banks:
                 for idx, cell in enumerate(cl):
                     m = cellmod.match(cell, oam, slot, base)
-                    if m and (best is None or len(cell) > best[4]):
+                    if not m:
+                        continue
+                    # Longest run wins, and between equals prefer a sheet that
+                    # is actually in OBJ VRAM. A cell from a bank that is not
+                    # loaded resolves its tiles through whatever is at that
+                    # base instead, which draws the wrong thing - that is what
+                    # put a 71_KAOSS_c cell on the pan page.
+                    key = (len(cell), LOADED.get(name, 0))
+                    if bestkey is None or key > bestkey:
+                        bestkey = key
                         best = (name, idx, m, base, len(cell))
         if best is None:
             rec.append((1, half[slot * 8:slot * 8 + 6]))
@@ -131,10 +150,18 @@ def is_state(page, rec):
     if rec[0] != 0:
         return False
     name, idx, prio, flags, affine, base, x, y, mtx = rec[1]
-    if page in ("60_SYN_SEQ_PIANO", "51_ALL_DRUMS"):
-        if name == page + "_c" and idx == 7:
+    x >>= 12
+    y >>= 12
+    # Identify a marker by where it is, not by which cell explains it. The
+    # same run is described equally well by cell 7 of the piano roll's sheet
+    # and by cell 8 of CHARACTER_c, and which one the matcher picks depends on
+    # its tie-break - so a name-based test here silently stops filtering when
+    # that changes, and the captured pattern gets baked back into the page.
+    if page.startswith("60_SYN_SEQ_") or page == "51_ALL_DRUMS":
+        if x >= SEQ_X0 and y >= SEQ_Y0 and \
+           (x - SEQ_X0) % SEQ_CELL == 0 and (y - SEQ_Y0) % SEQ_CELL == 0:
             return True
-        if name == "CHARACTER_c" and idx == 4 and (y >> 12) == 20:
+        if y == SEQ_CURSOR_Y and x >= SEQ_X0 and (x - SEQ_X0 - 1) % SEQ_CELL == 0:
             return True
     return False
 

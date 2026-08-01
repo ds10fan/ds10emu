@@ -65,6 +65,12 @@ int main(int argc, char **argv)
         uint8_t on[4 * 16];
         int drums = strcmp(bot, "51_ALL_DRUMS") == 0;
         const char *p = argv[4];
+        int mode;
+
+        /* The page names the sub-mode, so the pairs mean step:row on a value
+         * page and step:note on the piano roll. */
+        for (mode = ds10_ui_seq_modes() - 1; mode > 0; mode--)
+            if (strcmp(bot, ds10_ui_seq_mode_page(mode)) == 0) break;
 
         for (i = 0; i < 16; i++) note[i] = -1;
         memset(on, 0, sizeof on);
@@ -88,9 +94,21 @@ int main(int argc, char **argv)
             if (!p) break;
             p++;
         }
-        if (drums) ds10_ui_drum_grid(u, bot, on, 4, 16, cursor);
-        else ds10_ui_seq_grid(u, bot, note, 16, ds10_ui_seq_top_default(),
-                              cursor);
+        if (drums) {
+            ds10_ui_drum_grid(u, bot, on, 4, 16, cursor);
+        } else if (mode > 0) {
+            /* A value page: the pairs were step:row, so turn each row back
+             * into the value that row stands for. */
+            int value[16];
+
+            for (i = 0; i < 16; i++)
+                value[i] = note[i] < 0 ? -1
+                                       : ds10_ui_seq_row_value(mode, note[i]);
+            ds10_ui_seq_values(u, value, 16, mode, cursor);
+        } else {
+            ds10_ui_seq_grid(u, bot, note, 16, ds10_ui_seq_top_default(),
+                             cursor);
+        }
     }
     ds10_ui_frame(u, top, bottom);
 

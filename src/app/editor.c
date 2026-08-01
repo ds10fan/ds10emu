@@ -85,6 +85,52 @@ STEP_FIELD(gate, gate, 1, 6)
 STEP_FIELD(vel, vel, 0, 127)
 STEP_FIELD(pan, pan, 0, 127)
 
+/* The automation lanes. The pattern's array is indexed by track and step,
+ * with the two lanes inside the record - which is how 0x0206DFCC's caller
+ * reads it, `q->lane[track][step].raw[lane]`. */
+static int lane_ok(int track, int lane, int step)
+{
+    return track >= 0 && track < DS10_SONG_LANES && lane >= 0 &&
+           lane < DS10_SONG_LANES && step >= 0 && step < DS10_SONG_STEPS;
+}
+
+int ds10_editor_get_lane(const ds10_editor *e, int track, int lane, int step)
+{
+    if (!lane_ok(track, lane, step)) return -1;
+    return e->song.pattern[clamp(e->pattern, 0, DS10_SONG_PATTERNS - 1)]
+        .lane[track][step].raw[lane];
+}
+
+void ds10_editor_lane(ds10_editor *e, int track, int lane, int step, int v)
+{
+    if (!lane_ok(track, lane, step)) return;
+    ds10_editor_pattern(e)->lane[track][step].raw[lane] =
+        (int8_t)(v < 0 ? -1 : v > 127 ? 127 : v);
+    e->changed++;
+}
+
+int ds10_editor_get_lane_knob(const ds10_editor *e, int track, int lane)
+{
+    if (!lane_ok(track, lane, 0)) return -1;
+    return (uint8_t)e->song
+        .pattern[clamp(e->pattern, 0, DS10_SONG_PATTERNS - 1)]
+        .lane[track][0]
+        .knob[lane];
+}
+
+void ds10_editor_lane_knob(ds10_editor *e, int track, int lane, int knob)
+{
+    int s;
+
+    if (!lane_ok(track, lane, 0) || knob < 0 || knob >= DS10_SONG_KNOBS)
+        return;
+    /* The sequencer reads the knob from step zero, but the field exists on
+     * every step and the ROM's songs keep them equal. */
+    for (s = 0; s < DS10_SONG_STEPS; s++)
+        ds10_editor_pattern(e)->lane[track][s].knob[lane] = (int8_t)knob;
+    e->changed++;
+}
+
 void ds10_editor_steps(ds10_editor *e, int steps)
 {
     ds10_editor_pattern(e)->steps = (uint32_t)clamp(steps, 1, DS10_SONG_STEPS);

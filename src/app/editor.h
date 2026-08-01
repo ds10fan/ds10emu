@@ -55,6 +55,16 @@ int ds10_editor_get_vel(const ds10_editor *e, int track, int step);
 void ds10_editor_pan(ds10_editor *e, int track, int step, int pan);
 int ds10_editor_get_pan(const ds10_editor *e, int track, int step);
 
+/* An automation lane's value at a step, or -1 where the lane has nothing and
+ * the knob keeps the patch's own setting. A pattern carries two lanes per
+ * synth track, which is what the sequencer's two KAOSS sub-modes edit. */
+int ds10_editor_get_lane(const ds10_editor *e, int track, int lane, int step);
+void ds10_editor_lane(ds10_editor *e, int track, int lane, int step, int v);
+
+/* Which knob a lane drives. */
+int ds10_editor_get_lane_knob(const ds10_editor *e, int track, int lane);
+void ds10_editor_lane_knob(ds10_editor *e, int track, int lane, int knob);
+
 /* How many of the sixteen steps this pattern plays. */
 void ds10_editor_steps(ds10_editor *e, int steps);
 int ds10_editor_get_steps(const ds10_editor *e);

@@ -51,6 +51,12 @@ M.onRuntimeInitialized = () => {
     setPattern: c('ds10_web_set_pattern', null, ['number']),
     patternClear: c('ds10_web_pattern_clear', null, ['number']),
     factoryPatch: c('ds10_web_factory_patch', 'number', ['number']),
+    seqMode: c('ds10_web_seq_mode', 'number', []),
+    seqModeNext: c('ds10_web_seq_mode_next', 'string', []),
+    seqModePage: c('ds10_web_seq_mode_page', 'string', []),
+    seqModeHit: c('ds10_web_seq_mode_hit', 'number', ['number', 'number']),
+    stepValue: c('ds10_web_step_value', 'number', ['number', 'number']),
+    setStepRow: c('ds10_web_set_step_row', null, ['number', 'number']),
     setTempo: c('ds10_web_set_tempo', null, ['number']),
     getTempo: c('ds10_web_get_tempo', 'number', []),
     setName: c('ds10_web_set_name', null, ['string']),
@@ -129,6 +135,63 @@ M.onRuntimeInitialized = () => {
     if (cellInk(withOff, 1, r) !== cellInk(melody, 1, r)) offscreen++;
   check(offscreen === 0, 'an off-screen note draws nothing');
   api.seqStep(0, 1, -1);
+
+  /* The value sub-modes. The page's own button steps them, and each one edits
+   * a different byte of the step through the same grid. */
+  {
+    const NAMES = ["60_SYN_SEQ_PIANO", "60_SYN_SEQ_GATE", "60_SYN_SEQ_VOL",
+                   "60_SYN_SEQ_PAN", "60_SYN_SEQ_KAOSS", "60_SYN_SEQ_KAOSS"];
+    check(api.seqMode() === 0, 'starts on the note grid');
+    for (let m = 1; m < 6; m++) {
+      const page = api.seqModeNext();
+      check(api.seqMode() === m, 'the button steps to mode ' + m);
+      check(page === NAMES[m], 'mode ' + m + ' is ' + NAMES[m] + ', got ' + page);
+    }
+    check(api.seqModeNext() === NAMES[0], 'and wraps back to the note grid');
+    check(api.seqModeHit(46, 8) !== 0, 'the button is where it was found');
+    check(api.seqModeHit(20, 8) === 0, 'and not where nothing responded');
+
+    /* Gate: five rows, LEGATO down to 25%, so row 2 is the default 3. */
+    api.seqModeNext();                    /* to GATE */
+    api.page(api.seqModePage(), '90_MAP');
+    check(api.stepValue(0, MELODY[0][0]) === 3, 'the default gate shows');
+    const noGate = screen();
+    api.setStepRow(MELODY[0][0], 0);      /* LEGATO */
+    check(api.stepValue(0, MELODY[0][0]) === 5, 'LEGATO is gate 5');
+    check(Buffer.compare(Buffer.from(screen()),
+                         Buffer.from(noGate)) !== 0, 'and the screen moves');
+    api.setStepRow(MELODY[0][0], 2);      /* back to 75% */
+    check(api.stepValue(0, MELODY[0][0]) === 3, 'and back');
+
+    /* Velocity: twelve rows, and every value the ROM's songs use. */
+    api.seqModeNext();
+    api.page(api.seqModePage(), '90_MAP');
+    const WANT = [127, 115, 103, 92, 80, 69, 57, 46, 34, 23, 11, 0];
+    for (let r = 0; r < 12; r++) {
+      api.setStepRow(MELODY[0][0], r);
+      check(api.stepValue(0, MELODY[0][0]) === WANT[r],
+            'row ' + r + ' is velocity ' + WANT[r] + ', got '
+            + api.stepValue(0, MELODY[0][0]));
+    }
+    api.setStepRow(MELODY[0][0], 0);
+
+    /* Pan: five rows with the centre on the default. */
+    api.seqModeNext();
+    api.page(api.seqModePage(), '90_MAP');
+    api.setStepRow(MELODY[0][0], 2);
+    check(api.stepValue(0, MELODY[0][0]) === 64, 'the centre row is pan 64');
+    api.setStepRow(MELODY[0][0], 0);
+    check(api.stepValue(0, MELODY[0][0]) === 0, 'L2 is pan 0');
+    api.setStepRow(MELODY[0][0], 4);
+    check(api.stepValue(0, MELODY[0][0]) === 127, 'R2 is pan 127');
+    api.setStepRow(MELODY[0][0], 2);
+
+    /* A rest has no value marker, which is what the captures show. */
+    check(api.stepValue(0, 1) === -1, 'a rest has no value to draw');
+
+    while (api.seqMode()) api.seqModeNext();
+    api.page('60_SYN_SEQ_PIANO', '90_MAP');
+  }
 
   /* Drums, on their own tracks and their own page. Those markers are on the
    * 3D plane rather than in OAM, so this is a separate path through the

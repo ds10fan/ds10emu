@@ -41,6 +41,16 @@ MAP_BOX = [
     ("drums_seq",   7, 149, 54, 16),
 ]
 
+# The sequencer's sub-mode button, which steps
+#
+#     PIANO -> GATE -> VOL -> PAN -> KAOSS -> KAOSS -> PIANO
+#
+# and is the only way into those five variants: the map opens the sequencer
+# and nothing else. Found with tools/probe_buttons.py, which taps a page and
+# watches, because these buttons are not in any table.
+SUBMODE = (46, 8)
+SUBMODE_STEPS = 5
+
 # The DRUMS button opens a submenu over the map, so these need two taps.
 DRUMS = (206, 142, 46, 16)
 SUBMENU = [
@@ -88,6 +98,15 @@ def script():
         out.append("%d release\n" % (t + 260))
         out.append("%d snap\n" % (t + 380))
         t += STEP + 120
+    # The sequencer's other five sub-modes, each one tap further on.
+    out.append("%d key L\n%d up L\n" % (t, t + 20))
+    out.append("%d touch 30 33\n%d release\n" % (t + 120, t + 160))
+    t += 340
+    for _ in range(SUBMODE_STEPS):
+        out.append("%d touch %d %d\n%d release\n"
+                   % (t, SUBMODE[0], SUBMODE[1], t + 30))
+        out.append("%d snap\n" % (t + 200))
+        t += 260
     return "".join(out), t + 40
 
 

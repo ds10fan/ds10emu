@@ -94,6 +94,25 @@ void ds10_ui_seq_grid(ds10_ui *u, const char *page, const int *note,
 void ds10_ui_drum_grid(ds10_ui *u, const char *page, const uint8_t *on,
                        int nrows, int nsteps, int cursor);
 
+/* The sequencer's value sub-modes: one marker per step at the row for its
+ * value. `mode` is the sub-mode index - 1 gate, 2 volume, 3 pan, 4 and 5 the
+ * automation lanes. */
+void ds10_ui_seq_values(ds10_ui *u, const int *value, int nsteps, int mode,
+                        int cursor);
+
+/* How a value maps to a row on those pages, and back. -1 for a value that has
+ * no row. */
+int ds10_ui_seq_mode_rows(int mode);
+int ds10_ui_seq_row_value(int mode, int row);
+int ds10_ui_seq_value_row(int mode, int value);
+
+/* The sequencer's sub-mode button, which steps NOTE, GATE, VOL, PAN and the
+ * two automation lanes. Returns non-zero for a hit; the page each position
+ * shows is ds10_ui_seq_mode_page(). */
+int ds10_ui_seq_mode_hit(int x, int y);
+const char *ds10_ui_seq_mode_page(int mode);
+int ds10_ui_seq_modes(void);
+
 /* The note on the top row when the grid has not been scrolled, and the note a
  * row shows for a given top. */
 int ds10_ui_seq_top_default(void);

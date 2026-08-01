@@ -31,6 +31,8 @@ const TOP_PAGES = [
   "AD4_CAVIA", "01_MAIN_MENU",
 ];
 const TRACKS = ["SYN 1", "SYN 2", "DRUM 1", "DRUM 2", "DRUM 3", "DRUM 4"];
+/* The sequencer's six sub-modes, in the order its button steps them. */
+const MODES = ["NOTE", "GATE", "VOLUME", "PAN", "KAOSS 1", "KAOSS 2"];
 
 const $ = (id) => document.getElementById(id);
 const status = $("status");
@@ -204,6 +206,19 @@ function gridTouch(x, y, first) {
                               : "  note " + noteName(paint.note)));
 }
 
+/* A value page: the row under the finger is the value. Dragging across sets
+ * the neighbouring steps to whatever row the finger is on, which is how a
+ * ramp gets drawn. */
+function valueTouch(x, y, first) {
+  const h = api.seqHit(x, y);
+  if (h < 0) return;
+  const step = h & 0xFF, row = h >> 8;
+  if (first) paint = {};
+  api.setStepRow(step, row);
+  say(MODES[api.seqMode()] + "  step " + (step + 1) + "  "
+      + api.stepValue(api.track() < 2 ? api.track() : 0, step));
+}
+
 function drumTouch(x, y, first) {
   const h = api.drumseqHit(x, y);
   if (h < 0) return;
@@ -238,6 +253,7 @@ function onMove(ev) {
   if (paint) {
     const [x, y] = screenPos(ev);
     if (pageOf("bottom") === "51_ALL_DRUMS") drumTouch(x, y, false);
+    else if (api.seqMode()) valueTouch(x, y, false);
     else gridTouch(x, y, false);
     return;
   }
@@ -254,8 +270,16 @@ function onDown(which, ev) {
     return;
   }
   startAudio();
-  if (page === "60_SYN_SEQ_PIANO") {
-    gridTouch(x, y, true);
+  if (page.startsWith("60_SYN_SEQ_")) {
+    /* The page's own sub-mode button, which steps NOTE, GATE, VOL, PAN and
+     * the two automation lanes. */
+    if (api.seqModeHit(x, y)) {
+      goto(api.seqModeNext());
+      say(MODES[api.seqMode()]);
+      return;
+    }
+    if (api.seqMode() === 0) gridTouch(x, y, true);
+    else valueTouch(x, y, true);
     ev.target.setPointerCapture(ev.pointerId);
     return;
   }
@@ -420,6 +444,15 @@ Module.onRuntimeInitialized = () => {
     seqTop: Module.cwrap("ds10_web_seq_top", "number", []),
     setSeqTop: Module.cwrap("ds10_web_set_seq_top", null, ["number"]),
     seqFollow: Module.cwrap("ds10_web_seq_follow", null, []),
+    seqMode: Module.cwrap("ds10_web_seq_mode", "number", []),
+    seqModeHit: Module.cwrap("ds10_web_seq_mode_hit", "number",
+                             ["number", "number"]),
+    seqModeNext: Module.cwrap("ds10_web_seq_mode_next", "string", []),
+    seqModePage: Module.cwrap("ds10_web_seq_mode_page", "string", []),
+    stepValue: Module.cwrap("ds10_web_step_value", "number",
+                            ["number", "number"]),
+    setStepRow: Module.cwrap("ds10_web_set_step_row", null,
+                             ["number", "number"]),
     pattern: Module.cwrap("ds10_web_pattern", "number", []),
     setPattern: Module.cwrap("ds10_web_set_pattern", null, ["number"]),
     track: Module.cwrap("ds10_web_track", "number", []),
