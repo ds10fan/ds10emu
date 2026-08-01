@@ -1595,7 +1595,23 @@ census finds `MTX_SCALE` and `MTX_TRANS` but no perspective setup, and the only
 textures are `3D_TEX`, `3D_MESS_TEX` and `UNFONT`, loaded at texture VRAM 0,
 0x8000 and 0x10000 by `0x0202320c`. That function also builds a **dimmed copy**
 of each palette at +0x200 by shifting each channel down, which is how inactive
-captions are drawn. Not implemented yet.
+captions are drawn.
+
+It is not decorative. `51_ALL_DRUMS` draws its whole step grid this way: that
+frame has **one** live OAM entry on the entire screen and 660 opaque pixels on
+the 3D plane. The reason looks like capacity - sixteen steps by four drums is
+sixty-four markers against 128 OAM entries in total, while the piano roll needs
+at most one marker per step and does use sprites for them.
+
+Every marker there is the same 11 by 10 block wherever it appears, so the
+reimplementation puts that block straight into the plane, which the compositor
+already takes as BG0. That is exact without any of the pipeline, and
+`51_ALL_DRUMS` renders pixel-exact. A page that submits varying geometry would
+need the real thing.
+
+The plane stores 6-bit components, so its values read low: the marker's face is
+`0x33` and its highlight `0x3b`, which are 51 and 59 out of 63 - near white, not
+the dark grey the number suggests.
 
 ### Asset containers
 
@@ -2028,12 +2044,44 @@ Two wrong turns worth recording, because both looked convincing:
   the signature of comparing against *empty* tiles, which match anything - not
   of a missing sheet.
 
+### The step grids
+
+Both sequencer pages put their grid at (45,35) with a 13-pixel cell, which is
+the constructor's `FUN_0205fdc4(scroller, 0x2d, 0x23, 0xd0, ...)`. The piano
+roll is 16 by 12 of a 24-row scrollable range; the drum grid is 16 by 4.
+
+What the markers are differs: the piano roll draws cell 7 of the page's own
+sheet at priority 2, and `51_ALL_DRUMS` draws quads on the 3D plane. Both pages
+put a cursor above the grid - `CHARACTER_c` cell 4, the only sprite in that
+band.
+
+The row-to-note mapping comes from the captured frame's keyboard column.
+Reading its whites and blacks off gives a full octave with A4 on the top row,
+and the game labels row nine "C4" with two font sprites of its own; row 0 is
+therefore the highest note and `note = top - row`. Notes outside the twelve
+visible rows are not drawn - which is why no pattern in the ROM matches the six
+markers that frame shows.
+
+These markers are **state**, so `tools/pages.py` takes them out of the display
+list rather than freezing the captured pattern into the page, and `make
+test-page` draws them back from `tools/pagecheck.py`'s `SEQ_STATE`. That makes
+reproducing the frame depend on the whole model, and it has teeth: one semitone
+off is 204 pixels wrong, the cursor one step off 128, one missing note 102.
+
 ### Status
 
 Reproduced from the asset files alone, and pixel-exact against melonDS for the
 same page (`make test-page`): `61_SYN_EDIT`, `70_PATCH`, `30_MIXER`, `81_KEY_i`,
-`60_SYN_SEQ_PIANO`, `01_UNMAIN_MENU`. `71_KAOSS` differs only by its moving
-cursor and `90_MAP` by the live values it displays.
+`60_SYN_SEQ_PIANO`, `51_ALL_DRUMS`, `33_DRUM_SELECTER`, `01_UNMAIN_MENU`,
+`AD0_TITLE_i`. `71_KAOSS` differs only by its moving cursor, `52_FX` and
+`32_PATTERN` by live values, and `90_MAP` by the values it displays.
+
+The corpus those are checked against had been missing most of the interface:
+`tools/sweep.py` tapped coordinates measured off a rendered screen, and several
+missed their box by a pixel or two - the FX box starts at y 55 and was being
+tapped at 54 - while three were nowhere near one. Driving the sweep from the
+decompiled map table instead picked up `32_PATTERN`, `52_FX`,
+`33_DRUM_SELECTER` and `51_ALL_DRUMS`.
 
 `data/pages.bin` holds a **display list** per page - cell, position, matrix,
 priority - and the sprites are generated from it by the decompiled expander.

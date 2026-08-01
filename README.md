@@ -17,17 +17,21 @@ song file format; automation lanes.
 
 **Graphics.** The DS 2D hardware is modelled in C and is pixel-exact against
 melonDS over 29 screens. The interface's pages are drawn from the game's own
-asset files; six of them reproduce the real thing exactly.
+asset files; nine of them reproduce the real thing exactly.
 
-**Browser.** `make serve` builds the whole thing to WebAssembly and serves it.
-Both screens render, the navigation map switches pages, the keyboard plays
-through the decompiled synth engine at the right pitch, and the synth edit
-page's knobs turn.
+**Browser.** `make serve` builds the whole thing to WebAssembly and serves it,
+and it is an editor rather than a viewer. A new song starts from the ROM's own
+blank template. Notes go in on the piano roll and the drum grid, appear where
+the hardware puts them, sound as they are entered, and play back through the
+decompiled engine with the cursor walking the grid. Patches, the mixer, the
+effect and the KAOSS pad respond, the map navigates, and **save** writes a
+`.dat` the hardware would load.
 
-What is *not* done: the per-screen widget constructors, so a page draws but
-does not animate — the sprite layer is a captured frame per page rather than
-generated. The 3D caption layer is not implemented. Most screens have no
-behaviour wired. See [`TODO.md`](TODO.md) §6.
+What is *not* done: each page's own top-bar buttons — CLR, play, the track
+selector — are not wired, so the browser page drives those from HTML controls
+instead; `32_PATTERN` and `31_SONG` draw but are not interactive. Captions
+still come from the captured frame rather than being rasterised. See
+[`TODO.md`](TODO.md) §6.
 
 - [`recon.md`](recon.md) — what the ROM actually contains: container layout, the
   ARM9/ARM7 memory map, NitroFS inventory, the song and patch formats, the
@@ -46,7 +50,9 @@ Every claim above is a test, not an impression.
 | `make test` | the audio engine against the original under Unicorn | 17 suites |
 | `make test-obj` | the sprite widget's OAM against the game's own setter | 171 checks |
 | `make test-2d` | the 2D hardware against melonDS, pixel for pixel | 72 frames |
-| `make test-page` | each page rebuilt from assets, against melonDS | 14 screens |
+| `make test-page` | each page rebuilt from assets, against melonDS | 22 screens |
+| `make test-editor` | an edited song round-tripped through the file format | hash and all |
+| `make test-webedit` | a song entered in the browser build, then rendered by `songplay` | sample-exact |
 
 Read `TODO.md` §1 before trusting the audio number — those suites are strong on
 DSP and blind on the wiring around it, which is where all four known bugs were.

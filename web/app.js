@@ -194,6 +194,12 @@ function gridTouch(x, y, first) {
   if (first) paint = {track: track, note: api.seqNote(track, step) === note
                                           ? -1 : note};
   api.seqStep(paint.track, step, paint.note);
+  /* Sound the note as it goes in, so a melody can be entered by ear. */
+  if (paint.note >= 0 && paint.note !== held) {
+    noteOff();
+    api.note(paint.track, paint.note, 1);
+    held = paint.note;
+  }
   say("step " + (step + 1) + (paint.note < 0 ? "  cleared"
                               : "  note " + noteName(paint.note)));
 }
@@ -207,6 +213,7 @@ function drumTouch(x, y, first) {
   if (first) paint = {track: track,
                       note: api.seqNote(track, step) >= 0 ? -1 : 60};
   api.seqStep(paint.track, step, paint.note);
+  if (first && paint.note >= 0) api.drumPlay(drum);
   say("DRUM" + (drum + 1) + "  step " + (step + 1)
       + (paint.note < 0 ? "  off" : "  on"));
 }

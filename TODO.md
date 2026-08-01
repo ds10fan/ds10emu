@@ -94,7 +94,20 @@ Done:
   of them pixel-exact against the real thing (`make test-page`);
 - the browser build plays: the keyboard drives the decompiled synth engine at
   the right pitch, and the synth edit page's knobs turn, through the engine's
-  own dispatch and the ROM's own knob ranges.
+  own dispatch and the ROM's own knob ranges;
+- **the browser build is an editor.** It works on a `ds10_song` - the same
+  record the ROM's files are a byte image of - starting from the ROM's own
+  blank template `ds10init.dat`. Notes go in on the piano roll and the drum
+  grid through the decompiled hit tests, appear on the screen where the
+  hardware puts them, sound as they are entered, and save as a `.dat` the
+  hardware would load.
+
+  `make test-webedit` is the end-to-end check: it enters a song through the
+  grid's own hit tests, checks exactly the right cell lights, watches the play
+  cursor walk, hears the pattern and hears silence after clearing it, exports,
+  loads the file back through the game's parser, and renders the same file with
+  `songplay` - which shares none of the browser plumbing and is itself
+  bit-exact against the original. They agree sample for sample.
 
 Remaining, roughly in order:
 
@@ -157,11 +170,18 @@ Remaining, roughly in order:
   What is not reimplemented from them is the redraw of readouts that follow a
   control rather than being one, beyond the mixer's meters and faders.
 
-- **The rest of the behaviour.** The map's boxes, the keyboard's keys and the
-  synth edit knobs are hit-tested from coordinates measured off the rendered
-  screen, which is pixel-exact, rather than from the game's own hit-test code.
-  Everything else - the sequencer grid, the mixer, the patch browser, the song
-  arranger - is unwired.
+- **The rest of the behaviour.** Wired now: the map's boxes, the keyboard, the
+  synth edit and patch-bay knobs, the KAOSS pad, the mixer, the FX page, both
+  step grids, and the transport. Their hit boxes come from the decompiled
+  tables, not from measurements.
+
+  Not wired: each page's own top-bar buttons - CLR, the play button, the track
+  selector. Those are not placed by the shared helper the other screens use, so
+  their rectangles are inside the update's sub-states rather than in a table,
+  and they have not been read. The browser page drives those functions from
+  HTML controls instead, which is the main way it still does not respond like
+  the original. `32_PATTERN` and `31_SONG` are drawn but not interactive; the
+  arrangement is edited from HTML too.
 - **Which octave the keyboard starts on.** The layout says it starts on an F;
   F3 is an assumption, not a reading.
 
