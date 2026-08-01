@@ -41,12 +41,19 @@ function group(title, kids) {
     [el("div", {cls: "panel-body"}, kids)]));
 }
 
-/* A labelled slider that reads and writes through the C side. */
-function slider(name, lo, hi, get, set) {
+/* A labelled slider that reads and writes through the C side.
+ *
+ * `set` runs on every movement and must be cheap - it is the live sound.
+ * `commit` runs once when the finger lifts, for anything expensive: posting
+ * the whole song to the worklet on every pixel of a drag reloaded its engine
+ * continuously, which reset the voices and cut whatever was sounding.
+ */
+function slider(name, lo, hi, get, set, commit) {
   const out = el("span", {cls: "val", text: String(get())});
   const r = el("input", {
     type: "range", min: String(lo), max: String(hi), value: String(get()),
     oninput: (e) => { set(+e.target.value); out.textContent = e.target.value; },
+    onchange: () => { if (commit) commit(); },
   });
   r.dataset.sync = "1";
   r.sync = () => { r.value = String(get()); out.textContent = r.value; };
@@ -204,8 +211,8 @@ function buildPanel() {
                       (v) => {
                         api.knobSet(k, v);
                         send({type: "knob", track: track(), id: k, value: v});
-                        sendSong();
-                      }));
+                      },
+                      sendSong));
   }
   host.appendChild(group("synth", [
     el("div", {cls: "hint",
@@ -219,8 +226,8 @@ function buildPanel() {
                     (v) => {
                       api.mixerSet(m, v);
                       send({type: "mixer", id: m, value: v});
-                      sendSong();
-                    }));
+                    },
+                    sendSong));
   host.appendChild(group("mixer and effect", mix));
 
   /* --- drums ------------------------------------------------------------ */

@@ -81,6 +81,18 @@ static int song_loaded, song_bar, song_bars;
 
 static ds10_song_player seq_player;
 
+/* A pattern's patches and its twenty-five mixer knobs are installed by the
+ * sequencer at a bar line. With the transport stopped that never happens, so
+ * a freshly loaded song is silent under the keyboard - which is what "neither
+ * synth plays anything" was.
+ *
+ * Installing eagerly is not the answer: the first bar would then install a
+ * second time, and the knob handler's side effects depend on what was there
+ * before, so playback stopped matching songplay by 5706 samples. Instead the
+ * preview paths install once, and only while stopped.
+ */
+static int preview_ready;
+
 /* Whether the transport follows the arrangement or loops the one pattern
  * being edited. Entering notes is done against a looping pattern, which is
  * what the original's pattern mode is for. */
@@ -430,6 +442,7 @@ int ds10_web_song_bytes(const uint8_t *blob, int len)
 
     dispatch(ds10_seq_tempo(&seq_ctx, (int)ed.song.tempo));
     seq_playing = 1;
+    preview_ready = 0;
 
     /* The map's bottom bar shows what was just loaded. */
     {
@@ -456,6 +469,7 @@ void ds10_web_seq_play(int on)
     int i;
 
     seq_playing = on;
+    if (on) preview_ready = 0;   /* the sequencer takes it back over */
     if (!on)
         for (i = 0; i < NSYN; i++)
             ds10_voice_event(&voice[i], DS10_EV_NOTE_OFF, 0, 0, &tables.t);
@@ -532,6 +546,7 @@ void ds10_web_set_pattern(int p)
 {
     if (p < 0 || p >= DS10_SONG_PATTERNS) return;
     ed.pattern = p;
+    preview_ready = 0;          /* the new pattern's sound, on the next note */
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -686,10 +701,20 @@ void ds10_web_seq_tempo(int bpm) { if (audio_ready) ds10_seq_tempo(&seq_ctx, bpm
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_seq_pos(void) { return seq.step; }
 
+/* Make the current pattern audible for a note played by hand. Only while the
+ * transport is stopped: once it is running the sequencer owns this. */
+static void ensure_preview(void)
+{
+    if (preview_ready || seq_playing || !song_loaded) return;
+    seq_install(&seq_ctx, &song_rt[ed.pattern % DS10_SONG_PATTERNS]);
+    preview_ready = 1;
+}
+
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_note(int v, int note, int on)
 {
     if (!audio_ready || v < 0 || v >= NSYN) return;
+    if (on) ensure_preview();
     if (on) ds10_voice_note_on(&voice[v], note, &tables.t);
     else ds10_voice_event(&voice[v], DS10_EV_NOTE_OFF, note, 0, &tables.t);
 }

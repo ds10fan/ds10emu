@@ -278,6 +278,7 @@ function dragTo(ev) {
                                     Math.round(drag.from + moved * n)));
     api.knobSet(drag.id, v);
     send({type: "knob", track: api.track(), id: drag.id, value: v});
+    drag.dirty = 1;
     say(api.knobName(drag.id) + "  " + v + "   (" + lo + ".."
         + (lo + n - 1) + ")");
   } else {
@@ -791,6 +792,8 @@ function boot() {
      * enough to turn it - which on a 256-pixel-wide canvas is not far. */
     for (const ev of ["pointerup", "pointercancel"])
       canvases[which].addEventListener(ev, (e) => {
+        /* Post the song once the drag ends, not on every pixel of it. */
+        if (drag && drag.dirty) sendSong();
         if (drag && drag.moves === 0)
           trace("released " + drag.kind + " " + drag.id + " with no move ("
                 + e.type + ")");
