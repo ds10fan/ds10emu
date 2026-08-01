@@ -293,11 +293,14 @@ function buildPanel() {
     fxParams.appendChild(mixCtl(MIX_SYNC));
     fxParams.appendChild(mixCtl(MIX_DRYWET));
   };
+  /* Only when the type changes: this rebuilds sliders, and the sync runs on
+   * every touch. */
+  let shownType = -1;
   syncers.push(() => {
     const r = api.mixerGet(MIX_ROUTE), t = api.mixerGet(MIX_TYPE);
     routeBtns.forEach((b, i) => b.classList.toggle("on", i === r));
     typeBtns.forEach((b, i) => b.classList.toggle("on", i === t));
-    rebuildFx();
+    if (t !== shownType) { shownType = t; rebuildFx(); }
   });
   host.appendChild(group("effect", [
     el("div", {cls: "hint", text: "which channels go through it"}),
@@ -391,9 +394,10 @@ function buildPanel() {
                        send({type: "drum", n: editDrum}); }));
     }
   };
+  let shownDrum = -1;
   syncers.push(() => {
     drumSel.forEach((b, i) => b.classList.toggle("on", i === editDrum));
-    rebuildDrum();
+    if (editDrum !== shownDrum) { shownDrum = editDrum; rebuildDrum(); }
   });
   host.appendChild(group("drums", [
     el("div", {cls: "hint", text: "audition"}),
@@ -497,7 +501,17 @@ function buildPanel() {
         panelSync();
       }));
   };
-  syncers.push(rebuildChain);
+  let shownBars = -1, shownPat = -1;
+  syncers.push(() => {
+    /* Bars are selects; rebuilding them all on every touch is wasteful and
+     * would drop a half-made choice. */
+    const n = api.songBars();
+    if (n !== shownBars || api.pattern() !== shownPat) {
+      shownBars = n;
+      shownPat = api.pattern();
+      rebuildChain();
+    }
+  });
   host.appendChild(group("arrangement", [
     el("div", {cls: "hint", text: "which pattern each bar plays"}), chain,
   ]));
