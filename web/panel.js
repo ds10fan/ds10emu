@@ -125,8 +125,20 @@ function buildPanel() {
     instBtn.textContent = on ? "pattern changes now" : "at the next bar";
     instBtn.classList.toggle("on", on);
   });
+  const recBtn = button("record", () => {
+    api.setRecord(!api.record());
+    send({type: "record", on: !!api.record()});
+    panelSync();
+  });
+  syncers.push(() => {
+    const on = !!api.record();
+    recBtn.textContent = on ? "recording" : "record";
+    recBtn.classList.toggle("rec", on);
+  });
   host.appendChild(group("transport", [
-    playBtn, modeBtn, bars, instBtn,
+    playBtn, recBtn, modeBtn, bars, instBtn,
+    el("div", {cls: "hint", text: "with the song playing, what you play goes "
+                                  + "into the pattern passing under it"}),
     slider("tempo", 20, 300, () => api.getTempo(),
            (v) => { api.setTempo(v); send({type: "tempo", bpm: v}); }),
     slider("swing", 50, 75, () => api.getSwing(),
@@ -343,10 +355,30 @@ function buildPanel() {
   ]));
 
   /* --- the KAOSS pad ---------------------------------------------------- */
+  /* Three modes, as the page's own 1/2/3 buttons offer. Each is a pair of
+   * knobs; selecting one writes it into the pattern's lane assignments, which
+   * is where the song keeps it and what a recording follows.
+   *
+   * The defaults are the three commonest pairs in the ROM's songs and the
+   * saves - cutoff and peak on 3289 patterns, well ahead of anything else.
+   * The slots themselves are the page's; the format has room for one pair per
+   * pattern, not three. */
+  const PAD_SLOT = [[11, 12], [13, 24], [11, 14]];
+  let padSlot = 0;
+  const slotBtns = [];
+  for (let i = 0; i < 3; i++)
+    slotBtns.push(button(String(i + 1), () => {
+      padSlot = i;
+      api.setLaneKnob(0, PAD_SLOT[i][0]);
+      api.setLaneKnob(1, PAD_SLOT[i][1]);
+      sendSong();
+      panelSync();
+    }));
   const laneSel = [];
   for (let lane = 0; lane < 2; lane++) {
     const sel = el("select", {onchange: (e) => {
       api.setLaneKnob(lane, +e.target.value);
+      PAD_SLOT[padSlot][lane] = +e.target.value;   /* the slot remembers it */
       sendSong();
       panelSync();
     }});
@@ -374,6 +406,9 @@ function buildPanel() {
     };
     padRead.textContent = api.knobName(kx) + " " + put(kx, vx) + "   "
                         + api.knobName(ky) + " " + put(ky, vy);
+    /* And into the automation lanes, if recording. */
+    send({type: "lane", lane: 0, value: vx});
+    send({type: "lane", lane: 1, value: vy});
     pad.style.backgroundPosition = (fx * 100) + "% " + (fy * 100) + "%";
   };
   let padDown = false;
@@ -390,10 +425,13 @@ function buildPanel() {
   syncers.push(() => {
     laneSel[0].value = String(api.laneKnob(0));
     laneSel[1].value = String(api.laneKnob(1));
+    slotBtns.forEach((b, i) => b.classList.toggle("on", i === padSlot));
   });
   host.appendChild(group("kaoss pad", [
-    el("div", {cls: "hint", text: "the two knobs the pattern's automation "
-                                  + "lanes drive"}),
+    el("div", {cls: "hint", text: "three modes, each a pair of knobs"}),
+    el("div", {cls: "row"}, slotBtns),
+    el("div", {cls: "hint", text: "the two the pattern's automation lanes "
+                                  + "drive; recorded while record is on"}),
     el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "x"}), laneSel[0]]),
     el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "y"}), laneSel[1]]),
     pad, padRead,

@@ -105,6 +105,37 @@ global.sampleRate = 32768;
           + p.api.songBar());
   }
 
+  /* Recording. What is played goes into the pattern that is sounding, at the
+   * step under the playhead - which is the whole point of the selection
+   * following the chain: one take covers every pattern the song passes
+   * through. */
+  {
+    p.port.onmessage({data: {type: 'song', bytes: new Uint8Array(song),
+      reset: true, pattern: 0, track: 0, songMode: true, playing: true}});
+    for (let i = 0; i < 200; i++) p.process([], [out]);
+
+    p.port.onmessage({data: {type: 'record', on: true}});
+    /* Play a note it certainly does not already have. */
+    const pat = p.api.playPattern();
+    p.port.onmessage({data: {type: 'note', voice: 0, note: 34, on: 1}});
+    const rec = (p._out || []).filter((m) => m.type === 'recorded');
+    check(rec.length === 1, 'one note was recorded, got ' + rec.length);
+    if (rec.length) {
+      check(rec[0].note === 34, 'it recorded the note played');
+      check(rec[0].pattern === pat, 'into the pattern that was sounding, '
+            + rec[0].pattern + ' against ' + pat);
+      check(rec[0].step >= 0 && rec[0].step < 16, 'at a real step, '
+            + rec[0].step);
+    }
+    /* And nothing is recorded once it is switched off. */
+    p._out.length = 0;
+    p.port.onmessage({data: {type: 'record', on: false}});
+    p.port.onmessage({data: {type: 'note', voice: 0, note: 35, on: 1}});
+    check(!(p._out || []).some((m) => m.type === 'recorded'),
+          'nothing is recorded with record off');
+    p.port.onmessage({data: {type: 'note', voice: 0, note: 35, on: 0}});
+  }
+
   /* And stops when told to. Not instantly: the drums are one-second buffers
    * and the effect has a delay line, so what has to be true is that it decays
    * rather than that it cuts. */

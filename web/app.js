@@ -267,6 +267,15 @@ async function startAudio() {
       }
       else if (m.type === "ready") trace("worklet ready at " + m.rate + " Hz");
       else if (m.type === "error") report("worklet: " + m.what);
+      else if (m.type === "recorded") {
+        /* The worklet recorded into its copy; put it in the one that gets
+         * written to a file. */
+        if (m.what === "note")
+          api.applyNote(m.pattern, m.track, m.step, m.note);
+        else
+          api.applyLane(m.pattern, api.track(), m.lane, m.step, m.value);
+        repanel();
+      }
       else if (m.type === "loaded")
         trace("worklet took a song: rc " + m.rc + " len " + m.len
               + " playing " + m.playing);
@@ -721,6 +730,13 @@ function boot() {
     seqPlay: Module.cwrap("ds10_web_seq_play", null, ["number"]),
     setCursor: Module.cwrap("ds10_web_set_cursor", null, ["number"]),
     followPattern: Module.cwrap("ds10_web_follow_pattern", null, ["number"]),
+    record: Module.cwrap("ds10_web_record", "number", []),
+    setRecord: Module.cwrap("ds10_web_set_record", null, ["number"]),
+    applyNote: Module.cwrap("ds10_web_apply_note", null,
+                            ["number", "number", "number", "number"]),
+    applyLane: Module.cwrap("ds10_web_apply_lane", null,
+                            ["number", "number", "number", "number",
+                             "number"]),
     instantPattern: Module.cwrap("ds10_web_instant_pattern", "number", []),
     setInstantPattern: Module.cwrap("ds10_web_set_instant_pattern", null,
                                     ["number"]),

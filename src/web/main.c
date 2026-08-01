@@ -1303,6 +1303,86 @@ int ds10_web_mapbutton_hit(int x, int y) { return ds10_ui_mapbutton_hit(x, y); }
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_clear_hit(int x, int y) { return ds10_ui_clear_hit(x, y); }
 
+/* Recording.
+ *
+ * The point of it is that the selection follows the chain: with the song
+ * playing you can play into whichever pattern is passing, so one take covers
+ * all sixteen. So a recorded note goes into the pattern that is *sounding*,
+ * not the one selected for editing - in song mode those are the same, and
+ * this is what makes them need to be.
+ *
+ * The worklet does the recording because it is the copy that knows which step
+ * is under the playhead; it tells the page, which owns the song that gets
+ * written to a file.
+ */
+static int recording;
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_record(int on) { recording = on ? 1 : 0; }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_record(void) { return recording; }
+
+/* Returns (pattern << 8) | step, or -1 if nothing was recorded. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_record_note(int track, int note)
+{
+    int pat, step, was;
+
+    if (!recording || !seq_playing || !song_loaded) return -1;
+    pat = ds10_web_play_pattern();
+    step = seq.step;
+    if (step < 0 || step >= DS10_SONG_STEPS) return -1;
+    was = ed.pattern;
+    ed.pattern = pat;
+    ds10_editor_note(&ed, track, step, note);
+    ed.pattern = was;
+    build_rt(&song_rt[pat], &ed.song.pattern[pat]);
+    return (pat << 8) | step;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_record_lane(int lane, int value)
+{
+    int pat, step, was, track = ed.track < NSYN ? ed.track : 0;
+
+    if (!recording || !seq_playing || !song_loaded) return -1;
+    pat = ds10_web_play_pattern();
+    step = seq.step;
+    if (step < 0 || step >= DS10_SONG_STEPS) return -1;
+    was = ed.pattern;
+    ed.pattern = pat;
+    ds10_editor_lane(&ed, track, lane, step, value);
+    ed.pattern = was;
+    build_rt(&song_rt[pat], &ed.song.pattern[pat]);
+    return (pat << 8) | step;
+}
+
+/* The page applying what the worklet recorded, into its own copy. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_apply_note(int pattern, int track, int step, int note)
+{
+    int was = ed.pattern;
+
+    if (pattern < 0 || pattern >= DS10_SONG_PATTERNS) return;
+    ed.pattern = pattern;
+    ds10_editor_note(&ed, track, step, note);
+    ed.pattern = was;
+    build_rt(&song_rt[pattern], &ed.song.pattern[pattern]);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_apply_lane(int pattern, int track, int lane, int step, int v)
+{
+    int was = ed.pattern;
+
+    if (pattern < 0 || pattern >= DS10_SONG_PATTERNS) return;
+    ed.pattern = pattern;
+    ds10_editor_lane(&ed, track, lane, step, v);
+    ed.pattern = was;
+    build_rt(&song_rt[pattern], &ed.song.pattern[pattern]);
+}
+
 /* A drum's own 31-knob patch. Changing one means re-rendering that drum's
  * one-second buffer, which is what makes it audible. */
 EMSCRIPTEN_KEEPALIVE

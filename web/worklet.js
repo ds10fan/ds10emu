@@ -55,6 +55,9 @@ class DS10Processor extends AudioWorkletProcessor {
         songBar: c("ds10_web_song_bar", "number", []),
         seqStep: c("ds10_web_seq_step", null, ["number", "number", "number"]),
         instant: c("ds10_web_set_instant_pattern", null, ["number"]),
+        setRecord: c("ds10_web_set_record", null, ["number"]),
+        recNote: c("ds10_web_record_note", "number", ["number", "number"]),
+        recLane: c("ds10_web_record_lane", "number", ["number", "number"]),
       };
       this.api.audioInit();
       for (const m of this.pending) this.handle(m);
@@ -89,7 +92,27 @@ class DS10Processor extends AudioWorkletProcessor {
       a.setTrack(m.track | 0);
       break;
     }
-    case "note":       a.note(m.voice | 0, m.note | 0, m.on ? 1 : 0); break;
+    case "note":
+      a.note(m.voice | 0, m.note | 0, m.on ? 1 : 0);
+      /* Recording takes the step from here, because this is the copy with
+       * the playhead in it. The page is told so its song matches. */
+      if (m.on) {
+        const r = a.recNote(m.voice | 0, m.note | 0);
+        if (r >= 0)
+          this.port.postMessage({type: "recorded", what: "note",
+                                 pattern: r >> 8, step: r & 0xFF,
+                                 track: m.voice | 0, note: m.note | 0});
+      }
+      break;
+    case "lane": {
+      const r = a.recLane(m.lane | 0, m.value | 0);
+      if (r >= 0)
+        this.port.postMessage({type: "recorded", what: "lane",
+                               pattern: r >> 8, step: r & 0xFF,
+                               lane: m.lane | 0, value: m.value | 0});
+      break;
+    }
+    case "record":     a.setRecord(m.on ? 1 : 0); break;
     /* One step, rather than the whole song. Painting a run across the grid
      * posted 12 KB per cell, and each reload reset the voices under whatever
      * was sounding - which is what made entering notes glitch. */
