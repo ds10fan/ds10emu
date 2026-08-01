@@ -266,7 +266,16 @@ function onDown(which, ev) {
 
   if (page === "90_MAP") {
     const next = api.mapHit(x, y);
-    if (next) goto(next);
+    if (!next) return;
+    /* Half the map's boxes come in pairs, one per synth, and which of the
+     * pair was touched is what picks the track the page then edits. */
+    const synth = api.mapSynth(x, y);
+    if (synth >= 0) {
+      api.setTrack(synth);
+      api.seqFollow();
+    }
+    goto(next);
+    syncControls();
     return;
   }
   startAudio();
@@ -399,6 +408,8 @@ Module.onRuntimeInitialized = () => {
     height: Module.cwrap("ds10_web_height", "number", []),
     error: Module.cwrap("ds10_web_error", "string", []),
     mapHit: Module.cwrap("ds10_web_map_hit", "string", ["number", "number"]),
+    mapSynth: Module.cwrap("ds10_web_map_synth", "number",
+                           ["number", "number"]),
     keyHit: Module.cwrap("ds10_web_key_hit", "number",
                          ["number", "number", "number"]),
     keyButton: Module.cwrap("ds10_web_key_button", "number",

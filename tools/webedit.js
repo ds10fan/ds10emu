@@ -51,6 +51,9 @@ M.onRuntimeInitialized = () => {
     setPattern: c('ds10_web_set_pattern', null, ['number']),
     patternClear: c('ds10_web_pattern_clear', null, ['number']),
     factoryPatch: c('ds10_web_factory_patch', 'number', ['number']),
+    mapHit: c('ds10_web_map_hit', 'string', ['number', 'number']),
+    mapSynth: c('ds10_web_map_synth', 'number', ['number', 'number']),
+    track: c('ds10_web_track', 'number', []),
     seqMode: c('ds10_web_seq_mode', 'number', []),
     seqModeNext: c('ds10_web_seq_mode_next', 'string', []),
     seqModePage: c('ds10_web_seq_mode_page', 'string', []),
@@ -135,6 +138,25 @@ M.onRuntimeInitialized = () => {
     if (cellInk(withOff, 1, r) !== cellInk(melody, 1, r)) offscreen++;
   check(offscreen === 0, 'an off-screen note draws nothing');
   api.seqStep(0, 1, -1);
+
+  /* The map's per-synth pairs. Half its boxes come in twos, and which of the
+   * pair was touched is what picks the track the page then edits. */
+  {
+    const box = (n, x, y) => {
+      check(api.mapHit(x, y) === n, 'the map box at ' + x + ',' + y + ' is '
+            + n + ', got ' + api.mapHit(x, y));
+      return api.mapSynth(x, y);
+    };
+    check(box('60_SYN_SEQ_PIANO', 30, 33) === 0, 'SYN1 SEQ is synth 1');
+    check(box('60_SYN_SEQ_PIANO', 30, 95) === 1, 'SYN2 SEQ is synth 2');
+    check(box('61_SYN_EDIT', 140, 33) === 0, 'SYN1 EDIT is synth 1');
+    check(box('61_SYN_EDIT', 140, 95) === 1, 'SYN2 EDIT is synth 2');
+    check(box('70_PATCH', 157, 62) === 0, 'SYN1 PATCH is synth 1');
+    check(box('70_PATCH', 157, 124) === 1, 'SYN2 PATCH is synth 2');
+    check(box('30_MIXER', 221, 33) === -1, 'the mixer is not per-synth');
+    check(box('51_ALL_DRUMS', 34, 157) === -1, 'nor the drums');
+    check(api.mapHit(100, 180) === '', 'and a gap opens nothing');
+  }
 
   /* The value sub-modes. The page's own button steps them, and each one edits
    * a different byte of the step through the same grid. */

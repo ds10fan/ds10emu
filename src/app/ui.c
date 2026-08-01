@@ -916,28 +916,46 @@ void ds10_ui_frame(ds10_ui *u, uint32_t *top, uint32_t *bottom)
  */
 static const struct {
     int x, y, w, h;
+    int screen;          /* index into the screen table at 0x02085f80 */
     const char *page;
 } MAP_BOX[] = {
-    {  7,  25, 46, 16, "60_SYN_SEQ_PIANO"},  /* SYN1 SEQ */
-    {  7,  87, 46, 16, "60_SYN_SEQ_PIANO"},  /* SYN2 SEQ */
-    {  7, 149, 54, 16, "51_ALL_DRUMS"},      /* DRUMS SEQ */
-    { 39,  45, 54, 16, "81_KEY_i"},          /* SYN1 KBD */
-    { 39,  65, 54, 16, "71_KAOSS"},          /* SYN1 KAOSS */
-    { 39, 107, 54, 16, "81_KEY_i"},          /* SYN2 KBD */
-    { 39, 127, 54, 16, "71_KAOSS"},          /* SYN2 KAOSS */
-    {117,  25, 46, 16, "61_SYN_EDIT"},       /* SYN1 EDIT */
-    {117,  87, 46, 16, "61_SYN_EDIT"},       /* SYN2 EDIT */
-    {131,  54, 53, 16, "70_PATCH"},          /* SYN1 PATCH */
-    {131, 116, 53, 16, "70_PATCH"},          /* SYN2 PATCH */
-    {203,  25, 36, 16, "30_MIXER"},
-    {207,  55, 30, 16, "52_FX"},
-    {  4,   2, 76, 14, "32_PATTERN"},
-    {206, 142, 46, 16, "33_DRUM_SELECTER"},  /* DRUMS */
-    /* the DRUMS submenu */
-    { 85,  64, 88, 16, "53_DRUMEDIT"},
-    { 85,  96, 88, 16, "63_DRUM_EDIT_PATCH"},
-    { 85, 128, 88, 16, "54_DRUM_FX"},
+    {  7,  25, 46, 16,  0, "60_SYN_SEQ_PIANO"},  /* SYN1 SEQ */
+    {  7,  87, 46, 16,  1, "60_SYN_SEQ_PIANO"},  /* SYN2 SEQ */
+    {  7, 149, 54, 16, 12, "51_ALL_DRUMS"},      /* DRUMS SEQ */
+    { 39,  45, 54, 16,  8, "81_KEY_i"},          /* SYN1 KBD */
+    { 39,  65, 54, 16,  6, "71_KAOSS"},          /* SYN1 KAOSS */
+    { 39, 107, 54, 16,  9, "81_KEY_i"},          /* SYN2 KBD */
+    { 39, 127, 54, 16,  7, "71_KAOSS"},          /* SYN2 KAOSS */
+    {117,  25, 46, 16,  2, "61_SYN_EDIT"},       /* SYN1 EDIT */
+    {117,  87, 46, 16,  3, "61_SYN_EDIT"},       /* SYN2 EDIT */
+    {131,  54, 53, 16,  4, "70_PATCH"},          /* SYN1 PATCH */
+    {131, 116, 53, 16,  5, "70_PATCH"},          /* SYN2 PATCH */
+    {203,  25, 36, 16, 11, "30_MIXER"},
+    {207,  55, 30, 16, 10, "52_FX"},
+    {  4,   2, 76, 14, 13, "32_PATTERN"},
+    {206, 142, 46, 16, 18, "33_DRUM_SELECTER"},  /* DRUMS */
+    /* the DRUMS submenu, which is the same table with four more in front */
+    { 85,  64, 88, 16, 17, "53_DRUMEDIT"},
+    { 85,  96, 88, 16, 19, "63_DRUM_EDIT_PATCH"},
+    { 85, 128, 88, 16, 16, "54_DRUM_FX"},
 };
+
+/* Which synth a box selects, or -1 for a box that is not per-synth.
+ *
+ * The screen table's first ten entries are five pairs - sequencer, edit,
+ * patch, KAOSS, keyboard - and the pair is the synth 1 and synth 2 variants
+ * of one page. So the low bit of the index is the synth, which is how tapping
+ * SYN2 EDIT gets you synth 2's patch rather than synth 1's. */
+int ds10_ui_map_synth(int x, int y)
+{
+    size_t i;
+
+    for (i = 0; i < sizeof MAP_BOX / sizeof MAP_BOX[0]; i++)
+        if (x >= MAP_BOX[i].x && x < MAP_BOX[i].x + MAP_BOX[i].w &&
+            y >= MAP_BOX[i].y && y < MAP_BOX[i].y + MAP_BOX[i].h)
+            return MAP_BOX[i].screen < 10 ? MAP_BOX[i].screen & 1 : -1;
+    return -1;
+}
 
 const char *ds10_ui_map_hit(int x, int y)
 {

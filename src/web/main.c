@@ -1103,6 +1103,11 @@ static void refresh(void)
                            (int)ed.song.tempo);
 }
 
+/* Which synth the map box under a touch selects, or -1. The map's per-synth
+ * pairs are what makes SYN2 EDIT open synth 2's patch. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_map_synth(int x, int y) { return ds10_ui_map_synth(x, y); }
+
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_render(void)
 {

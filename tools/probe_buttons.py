@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """probe_buttons - find a page's controls by tapping it and watching.
 
-    python3 tools/probe_buttons.py [outdir] [page] [y0 y1 ystep]
+    python3 tools/probe_buttons.py [outdir] [page] [y0 y1 ystep [x0 x1 xstep]]
 
 `page` is a map box caption - "SYN1  SEQ", "PATTERN", "MIXER" - naming the
 screen to open and probe. The default is the synth sequencer.
@@ -52,8 +52,13 @@ PAGES = {
 }
 OPEN = PAGES["seq"]
 
-# The NO button of the CLEAR ALL DATA prompt.
+# The NO button of the CLEAR ALL DATA prompt, which only the sequencer can
+# raise. Tapping it on any other page would just be another probe - on
+# 32_PATTERN it lands on a pattern button and selects one, which is exactly
+# the state the probe is trying to read.
 DIALOG_NO = (175, 117)
+DISMISS = {"seq"}
+_dismiss = True
 
 # The band above the grid, which is where the page's own buttons are.
 # The band above the grid, which is where the sequencer's own buttons are.
@@ -82,8 +87,9 @@ def reopen(out, t):
     # dismiss it. With no dialog up that tap lands on the grid and toggles a
     # cell, which is why the scoring below reports the bar and the rest of the
     # screen separately - grid noise cannot then hide a button.
-    out.append("%d touch %d %d\n%d release\n" % (t, DIALOG_NO[0],
-                                                 DIALOG_NO[1], t + 30))
+    if _dismiss:
+        out.append("%d touch %d %d\n%d release\n" % (t, DIALOG_NO[0],
+                                                     DIALOG_NO[1], t + 30))
     out.append("%d key L\n%d up L\n" % (t + 100, t + 120))
     out.append("%d touch %d %d\n%d release\n" % (t + 220, OPEN[0], OPEN[1],
                                                  t + 260))
@@ -130,14 +136,18 @@ def identify(vram, index, off=0x4000):
 
 
 def main():
-    global OPEN, PROBE, GRID_Y
+    global OPEN, PROBE, GRID_Y, _dismiss
     outdir = sys.argv[1] if len(sys.argv) > 1 else "out/probe"
     if len(sys.argv) > 2:
         OPEN = PAGES[sys.argv[2]]
+        _dismiss = sys.argv[2] in DISMISS
     if len(sys.argv) > 5:
         y0, y1, ystep = (int(v) for v in sys.argv[3:6])
+        x0, x1, xstep = 4, 255, 6
+        if len(sys.argv) > 8:
+            x0, x1, xstep = (int(v) for v in sys.argv[6:9])
         PROBE = [(x, y) for y in range(y0, y1 + 1, ystep)
-                 for x in range(4, 256, 6)]
+                 for x in range(x0, x1 + 1, xstep)]
         GRID_Y = 0
     text, frames = script()
     os.makedirs(outdir, exist_ok=True)
