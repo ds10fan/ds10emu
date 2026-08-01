@@ -201,6 +201,35 @@ M.onRuntimeInitialized = () => {
   check(loud > 0.01, 'the entered pattern makes a sound, peak ' + loud);
   check(api.cursor() >= 0, 'the cursor reports a step while playing');
 
+  /* The cursor has to move on the screen, not just in the state - that is
+   * the feedback you enter notes against. Find the brightest column in the
+   * band above the grid and watch it walk. */
+  function cursorColumn() {
+    const fb = screen();
+    let best = -1, bestInk = -1;
+    for (let s = 0; s < 16; s++) {
+      let ink = 0;
+      for (let y = 18; y < 30; y++)
+        for (let x = X0 + s * CELL; x < X0 + s * CELL + CELL; x++) {
+          const i = (y * 256 + x) * 4;
+          ink += fb[i] + fb[i + 1] + fb[i + 2];
+        }
+      if (ink > bestInk) { bestInk = ink; best = s; }
+    }
+    return best;
+  }
+  {
+    const seen = new Set();
+    for (let i = 0; i < 24; i++) {
+      seen.add(cursorColumn());
+      peak(1);
+    }
+    check(seen.size >= 4,
+          'the cursor walks the grid, saw ' + seen.size + ' columns');
+    check(cursorColumn() === api.cursor(),
+          'the drawn cursor is on the step the transport reports');
+  }
+
   api.patternClear(-1);
   peak(8);                        /* let the tails die away */
   const quiet = peak(12);
@@ -248,12 +277,49 @@ M.onRuntimeInitialized = () => {
         file.readUInt16LE(16 + 0x28) === 0xFFFF,
         'the arrangement is in the file');
 
-  fs.writeFileSync('/tmp/ds10-webedit.dat', file);
+  const repo = require('path').resolve(__dirname, '..');
+  fs.writeFileSync(repo + '/out/webedit.dat', file);
+
+  /* Load what was just written back through the game's own parser and play
+   * it, then render the same song with songplay - which has nothing to do
+   * with the browser build and is itself bit-exact against the original. If
+   * the two agree sample for sample, the file is a real song and not just
+   * bytes that happen to pass a hash. */
+  M.FS.writeFile('/data/nitrofs/demo/webedit.dat', file);
+  check(api.song('webedit') === 0, 'the exported file loads back');
+  check(api.songBars() === 2, 'and still has two bars');
+  for (const [s, r] of MELODY)
+    check(api.seqNote(0, s) === api.rowNote(r), 'step ' + s + ' survived');
+  check(api.getName() === 'WEBED', 'the name survived');
+
+  const mine = [];
+  for (let b = 0; b < 40; b++) {
+    const k = api.audioRender(2048);
+    const f = new Float32Array(M.HEAPU8.buffer, api.audioBuf(), k * 2);
+    for (let i = 0; i < k * 2; i++) mine.push(Math.round(f[i] * 32768));
+  }
+
+  const run = require('child_process').spawnSync(
+    repo + '/out/songplay',
+    ['-b', '2', '-o', repo + '/out/webedit_song.wav', repo + '/out/webedit.dat'],
+    {cwd: repo});   /* it reads data/tables.bin relative to where it runs */
+  check(run.status === 0, 'songplay renders the exported file: '
+        + (run.stderr || '').toString().trim());
+  if (run.status === 0) {
+    const wav = fs.readFileSync(repo + '/out/webedit_song.wav');
+    const ref = new Int16Array(wav.buffer, wav.byteOffset + 44,
+                               (wav.length - 44) >> 1);
+    const len = Math.min(ref.length, mine.length);
+    let bad = 0;
+    for (let i = 0; i < len; i++) if (ref[i] !== mine[i]) bad++;
+    check(len > 40000, 'songplay produced a whole song, ' + len + ' samples');
+    check(bad === 0, bad + ' of ' + len + ' samples differ from songplay');
+  }
 
   if (fails) {
     console.error('FAIL: ' + fails + ' checks');
     process.exit(1);
   }
-  console.log('PASS: entered a song in the browser build, ' + n
-              + ' bytes written');
+  console.log('PASS: entered a song in the browser build, wrote ' + n
+              + ' bytes, and songplay renders it identically');
 };

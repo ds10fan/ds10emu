@@ -458,6 +458,24 @@ Module.onRuntimeInitialized = () => {
   $("swing").addEventListener("change", (e) => api.setSwing(+e.target.value));
   $("name").addEventListener("change", (e) => api.setName(e.target.value));
   $("save").addEventListener("click", save);
+  /* Opening a file drops it into the preloaded filesystem under a fixed name
+   * and loads that, so it goes through exactly the path the ROM's own songs
+   * take - the game's parser, hash check included. */
+  $("load").addEventListener("change", async (e) => {
+    const f = e.target.files[0];
+    if (!f) return;
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    try {
+      Module.FS.writeFile("/data/nitrofs/demo/opened.dat", bytes);
+    } catch (err) {
+      say("cannot stage the file: " + err);
+      return;
+    }
+    if (api.song("opened") < 0) { say(f.name + ": " + api.error()); return; }
+    startAudio();
+    syncControls();
+    say(f.name + "   " + api.songBars() + " bars");
+  });
   $("clear").addEventListener("click", () => {
     api.patternClear(-1);
     say("pattern " + (api.pattern() + 1) + " cleared");

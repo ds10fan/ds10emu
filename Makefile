@@ -325,7 +325,7 @@ WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             --preload-file data/nitrofs@/data/nitrofs \
             --preload-file data/pages.bin@/data/pages.bin \
             --preload-file data/tables.bin@/data/tables.bin \
-            -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8"]' \
+            -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","FS"]' \
             -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
 
 web: web/build/ds10.js
@@ -354,7 +354,7 @@ out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c src/app/cell.c \
 # The browser build against songplay, sample for sample. Needs node and the
 # wasm build; both run the same engine, so this catches setup mistakes rather
 # than DSP ones.
-test-webedit: web
+test-webedit: web out/songplay
 	@node tools/webedit.js
 
 test-websong: web out/songplay
