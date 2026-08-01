@@ -3,6 +3,10 @@
 
     python3 tools/serve.py [port]
 
+Serves over HTTPS when web/cert.pem and web/key.pem are there, because an
+AudioWorklet needs a secure context and a phone on the LAN is not localhost.
+The certificate is self-signed, so the browser will want that accepted once.
+
 `python3 -m http.server` is enough to load the page but tells you nothing
 when it breaks, and on a phone there is no console to look at. This serves
 web/build the same way and adds one endpoint:
@@ -15,12 +19,17 @@ screen on a device with no console still says why.
 import datetime
 import http.server
 import os
+import ssl
 import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
                     "web", "build")
 LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out",
                    "weblog.txt")
+CERT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web",
+                    "cert.pem")
+KEY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web",
+                   "key.pem")
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
@@ -57,7 +66,16 @@ def main():
     os.makedirs(os.path.dirname(LOG), exist_ok=True)
     with open(LOG, "a") as f:
         f.write("---- serving on :%d ----\n" % port)
-    http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+    srv = http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    scheme = "http"
+    if os.path.exists(CERT) and os.path.exists(KEY):
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        ctx.load_cert_chain(CERT, KEY)
+        srv.socket = ctx.wrap_socket(srv.socket, server_side=True)
+        scheme = "https"
+    print("serving %s on :%d" % (scheme, port))
+    sys.stdout.flush()
+    srv.serve_forever()
 
 
 if __name__ == "__main__":

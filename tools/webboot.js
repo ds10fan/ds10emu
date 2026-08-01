@@ -95,7 +95,17 @@ global.requestAnimationFrame = () => 0;   /* one frame is enough */
 global.URL = {createObjectURL: () => 'blob:', revokeObjectURL() {}};
 global.Blob = class {};
 
-global.TextDecoder = RealTextDecoder;
+/* Put back a TextDecoder that refuses to work. The module was loaded with
+ * the global hidden, so it decodes UTF-8 itself; if any string path still
+ * reaches for a decoder this turns the browser's restriction into a failure
+ * here, where it can be seen. */
+let decoderCalls = 0;
+global.TextDecoder = class {
+  decode() {
+    decoderCalls++;
+    throw new TypeError("The provided ArrayBuffer value must not be resizable");
+  }
+};
 global.Module = M;
 
 let ran = false;
@@ -134,7 +144,28 @@ const boot = () => {
                                               .join('\n  ') : e));
     process.exit(1);
   }
-  console.log('PASS: the page starts up, status ' + JSON.stringify(status));
+  /* And exercise the string paths: page names in, knob and page names out. */
+  try {
+    const page = M.cwrap('ds10_web_page', 'number', ['string', 'string']);
+    const mapHit = M.cwrap('ds10_web_map_hit', 'string', ['number', 'number']);
+    const knobName = M.cwrap('ds10_web_knob_name', 'string', ['number']);
+    for (const p of ['61_SYN_EDIT', '30_MIXER', '60_SYN_SEQ_PIANO'])
+      page(p, '90_MAP');
+    if (mapHit(30, 33) !== '60_SYN_SEQ_PIANO')
+      throw new Error('a string came back wrong: ' + mapHit(30, 33));
+    if (!knobName(11)) throw new Error('an empty knob name');
+  } catch (e) {
+    console.error('FAIL: a string across the boundary threw');
+    console.error('  ' + (e && e.message ? e.message : e));
+    process.exit(1);
+  }
+  if (decoderCalls) {
+    console.error('FAIL: the module called TextDecoder ' + decoderCalls
+                  + ' times; Chrome would have thrown');
+    process.exit(1);
+  }
+  console.log('PASS: the page starts up, no TextDecoder, status '
+              + JSON.stringify(status));
   /* The page's audio timer would otherwise keep node alive for ever. */
   process.exit(0);
 };

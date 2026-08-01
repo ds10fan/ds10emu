@@ -6,15 +6,20 @@
   body {
     margin: 0; min-height: 100vh; background: #14161a; color: #e6e6e6;
     font: 14px/1.5 system-ui, sans-serif;
-    display: flex; flex-direction: column; align-items: center; gap: .75rem;
-    padding: 1.25rem 1rem 2rem;
+    display: flex; flex-direction: column; align-items: center; gap: .6rem;
+    padding: .75rem .5rem 2rem;
+    /* A drag on a knob must not become a scroll of the page. */
+    overscroll-behavior: none;
   }
   h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
   p  { margin: 0; color: #9aa4b2; max-width: 44rem; text-align: center; }
   #ds { display: flex; flex-direction: column; gap: 6px; align-items: center; }
   canvas {
     image-rendering: pixelated;
-    width: 512px; height: 384px;
+    /* As wide as the screen allows. On a phone the old fixed 256 made every
+     * target half a finger wide. */
+    width: min(512px, calc(100vw - 1rem));
+    aspect-ratio: 4 / 3; height: auto;
     background: #000; border-radius: 3px;
     box-shadow: 0 0 0 1px #2a2f37;
   }
@@ -35,7 +40,12 @@
   button.on { background: #2f6f4f; border-color: #3d8a63; }
   #status { font-family: ui-monospace, monospace; font-size: .8rem;
             color: #7d8794; min-height: 1.2em; }
-  @media (max-width: 560px) { canvas { width: 256px; height: 192px; } }
+  /* Big enough to hit with a thumb. */
+  select, button, input { min-height: 2rem; }
+  @media (max-width: 560px) {
+    h1, p { display: none; }        /* the screens are the point on a phone */
+    body { padding-top: .4rem; }
+  }
 </style>
 
 <h1>KORG DS-10 PLUS &mdash; decompiled</h1>
@@ -46,6 +56,12 @@ blank template, and <b>save</b> writes a <code>.dat</code> the hardware would
 load. Tap the grid on <code>60_SYN_SEQ_PIANO</code> to enter notes, drag the
 knobs on <code>61_SYN_EDIT</code>, and touch a box on <code>90_MAP</code> to
 move around. <kbd>space</kbd> starts and stops.</p>
+
+<div id="ds">
+  <canvas id="top" width="256" height="192"></canvas>
+  <canvas id="bottom" width="256" height="192"></canvas>
+</div>
+<div id="status">loading&hellip;</div>
 
 <div class="row">
   <button id="play">play</button>
@@ -72,12 +88,6 @@ move around. <kbd>space</kbd> starts and stops.</p>
   <label>top <select id="pick-top"></select></label>
 </div>
 
-<div id="ds">
-  <canvas id="top" width="256" height="192"></canvas>
-  <canvas id="bottom" width="256" height="192"></canvas>
-</div>
-
-<div id="status">loading&hellip;</div>
 
 <script>
 /* Chrome refuses TextDecoder.decode() on a resizable ArrayBuffer, and that is

@@ -252,8 +252,10 @@ int ds10_web_audio_init(void)
     if (audio_ready) return 0;
     memset(voice, 0, sizeof voice);
     memset(&mixer, 0, sizeof mixer);
-    if (ds10_tables_load(&tables, "/data/tables.bin") != 0) {
-        snprintf(last_error, sizeof last_error, "cannot load /data/tables.bin");
+    /* Compiled in by tools/mktables.py, so the audio build needs no
+     * filesystem - an AudioWorklet has none. */
+    if (ds10_tables_builtin(&tables) != 0) {
+        snprintf(last_error, sizeof last_error, "cannot parse the tables");
         return -1;
     }
     ds10_tables_views(&tables.t, &pitch_tables, &vcf_tables);
@@ -344,6 +346,9 @@ int ds10_web_audio_init(void)
     return 0;
 }
 
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song_bytes(const uint8_t *blob, int len);
+
 /* Load a song file into the editor and start it.
  *
  * "ds10init" is the ROM's own blank template, so that is what a new song
@@ -374,8 +379,19 @@ int ds10_web_song(const char *name)
         return -1;
     }
     fclose(f);
-    if (ds10_editor_init(&ed, blob, (size_t)n) != DS10_SONG_OK) {
-        snprintf(last_error, sizeof last_error, "%s: not a song", path);
+    return ds10_web_song_bytes(blob, (int)n);
+}
+
+/* The same from an image already in memory. This is what the page uses for a
+ * file the user opened, and what the audio worklet is sent on every edit. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song_bytes(const uint8_t *blob, int len)
+{
+    int i;
+
+    if (!audio_ready && ds10_web_audio_init() < 0) return -1;
+    if (ds10_editor_init(&ed, blob, (size_t)len) != DS10_SONG_OK) {
+        snprintf(last_error, sizeof last_error, "not a song");
         return -1;
     }
     for (i = 0; i < DS10_SONG_PATTERNS; i++)
@@ -792,9 +808,22 @@ void ds10_web_seq_follow(void)
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_row_note(int row) { return ds10_ui_seq_row_note(seq_top, row); }
 
-/* The step the transport is on, or -1 when it is stopped. */
+/* The step the transport is on, or -1 when it is stopped.
+ *
+ * The audio runs in a worklet with its own copy of the engine, and this copy
+ * never ticks, so the drawing takes the step from there instead. Without a
+ * worklet - the native viewer, the tests - it falls back to this engine. */
+static int ui_cursor = -2;      /* -2: nobody has told us, use our own */
+
 EMSCRIPTEN_KEEPALIVE
-int ds10_web_cursor(void) { return seq_playing ? seq.step : -1; }
+void ds10_web_set_cursor(int step) { ui_cursor = step; }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_cursor(void)
+{
+    if (ui_cursor != -2) return ui_cursor;
+    return seq_playing ? seq.step : -1;
+}
 
 /* Which of the sequencer's six sub-modes is showing. The button that steps
  * them is the page's own, at ds10_ui_seq_mode_hit. */

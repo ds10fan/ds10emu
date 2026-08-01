@@ -285,6 +285,17 @@ static const char *const KNOB_NAME[31] = {
 #define PTR_W 8
 #define PTR_H 16
 #define PTR_SWEEP 270.0
+/* The pointer sprite does not spin in place: its centre orbits the knob's,
+ * because the game rotates about the knob centre and the sprite's own centre
+ * is offset from that. The offset is this vector turned by the same angle.
+ *
+ * Read off thirteen pointers in the captured frame, at four distinct angles:
+ * at 0 degrees the sprite centre sits 3 right and 7 up of the knob centre,
+ * and rotating (3,-7) reproduces every other one exactly - (-7,+3) at -135,
+ * (+3,+7) at +135, (-3,-7) at -45. Drawing it at the knob centre instead put
+ * every pointer about 8 pixels out. */
+#define PTR_ORBIT_X 3.0
+#define PTR_ORBIT_Y (-7.0)
 #define PTR_PI 3.14159265358979323846
 
 /* An affine slot holds four halfwords, 8.8, scattered through OAM at
@@ -335,10 +346,17 @@ void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
         if (SYN_KNOB[i].id != id) continue;
         slot = u->knob_slot[i];
         if (slot < 0) continue;
-        memset(&o, 0, sizeof o);
-        o.count = 1;
-        o.x = SYN_KNOB[i].x - PTR_W;
-        o.y = SYN_KNOB[i].y - PTR_H;
+        {
+            double rad = deg * PTR_PI / 180.0;
+            double c = cos(rad), sn = sin(rad);
+
+            memset(&o, 0, sizeof o);
+            o.count = 1;
+            o.x = SYN_KNOB[i].x - PTR_W +
+                  (int)lrint(PTR_ORBIT_X * c - PTR_ORBIT_Y * sn);
+            o.y = SYN_KNOB[i].y - PTR_H +
+                  (int)lrint(PTR_ORBIT_X * sn + PTR_ORBIT_Y * c);
+        }
         o.tile = PTR_TILE;
         o.palette = PTR_PAL;
         o.priority = PTR_PRIO;
@@ -370,7 +388,10 @@ void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
 #define MIX_VOL_X 10
 #define MIX_VOL_Y 85
 #define MIX_VOL_W 32
-#define MIX_VOL_H 0x61
+#define MIX_VOL_H 0x61        /* the whole widget, which is what it catches */
+/* ...of which 0x51 is track and 0x10 is the handle, so the handle's travel is
+ * the track alone. Using the total sent the faders 16 pixels too far. */
+#define MIX_VOL_TRAVEL 0x51
 #define MIX_STEP 43
 
 int ds10_ui_mixer_hit(int x, int y)
@@ -1206,7 +1227,7 @@ void ds10_ui_mixer_fader(ds10_ui *u, int ch, int value)
          * gave each fader. */
         if ((it->x >> 12) != MIX_VOL_X + MIX_STEP * ch) continue;
         it->y = (MIX_FADER_ORIGIN +
-                 ds10_ui_slider_pos(value, 0, 127, MIX_VOL_H, 0)) << 12;
+                 ds10_ui_slider_pos(value, 0, 127, MIX_VOL_TRAVEL, 0)) << 12;
         seen = 1;
         break;
     }

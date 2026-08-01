@@ -6,10 +6,10 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: fonttest test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: fonttest test-tables test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-obj test-cell test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-obj test-cell test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -145,6 +145,15 @@ out/test_song: tests/test_song.c src/core/song.c src/core/md5.c \
                src/core/song.h src/core/md5.h
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_song.c src/core/song.c src/core/md5.c
+
+test-tables: out/test_tables
+	@./out/test_tables
+
+out/test_tables: tests/test_tables.c src/core/tables.c src/core/tables_data.c \
+                 src/core/tables.h
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_tables.c src/core/tables.c \
+	    src/core/tables_data.c
 
 test-editor: out/test_editor
 	@./out/test_editor
@@ -320,7 +329,8 @@ WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
           src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
           src/core/mixer.c src/core/patch.c src/core/event.c \
           src/core/tables.c src/core/voice_state.c src/core/mixer_state.c \
-          src/core/seq.c src/core/song.c src/core/md5.c src/core/drum.c
+          src/core/seq.c src/core/song.c src/core/md5.c src/core/drum.c \
+          src/core/tables_data.c
 WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             --preload-file data/nitrofs@/data/nitrofs \
             --preload-file data/pages.bin@/data/pages.bin \
@@ -328,13 +338,30 @@ WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","FS"]' \
             -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
 
-web: web/build/ds10.js
+# The engine again, for the AudioWorklet: no preloaded files at all - the
+# tables are compiled in and a song arrives over the port - and one file,
+# because a worklet has no fetch. DSP then runs on the audio thread, where a
+# slow frame cannot stall it.
+AUDIO_FLAGS = -O2 -std=c99 -Wall -lm \
+              -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8"]' \
+              -s INITIAL_MEMORY=32MB -s EXIT_RUNTIME=0 \
+              -s SINGLE_FILE=1 -s MODULARIZE=1 -s EXPORT_ES6=1 \
+              -s EXPORT_NAME=DS10Audio -s ENVIRONMENT=worker
+
+web/build/ds10audio.js: $(WEB_SRC) src/core/tables_data.c
+	@mkdir -p web/build
+	$(EMCC) $(AUDIO_FLAGS) -o web/build/ds10audio.js $(WEB_SRC)
+
+src/core/tables_data.c: data/tables.bin tools/mktables.py
+	@$(PY) tools/mktables.py data/tables.bin $@
+
+web: web/build/ds10.js web/build/ds10audio.js
 web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \
                    data/pages.bin data/tables.bin web/index.html \
                    web/app.js
 	@mkdir -p web/build
 	$(EMCC) $(WEB_FLAGS) -o web/build/ds10.js $(WEB_SRC)
-	@cp web/index.html web/app.js web/build/
+	@cp web/index.html web/app.js web/worklet.js web/build/
 
 # Serve it. The page is static, so anything that serves files will do.
 serve: web

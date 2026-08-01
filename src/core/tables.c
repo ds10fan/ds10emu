@@ -17,36 +17,23 @@ static const int WIDE[T_COUNT] = {
     4, 4, 4, 4, 4, 4, 4, 2, 2, 4, 4, 2, 2, 4, 4, 4
 };
 
-int ds10_tables_load(ds10_table_set *s, const char *path)
+/* Parse a table image already in memory. The views point into a copy this
+ * keeps, so the caller's buffer need not outlive the call - which is what
+ * lets the audio worklet be handed its tables over a message port instead of
+ * needing a filesystem. */
+int ds10_tables_parse(ds10_table_set *s, const unsigned char *data, size_t len)
 {
-    FILE *f = fopen(path, "rb");
     char magic[4];
     uint32_t n, i;
-    long size;
     unsigned char *blob;
     void *ptr[T_COUNT];
     size_t off = 8;
 
     memset(s, 0, sizeof *s);
-    if (!f)
-        return -1;
-    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 8 ||
-        fseek(f, 0, SEEK_SET) != 0) {
-        fclose(f);
-        return -1;
-    }
-    blob = malloc((size_t)size);
-    if (!blob) {
-        fclose(f);
-        return -1;
-    }
-    if (fread(blob, 1, (size_t)size, f) != (size_t)size) {
-        free(blob);
-        fclose(f);
-        return -1;
-    }
-    fclose(f);
-
+    if (!data || len < 8) return -1;
+    blob = malloc(len);
+    if (!blob) return -1;
+    memcpy(blob, data, len);
     memcpy(magic, blob, 4);
     memcpy(&n, blob + 4, 4);
     if (memcmp(magic, "TBL1", 4) != 0 || n != T_COUNT) {
@@ -58,13 +45,13 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
     for (i = 0; i < T_COUNT; i++) {
         uint32_t cnt;
 
-        if (off + 4 > (size_t)size) {
+        if (off + 4 > len) {
             free(blob);
             return -1;
         }
         memcpy(&cnt, blob + off, 4);
         off += 4;
-        if (off + (size_t)cnt * WIDE[i] > (size_t)size) {
+        if (off + (size_t)cnt * WIDE[i] > len) {
             free(blob);
             return -1;
         }
@@ -76,14 +63,14 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
     {
         uint32_t cnt;
 
-        if (off + 4 > (size_t)size) {
+        if (off + 4 > len) {
             free(blob);
             return -1;
         }
         memcpy(&cnt, blob + off, 4);
         off += 4;
         if (cnt != DS10_VOICE_STATE_FIELDS ||
-            off + (size_t)cnt * 4 > (size_t)size) {
+            off + (size_t)cnt * 4 > len) {
             free(blob);
             return -1;
         }
@@ -94,14 +81,14 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
     {
         uint32_t nm, nf;
 
-        if (off + 8 > (size_t)size) {
+        if (off + 8 > len) {
             free(blob);
             return -1;
         }
         memcpy(&nm, blob + off, 4);
         memcpy(&nf, blob + off + 4, 4);
         off += 8;
-        if (off + (size_t)(nm + nf) * 4 > (size_t)size) {
+        if (off + (size_t)(nm + nf) * 4 > len) {
             free(blob);
             return -1;
         }
@@ -110,7 +97,7 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
         off += (size_t)(nm + nf) * 4;
     }
     /* Then 31 knob minimums and 31 knob ranges. */
-    if (off + 31 * 8 > (size_t)size) {
+    if (off + 31 * 8 > len) {
         free(blob);
         return -1;
     }
@@ -135,6 +122,33 @@ int ds10_tables_load(ds10_table_set *s, const char *path)
     s->fx.lfo_rate = ptr[T_FX_LFO_RATE];
     s->drum_pitch = ptr[T_DRUM_PITCH];
     return 0;
+}
+
+int ds10_tables_load(ds10_table_set *s, const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    long size;
+    unsigned char *blob;
+    int rc;
+
+    memset(s, 0, sizeof *s);
+    if (!f) return -1;
+    if (fseek(f, 0, SEEK_END) != 0 || (size = ftell(f)) < 8 ||
+        fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return -1;
+    }
+    blob = malloc((size_t)size);
+    if (!blob) { fclose(f); return -1; }
+    if (fread(blob, 1, (size_t)size, f) != (size_t)size) {
+        free(blob);
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    rc = ds10_tables_parse(s, blob, (size_t)size);
+    free(blob);
+    return rc;
 }
 
 void ds10_tables_free(ds10_table_set *s)

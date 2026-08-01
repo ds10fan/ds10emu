@@ -9,6 +9,8 @@
 
 #include "fx.h"
 #include "patch.h"
+#include <stddef.h>
+
 #include "voice_state.h"
 
 typedef struct {
@@ -32,6 +34,14 @@ typedef struct {
 
 /* Returns 0 on success. On failure `blob` is NULL and nothing was allocated. */
 int ds10_tables_load(ds10_table_set *s, const char *path);
+
+/* The same from an image already in memory. */
+int ds10_tables_parse(ds10_table_set *s, const unsigned char *data,
+                      size_t len);
+
+/* And from the copy compiled in by tools/mktables.py, so a build with no
+ * filesystem - the audio worklet - still starts. Same parser, same bytes. */
+int ds10_tables_builtin(ds10_table_set *s);
 void ds10_tables_free(ds10_table_set *s);
 
 #endif /* DS10_TABLES_H */

@@ -112,6 +112,8 @@ let held = null;       /* the note currently sounding, if any */
 let drag = null;       /* {kind, id, from, y} while something is being dragged */
 let paint = null;      /* {track, note} while dragging across the step grid */
 let kaoss = false;
+let playing = false;
+let cursor = -1;   /* the step the worklet reports */
 
 function fill(select, names, initial) {
   for (const n of names) {
@@ -163,38 +165,70 @@ function goto(page) {
   show();
 }
 
-/* Audio. The engine runs at 32768 Hz and the browser resamples. Blocks are
- * rendered ahead of the clock and queued, which is enough for a keyboard. */
-function startAudio() {
-  /* A context made before the user has touched anything comes up suspended,
-   * so every entry point that can make a sound comes through here. */
+/* Audio.
+ *
+ * The engine runs on the audio thread in an AudioWorklet, not here. Rendering
+ * on the main thread competed with the canvas loop and, on a phone, lost
+ * badly enough to lock the page. This side only sends messages.
+ *
+ * The context is opened at the engine's own 32768 Hz so nothing has to
+ * resample; the browser handles the final conversion to the device rate.
+ *
+ * The worklet has its own copy of the engine, so an edit here has to be sent
+ * there. The whole song goes over on any change - 12 KB, and it cannot drift.
+ */
+let worklet = null;
+
+function sendSong() {
+  if (!worklet) return;
+  const n = api.export();
+  if (n <= 0) return;
+  worklet.port.postMessage({
+    type: "song",
+    bytes: Module.HEAPU8.slice(api.exportBuf(), api.exportBuf() + n),
+    pattern: api.pattern(),
+    track: api.track(),
+    songMode: !!api.songMode(),
+    playing: playing,
+  });
+}
+
+function send(m) { if (worklet) worklet.port.postMessage(m); }
+
+/* Start or stop. Both engines are told: the worklet's makes the sound, and
+ * this one silences its own voices so a preview note does not hang. */
+function transport(on) {
+  playing = !!on;
+  api.seqPlay(playing ? 1 : 0);
+  send({type: "play", on: playing});
+  if (!playing) { cursor = -1; api.setCursor(-1); }
+}
+
+async function startAudio() {
   if (audio) {
-    if (audio.state === "suspended") audio.resume();
+    if (audio.state === "suspended") await audio.resume();
     return;
   }
-  if (api.audioInit() < 0) { say("error: " + api.error()); return; }
-  audio = new AudioContext();
-  const rate = api.rate();
-  const BLOCK = 2048;
-  let next = audio.currentTime;
-
-  setInterval(() => {
-    /* Keep about a fifth of a second queued. */
-    while (next < audio.currentTime + 0.2) {
-      const n = api.audioRender(BLOCK);
-      if (!n) return;
-      const src = new Float32Array(Module.HEAPU8.buffer, api.audioBuf(), n * 2);
-      const b = audio.createBuffer(2, n, rate);
-      const l = b.getChannelData(0), r = b.getChannelData(1);
-      for (let i = 0; i < n; i++) { l[i] = src[i * 2]; r[i] = src[i * 2 + 1]; }
-      const s = audio.createBufferSource();
-      s.buffer = b;
-      s.connect(audio.destination);
-      const at = Math.max(next, audio.currentTime);
-      s.start(at);
-      next = at + n / rate;
-    }
-  }, 40);
+  if (api.audioInit() < 0) { report("audioInit failed: " + api.error()); return; }
+  try {
+    audio = new AudioContext({sampleRate: api.rate(), latencyHint: "interactive"});
+    await audio.audioWorklet.addModule("worklet.js");
+    worklet = new AudioWorkletNode(audio, "ds10", {
+      numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+    });
+    worklet.port.onmessage = (e) => {
+      const m = e.data;
+      if (m.type === "cursor") { cursor = m.step; api.setCursor(m.step); }
+      else if (m.type === "ready") trace("worklet ready at " + m.rate + " Hz");
+      else if (m.type === "error") report("worklet: " + m.what);
+    };
+    worklet.connect(audio.destination);
+    sendSong();
+    trace("audio started, context " + audio.sampleRate + " Hz");
+  } catch (e) {
+    audio = null;
+    report("audio failed: " + (e && e.message ? e.message : e));
+  }
 }
 
 function screenPos(ev) {
@@ -212,11 +246,24 @@ function pointerY(ev) {
  * Jumping the value to wherever the finger landed would destroy a patch on
  * the first touch, which is not what the hardware does. */
 function startDrag(ev, kind, id, from) {
-  drag = {kind: kind, id: id, from: from, y: pointerY(ev)};
-  ev.target.setPointerCapture(ev.pointerId);
+  drag = {kind: kind, id: id, from: from, y: pointerY(ev), moves: 0};
+  outcome = kind + " " + id + " grabbed at " + from;
+  /* Say what was grabbed and what it is set to, so a touch that has not
+   * turned anything yet is still visibly a touch on that control. */
+  say((kind === "knob" ? api.knobName(id) : mixerName(id)) + "  " + from
+      + "   (drag up or down)");
+  try {
+    ev.target.setPointerCapture(ev.pointerId);
+  } catch (e) {
+    trace("setPointerCapture failed: " + e.message);
+  }
 }
 
 function dragTo(ev) {
+  /* Whether moves arrive at all is the difference between "the knob is dead"
+   * and "the knob needs a drag", and the two look identical from outside. */
+  if (drag.moves++ === 0) trace("first move on " + drag.kind + " " + drag.id);
+
   /* Up increases, and a full screen height covers the range about twice,
    * which is roughly what the device feels like. */
   const moved = (drag.y - pointerY(ev)) / 96;
@@ -226,11 +273,13 @@ function dragTo(ev) {
     const v = Math.max(lo, Math.min(lo + n - 1,
                                     Math.round(drag.from + moved * n)));
     api.knobSet(drag.id, v);
+    send({type: "knob", track: api.track(), id: drag.id, value: v});
     say(api.knobName(drag.id) + "  " + v + "   (" + lo + ".."
         + (lo + n - 1) + ")");
   } else {
     const v = Math.max(0, Math.min(127, Math.round(drag.from + moved * 128)));
     api.mixerSet(drag.id, v);
+    send({type: "mixer", id: drag.id, value: v});
     say(mixerName(drag.id) + "   " + v);
   }
 }
@@ -241,6 +290,8 @@ function kaossSet(h) {
   const kx = api.laneKnob(0), ky = api.laneKnob(1);
   api.knobSet(kx, h & 0xFF);
   api.knobSet(ky, h >> 8);
+  send({type: "knob", track: api.track(), id: kx, value: h & 0xFF});
+  send({type: "knob", track: api.track(), id: ky, value: h >> 8});
   say("KAOSS  " + api.knobName(kx) + " " + (h & 0xFF) + "   "
       + api.knobName(ky) + " " + (h >> 8));
 }
@@ -253,7 +304,7 @@ function mixerName(id) {
 
 function noteOff() {
   if (held === null) return;
-  api.note(0, held, 0);
+  send({type: "note", voice: 0, note: held, on: 0});
   held = null;
 }
 
@@ -261,6 +312,7 @@ function noteOff() {
  * thing across the row, which is how a run of steps gets entered. */
 function gridTouch(x, y, first) {
   const h = api.seqHit(x, y);
+  outcome = "seqHit " + h;
   if (h < 0) return;
   const step = h & 0xFF, row = h >> 8;
   const note = api.rowNote(row);
@@ -269,10 +321,11 @@ function gridTouch(x, y, first) {
   if (first) paint = {track: track, note: api.seqNote(track, step) === note
                                           ? -1 : note};
   api.seqStep(paint.track, step, paint.note);
+  sendSong();
   /* Sound the note as it goes in, so a melody can be entered by ear. */
   if (paint.note >= 0 && paint.note !== held) {
     noteOff();
-    api.note(paint.track, paint.note, 1);
+    send({type: "note", voice: paint.track, note: paint.note, on: 1});
     held = paint.note;
   }
   say("step " + (step + 1) + (paint.note < 0 ? "  cleared"
@@ -284,16 +337,19 @@ function gridTouch(x, y, first) {
  * ramp gets drawn. */
 function valueTouch(x, y, first) {
   const h = api.seqHit(x, y);
+  outcome = "valueHit " + h;
   if (h < 0) return;
   const step = h & 0xFF, row = h >> 8;
   if (first) paint = {};
   api.setStepRow(step, row);
+  sendSong();
   say(MODES[api.seqMode()] + "  step " + (step + 1) + "  "
       + api.stepValue(api.track() < 2 ? api.track() : 0, step));
 }
 
 function drumTouch(x, y, first) {
   const h = api.drumseqHit(x, y);
+  outcome = "drumseqHit " + h;
   if (h < 0) return;
   const step = h & 0xFF, drum = h >> 8;
   const track = 2 + drum;
@@ -301,7 +357,8 @@ function drumTouch(x, y, first) {
   if (first) paint = {track: track,
                       note: api.seqNote(track, step) >= 0 ? -1 : 60};
   api.seqStep(paint.track, step, paint.note);
-  if (first && paint.note >= 0) api.drumPlay(drum);
+  sendSong();
+  if (first && paint.note >= 0) send({type: "drum", n: drum});
   say("DRUM" + (drum + 1) + "  step " + (step + 1)
       + (paint.note < 0 ? "  off" : "  on"));
 }
@@ -329,20 +386,33 @@ function onMove(ev) {
   if (drag) dragTo(ev);
 }
 
+let outcome = "";
+
 function onDown(which, ev) {
   const page = pageOf(which);
   const [x, y] = screenPos(ev);
 
-  trace("touch " + which + " (" + x + "," + y + ") on " + page);
+  outcome = "nothing";
+  try {
+    onDownInner(which, ev, page, x, y);
+  } finally {
+    trace("touch " + which + " (" + x + "," + y + ") on " + page
+          + " -> " + outcome);
+  }
+}
+
+function onDownInner(which, ev, page, x, y) {
 
   if (page === "90_MAP") {
     const next = api.mapHit(x, y);
+    outcome = "map -> " + (next || "nothing");
     if (!next) return;
     /* Half the map's boxes come in pairs, one per synth, and which of the
      * pair was touched is what picks the track the page then edits. */
     const synth = api.mapSynth(x, y);
     if (synth >= 0) {
       api.setTrack(synth);
+      send({type: "track", n: synth});
       api.seqFollow();
     }
     goto(next);
@@ -350,30 +420,39 @@ function onDown(which, ev) {
     return;
   }
   startAudio();
-  if (page.startsWith("60_SYN_SEQ_") || page === "51_ALL_DRUMS") {
-    /* The top bar's right-hand button brings the map to this screen, which
-     * is what the L shoulder does on the device. */
-    if (api.mapButtonHit(x, y)) { goto("90_MAP"); return; }
-    if (api.clearHit(x, y)) {
-      /* The original raises a modal CLEAR ALL DATA prompt here. That prompt
-       * is not drawn yet, so this asks in the browser instead. */
-      if (window.confirm("CLEAR ALL DATA?")) {
-        api.patternClear(-1);
-        say("pattern " + (api.pattern() + 1) + " cleared");
-      }
-      return;
+  /* Every page carries the same button at the right of its top bar, and it
+   * brings the map to this screen - the L shoulder's job on the device.
+   * Wiring it on the sequencer alone left every other page with no way back,
+   * which is what "eventually you cannot swap the screens" was. */
+  if (page !== "90_MAP" && api.mapButtonHit(x, y)) {
+    outcome = "map button";
+    goto("90_MAP");
+    return;
+  }
+  if ((page.startsWith("60_SYN_SEQ_") || page === "51_ALL_DRUMS") &&
+      api.clearHit(x, y)) {
+    /* The original raises a modal CLEAR ALL DATA prompt here. That prompt is
+     * not drawn yet, so this asks in the browser instead. */
+    outcome = "clear";
+    if (window.confirm("CLEAR ALL DATA?")) {
+      api.patternClear(-1);
+      sendSong();
+      say("pattern " + (api.pattern() + 1) + " cleared");
     }
+    return;
   }
   if (page.startsWith("60_SYN_SEQ_")) {
     /* The page's own sub-mode button, which steps NOTE, GATE, VOL, PAN and
      * the two automation lanes. */
     if (api.seqModeHit(x, y)) {
+      outcome = "sub-mode";
       goto(api.seqModeNext());
       say(MODES[api.seqMode()]);
       return;
     }
     if (api.seqMode() === 0) gridTouch(x, y, true);
     else valueTouch(x, y, true);
+    outcome = "grid " + outcome;
     ev.target.setPointerCapture(ev.pointerId);
     return;
   }
@@ -384,8 +463,10 @@ function onDown(which, ev) {
   }
   if (page === "32_PATTERN") {
     const n = api.patternHit(x, y);
+    outcome = "pattern " + n;
     if (n >= 0) {
       api.setPattern(n);
+      send({type: "pattern", n: n});
       api.seqFollow();
       syncControls();
       say("pattern " + (n + 1));
@@ -394,11 +475,13 @@ function onDown(which, ev) {
   }
   if (page === "33_DRUM_SELECTER") {
     const n = api.drumHit(x, y);
-    if (n >= 0) { api.drumPlay(n); say("DRUM" + (n + 1)); }
+    outcome = "drum " + n;
+    if (n >= 0) { send({type: "drum", n: n}); say("DRUM" + (n + 1)); }
     return;
   }
   if (page === "70_PATCH" || page === "63_DRUM_EDIT_PATCH") {
     const id = api.patchHit(x, y);
+    outcome = "patchHit " + id;
     if (id >= 0) startDrag(ev, "knob", id, api.knobGet(id));
     return;
   }
@@ -412,29 +495,35 @@ function onDown(which, ev) {
   }
   if (page === "52_FX" || page === "54_DRUM_FX") {
     const id = api.fxHit(x, y, 0);   /* delay; the type selector is unwired */
+    outcome = "fxHit " + id;
     if (id >= 0) startDrag(ev, "mixer", id, api.mixerGet(id));
     return;
   }
   if (page === "30_MIXER") {
     const id = api.mixerHit(x, y);
+    outcome = "mixerHit " + id;
     if (id >= 0) startDrag(ev, "mixer", id, api.mixerGet(id));
     return;
   }
   if (page === "61_SYN_EDIT" || page === "53_DRUMEDIT") {
     const id = api.knobHit(x, y);
+    outcome = "knobHit " + id;
     if (id >= 0) startDrag(ev, "knob", id, api.knobGet(id));
     return;
   }
   if (page.startsWith("81_KEY")) {
     const b = api.keyButton(x, y);
+    outcome = "keyButton " + b;
     if (b === 0 || b === 1) {
       setOctave(octave + (b ? 1 : -1));
       return;
     }
     const note = api.keyHit(x, y, octave);
+    outcome = "key note " + note;
     if (note >= 0) {
       noteOff();
-      api.note(api.track() < 2 ? api.track() : 0, note, 1);
+      send({type: "note", voice: api.track() < 2 ? api.track() : 0,
+            note: note, on: 1});
       held = note;
       say("note " + noteName(note));
     }
@@ -457,8 +546,8 @@ function syncControls() {
   $("name").value = api.getName();
   $("mode").textContent = api.songMode() ? "song" : "pattern";
   $("mode").classList.toggle("on", !!api.songMode());
-  $("play").textContent = api.cursor() >= 0 ? "stop" : "play";
-  $("play").classList.toggle("on", api.cursor() >= 0);
+  $("play").textContent = playing ? "stop" : "play";
+  $("play").classList.toggle("on", playing);
 }
 
 function loadSong(name) {
@@ -468,6 +557,8 @@ function loadSong(name) {
    * notes would be off the top or bottom of the window and it would look
    * empty. The ROM's own songs run from 34 to 80. */
   api.seqFollow();
+  playing = true;
+  sendSong();
   syncControls();
   say(name + "   " + api.songBars() + " bars");
 }
@@ -548,6 +639,9 @@ function boot() {
     seqNote: Module.cwrap("ds10_web_seq_note", "number",
                           ["number", "number"]),
     seqPlay: Module.cwrap("ds10_web_seq_play", null, ["number"]),
+    setCursor: Module.cwrap("ds10_web_set_cursor", null, ["number"]),
+    songBytes: Module.cwrap("ds10_web_song_bytes", "number",
+                            ["number", "number"]),
     song: Module.cwrap("ds10_web_song", "number", ["string"]),
     songBars: Module.cwrap("ds10_web_song_bars", "number", []),
     cursor: Module.cwrap("ds10_web_cursor", "number", []),
@@ -604,19 +698,28 @@ function boot() {
     $(id).addEventListener("change", show);
   $("pick-pattern").addEventListener("change", (e) => {
     api.setPattern(+e.target.value);
+    send({type: "pattern", n: +e.target.value});
     api.seqFollow();
     syncControls();
     say("pattern " + (+e.target.value + 1));
   });
   $("pick-track").addEventListener("change", (e) => {
     api.setTrack(+e.target.value);
+    send({type: "track", n: +e.target.value});
     api.seqFollow();
     say(TRACKS[+e.target.value]);
   });
   $("pick-steps").addEventListener("change",
-                                   (e) => api.setPatternSteps(+e.target.value));
-  $("bpm").addEventListener("change", (e) => api.setTempo(+e.target.value));
-  $("swing").addEventListener("change", (e) => api.setSwing(+e.target.value));
+                                   (e) => { api.setPatternSteps(+e.target.value);
+                                            sendSong(); });
+  $("bpm").addEventListener("change", (e) => {
+    api.setTempo(+e.target.value);
+    send({type: "tempo", bpm: +e.target.value});
+  });
+  $("swing").addEventListener("change", (e) => {
+    api.setSwing(+e.target.value);
+    send({type: "swing", percent: +e.target.value});
+  });
   $("name").addEventListener("change", (e) => api.setName(e.target.value));
   $("save").addEventListener("click", save);
   /* Opening a file drops it into the preloaded filesystem under a fixed name
@@ -635,35 +738,49 @@ function boot() {
     if (api.song("opened") < 0) { say(f.name + ": " + api.error()); return; }
     startAudio();
     api.seqFollow();
+    playing = true;
+    sendSong();
     syncControls();
     say(f.name + "   " + api.songBars() + " bars");
   });
   $("clear").addEventListener("click", () => {
     api.patternClear(-1);
+    sendSong();
     say("pattern " + (api.pattern() + 1) + " cleared");
   });
   $("oct-down").addEventListener("click", () => setOctave(octave - 1));
   $("oct-up").addEventListener("click", () => setOctave(octave + 1));
   $("mode").addEventListener("click", () => {
     api.setSongMode(!api.songMode());
+    send({type: "songMode", on: !!api.songMode()});
     syncControls();
   });
   $("play").addEventListener("click", () => {
     startAudio();
-    api.seqPlay(api.cursor() >= 0 ? 0 : 1);
+    transport(!playing);
     syncControls();
   });
 
   for (const which of ["top", "bottom"]) {
     canvases[which].addEventListener("pointerdown", (e) => onDown(which, e));
     canvases[which].addEventListener("pointermove", onMove);
-    for (const ev of ["pointerup", "pointerleave", "pointercancel"])
-      canvases[which].addEventListener(ev, () => {
+    /* pointerleave is NOT in this list. With the pointer captured the
+     * element still gets leave events when the finger crosses its edge, and
+     * dropping the drag there makes a knob feel dead the moment you move far
+     * enough to turn it - which on a 256-pixel-wide canvas is not far. */
+    for (const ev of ["pointerup", "pointercancel"])
+      canvases[which].addEventListener(ev, (e) => {
+        if (drag && drag.moves === 0)
+          trace("released " + drag.kind + " " + drag.id + " with no move ("
+                + e.type + ")");
+        else if (e.type === "pointercancel")
+          trace("pointercancel during " + (drag ? "a drag" : "no drag"));
         noteOff();
         drag = null;
         paint = null;
         kaoss = false;
       });
+    canvases[which].addEventListener("pointerleave", () => noteOff());
   }
 
   document.addEventListener("keydown", (e) => {
@@ -675,12 +792,12 @@ function boot() {
     if (e.key >= "1" && e.key <= "9") {
       startAudio();
       const n = e.key.charCodeAt(0) - 49;
-      if (api.factoryPatch(n) === 0) say("factory patch " + n);
+      if (api.factoryPatch(n) === 0) { sendSong(); say("factory patch " + n); }
     }
     if (e.key === " ") {
       e.preventDefault();
       startAudio();
-      api.seqPlay(api.cursor() >= 0 ? 0 : 1);
+      transport(!playing);
       syncControls();
     }
   });
