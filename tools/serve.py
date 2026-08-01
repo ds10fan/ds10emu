@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""serve - host the browser build and collect what it reports back.
+
+    python3 tools/serve.py [port]
+
+`python3 -m http.server` is enough to load the page but tells you nothing
+when it breaks, and on a phone there is no console to look at. This serves
+web/build the same way and adds one endpoint:
+
+    POST /log    body is a line; it is appended to out/weblog.txt and echoed
+
+The page posts its startup breadcrumbs and anything it throws, so a black
+screen on a device with no console still says why.
+"""
+import datetime
+import http.server
+import os
+import sys
+
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
+                    "web", "build")
+LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "out",
+                   "weblog.txt")
+
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def __init__(self, *a, **kw):
+        super().__init__(*a, directory=os.path.abspath(ROOT), **kw)
+
+    def do_POST(self):
+        if self.path != "/log":
+            self.send_error(404)
+            return
+        n = int(self.headers.get("Content-Length") or 0)
+        body = self.rfile.read(n).decode("utf-8", "replace")
+        stamp = datetime.datetime.now().strftime("%H:%M:%S")
+        line = "%s  %s\n" % (stamp, body.replace("\n", "\n            "))
+        with open(LOG, "a") as f:
+            f.write(line)
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.end_headers()
+
+    def end_headers(self):
+        # No caching, so a reload always gets the build that is on disk.
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
+
+    def log_message(self, fmt, *args):
+        pass          # the access log drowns out the interesting part
+
+
+def main():
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8537
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write("---- serving on :%d ----\n" % port)
+    http.server.ThreadingHTTPServer(("0.0.0.0", port), Handler).serve_forever()
+
+
+if __name__ == "__main__":
+    main()

@@ -34,6 +34,69 @@ const TRACKS = ["SYN 1", "SYN 2", "DRUM 1", "DRUM 2", "DRUM 3", "DRUM 4"];
 /* The sequencer's six sub-modes, in the order its button steps them. */
 const MODES = ["NOTE", "GATE", "VOLUME", "PAN", "KAOSS 1", "KAOSS 2"];
 
+/* Reporting.
+ *
+ * Two black canvases and a status stuck on "loading" say nothing, and on a
+ * phone there is no console to look in. So everything - the breadcrumbs of
+ * startup, anything thrown, anything the module prints - goes both to the
+ * status line and to the server, which appends it to out/weblog.txt.
+ */
+function report(line) {
+  const el = document.getElementById("status");
+  if (el) el.textContent = String(line).slice(0, 300);
+  try {
+    fetch("/log", {method: "POST", body: String(line), keepalive: true})
+      .catch(() => {});
+  } catch (e) { /* nothing useful to do if even this fails */ }
+}
+
+function trace(line) {
+  try {
+    fetch("/log", {method: "POST", body: "  . " + line, keepalive: true})
+      .catch(() => {});
+  } catch (e) { /* ignore */ }
+}
+
+window.addEventListener("error", (e) => {
+  report("THROW " + (e.message || e.error) + "  at " + (e.filename || "?")
+         + ":" + (e.lineno || 0)
+         + (e.error && e.error.stack
+            ? "\n" + e.error.stack.split("\n").slice(0, 4).join("\n") : ""));
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const r = e.reason;
+  report("REJECT " + (r && r.message ? r.message : r)
+         + (r && r.stack ? "\n" + r.stack.split("\n").slice(0, 4).join("\n")
+                         : ""));
+});
+
+trace("page loaded, " + navigator.userAgent);
+trace("WebAssembly " + (typeof WebAssembly) + ", Module "
+      + (typeof Module) + ", calledRun " + (typeof Module !== "undefined"
+                                            && !!Module.calledRun));
+
+if (typeof Module === "undefined") {
+  report("ds10.js did not load - no Module");
+} else {
+  Module.setStatus = (t) => {
+    const el = document.getElementById("status");
+    if (el && t) el.textContent = t;
+    if (t) trace("setStatus " + t);
+  };
+  Module.printErr = (t) => {
+    trace("stderr " + t);
+    if (/abort|error|failed|exception/i.test(String(t))) report("MODULE " + t);
+  };
+  Module.onAbort = (t) => report("ABORT " + t);
+}
+
+/* If the runtime never comes up, say so rather than sitting on "loading". */
+setTimeout(() => {
+  if (!api) report("STALLED: the runtime did not start within 20s (calledRun "
+                   + (typeof Module !== "undefined" && !!Module.calledRun)
+                   + ")");
+}, 20000);
+
 const $ = (id) => document.getElementById(id);
 const status = $("status");
 const canvases = {top: $("top"), bottom: $("bottom")};
@@ -270,6 +333,8 @@ function onDown(which, ev) {
   const page = pageOf(which);
   const [x, y] = screenPos(ev);
 
+  trace("touch " + which + " (" + x + "," + y + ") on " + page);
+
   if (page === "90_MAP") {
     const next = api.mapHit(x, y);
     if (!next) return;
@@ -423,7 +488,8 @@ function save() {
   say("saved " + n + " bytes");
 }
 
-Module.onRuntimeInitialized = () => {
+function boot() {
+  trace("boot: runtime up, wiring the api");
   api = {
     init: Module.cwrap("ds10_web_init", "number", []),
     page: Module.cwrap("ds10_web_page", "number", ["string", "string"]),
@@ -518,7 +584,9 @@ Module.onRuntimeInitialized = () => {
     export: Module.cwrap("ds10_web_export", "number", []),
     exportBuf: Module.cwrap("ds10_web_export_buf", "number", []),
   };
-  if (api.init() < 0) { say("error: " + api.error()); return; }
+  trace("boot: api wired");
+  if (api.init() < 0) { report("init failed: " + api.error()); return; }
+  trace("boot: ui initialised");
 
   fill($("pick-song"), SONGS, "ds10init");
   fill($("pick-bottom"), BOTTOM_PAGES, "60_SYN_SEQ_PIANO");
@@ -624,4 +692,11 @@ Module.onRuntimeInitialized = () => {
   else { api.seqFollow(); syncControls(); }
   show();
   loop();
-};
+  trace("boot: first frame drawn, status " + status.textContent);
+}
+
+/* If the assets were cached the runtime can be up before this file runs, and
+ * an onRuntimeInitialized assigned after the fact is never called - which
+ * leaves the page on "loading" with both screens black. */
+if (Module.calledRun) boot();
+else Module.onRuntimeInitialized = boot;
