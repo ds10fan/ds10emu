@@ -22,6 +22,9 @@ class DS10Processor extends AudioWorkletProcessor {
     this.api = null;
     this.pending = [];
     this.cursor = -1;
+    this.songs = 0;       /* songs accepted over the port */
+    this.blocks = 0;      /* process() calls */
+    this.peak = 0;
     this.port.onmessage = (e) => this.handle(e.data);
 
     DS10Audio().then((M) => {
@@ -64,7 +67,10 @@ class DS10Processor extends AudioWorkletProcessor {
        * 12 KB, and it keeps the two copies from ever drifting. It goes into a
        * static buffer because this build exports no allocator. */
       this.M.HEAPU8.set(m.bytes, a.songIn());
-      a.songLoad(m.bytes.length);
+      const rc = a.songLoad(m.bytes.length);
+      this.songs++;
+      this.port.postMessage({type: "loaded", rc: rc, len: m.bytes.length,
+                             playing: !!m.playing});
       a.setPattern(m.pattern | 0);
       a.setTrack(m.track | 0);
       a.setSongMode(m.songMode ? 1 : 0);
@@ -91,12 +97,22 @@ class DS10Processor extends AudioWorkletProcessor {
     const n = out[0].length;                 /* 128, a whole number of the
                                               * engine's 64-sample frames */
     const got = this.api.render(n);
+    /* Say what is coming out, once a second or so. Silence with the graph
+     * running looks the same from outside as no graph at all. */
+    if ((this.blocks++ % 256) === 0) {
+      this.port.postMessage({type: "level", peak: +this.peak.toFixed(4),
+                             songs: this.songs, got: got,
+                             cursor: this.api.cursor()});
+      this.peak = 0;
+    }
     if (!got) return true;
     const src = new Float32Array(this.M.HEAPU8.buffer, this.api.buf(), got * 2);
     const l = out[0], r = out.length > 1 ? out[1] : out[0];
     for (let i = 0; i < got && i < n; i++) {
       l[i] = src[i * 2];
       r[i] = src[i * 2 + 1];
+      const mag = Math.abs(l[i]);
+      if (mag > this.peak) this.peak = mag;
     }
     /* Tell the page where the transport is, but only when it moves. */
     const c = this.api.cursor();

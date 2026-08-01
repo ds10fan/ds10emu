@@ -41,21 +41,38 @@ const MODES = ["NOTE", "GATE", "VOLUME", "PAN", "KAOSS 1", "KAOSS 2"];
  * startup, anything thrown, anything the module prints - goes both to the
  * status line and to the server, which appends it to out/weblog.txt.
  */
-function report(line) {
-  const el = document.getElementById("status");
-  if (el) el.textContent = String(line).slice(0, 300);
+/* Batched. One fetch per line saturated the browser's six connections to the
+ * host and starved the 4 MB asset download, which then stalled at 99% and
+ * never booted - the diagnostics broke the thing they were diagnosing. */
+let logQueue = [];
+let logTimer = null;
+
+function logFlush() {
+  logTimer = null;
+  if (!logQueue.length) return;
+  const body = logQueue.join("\n");
+  logQueue = [];
   try {
-    fetch("/log", {method: "POST", body: String(line), keepalive: true})
+    fetch("/log", {method: "POST", body: body, keepalive: true})
       .catch(() => {});
   } catch (e) { /* nothing useful to do if even this fails */ }
 }
 
-function trace(line) {
-  try {
-    fetch("/log", {method: "POST", body: "  . " + line, keepalive: true})
-      .catch(() => {});
-  } catch (e) { /* ignore */ }
+function logLine(line) {
+  logQueue.push(line);
+  if (logQueue.length > 60) logQueue.shift();
+  if (!logTimer) logTimer = setTimeout(logFlush, 600);
 }
+
+function report(line) {
+  const el = document.getElementById("status");
+  if (el) el.textContent = String(line).slice(0, 300);
+  logLine(String(line));
+  /* Errors are worth a connection of their own, in case the page then dies. */
+  logFlush();
+}
+
+function trace(line) { logLine("  . " + line); }
 
 window.addEventListener("error", (e) => {
   report("THROW " + (e.message || e.error) + "  at " + (e.filename || "?")
@@ -78,9 +95,18 @@ trace("WebAssembly " + (typeof WebAssembly) + ", Module "
 if (typeof Module === "undefined") {
   report("ds10.js did not load - no Module");
 } else {
+  let lastPct = -1;
   Module.setStatus = (t) => {
     const el = document.getElementById("status");
     if (el && t) el.textContent = t;
+    /* Progress goes to the screen every tick but to the log at quarters:
+     * this fires sixty times a second while the assets come down. */
+    const m = /\((\d+)\/(\d+)\)/.exec(t || "");
+    if (m) {
+      const pct = Math.floor(+m[1] * 4 / +m[2]) * 25;
+      if (pct !== lastPct) { lastPct = pct; trace("downloading " + pct + "%"); }
+      return;
+    }
     if (t) trace("setStatus " + t);
   };
   Module.printErr = (t) => {
@@ -225,10 +251,18 @@ async function startAudio() {
       if (m.type === "cursor") { cursor = m.step; api.setCursor(m.step); }
       else if (m.type === "ready") trace("worklet ready at " + m.rate + " Hz");
       else if (m.type === "error") report("worklet: " + m.what);
+      else if (m.type === "loaded")
+        trace("worklet took a song: rc " + m.rc + " len " + m.len
+              + " playing " + m.playing);
+      else if (m.type === "level")
+        trace("worklet peak " + m.peak + " songs " + m.songs + " got "
+              + m.got + " cursor " + m.cursor);
     };
     worklet.connect(audio.destination);
     sendSong();
-    trace("audio started, context " + audio.sampleRate + " Hz");
+    trace("audio started: context " + audio.sampleRate + " Hz, state "
+          + audio.state + ", destination channels "
+          + audio.destination.maxChannelCount);
   } catch (e) {
     audio = null;
     report("audio failed: " + (e && e.message ? e.message : e));

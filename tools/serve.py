@@ -17,7 +17,9 @@ The page posts its startup breadcrumbs and anything it throws, so a black
 screen on a device with no console still says why.
 """
 import datetime
+import gzip
 import http.server
+import io
 import os
 import ssl
 import sys
@@ -32,9 +34,34 @@ KEY = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web",
                    "key.pem")
 
 
+# Compressed copies, made once and kept. The asset bundle is 4 MB of tile
+# data and compresses to a third of that, which matters a great deal to a
+# phone on the far side of a LAN - a stalled download is the difference
+# between the page starting and not.
+_gz = {}
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=os.path.abspath(ROOT), **kw)
+
+    def send_head(self):
+        path = self.translate_path(self.path)
+        if (os.path.isfile(path) and os.path.getsize(path) > 65536 and
+                "gzip" in self.headers.get("Accept-Encoding", "")):
+            key = (path, os.path.getmtime(path))
+            if key not in _gz:
+                _gz.clear()
+                with open(path, "rb") as f:
+                    _gz[key] = gzip.compress(f.read(), 6)
+            body = _gz[key]
+            self.send_response(200)
+            self.send_header("Content-Type", self.guess_type(path))
+            self.send_header("Content-Encoding", "gzip")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            return io.BytesIO(body)
+        return super().send_head()
 
     def do_POST(self):
         if self.path != "/log":
