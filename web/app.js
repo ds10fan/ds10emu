@@ -285,6 +285,20 @@ function onDown(which, ev) {
     return;
   }
   startAudio();
+  if (page.startsWith("60_SYN_SEQ_") || page === "51_ALL_DRUMS") {
+    /* The top bar's right-hand button brings the map to this screen, which
+     * is what the L shoulder does on the device. */
+    if (api.mapButtonHit(x, y)) { goto("90_MAP"); return; }
+    if (api.clearHit(x, y)) {
+      /* The original raises a modal CLEAR ALL DATA prompt here. That prompt
+       * is not drawn yet, so this asks in the browser instead. */
+      if (window.confirm("CLEAR ALL DATA?")) {
+        api.patternClear(-1);
+        say("pattern " + (api.pattern() + 1) + " cleared");
+      }
+      return;
+    }
+  }
   if (page.startsWith("60_SYN_SEQ_")) {
     /* The page's own sub-mode button, which steps NOTE, GATE, VOL, PAN and
      * the two automation lanes. */
@@ -425,6 +439,11 @@ Module.onRuntimeInitialized = () => {
     patternHit: Module.cwrap("ds10_web_pattern_hit", "number",
                              ["number", "number"]),
     laneKnob: Module.cwrap("ds10_web_lane_knob", "number", ["number"]),
+    mapButtonHit: Module.cwrap("ds10_web_mapbutton_hit", "number",
+                               ["number", "number"]),
+    clearHit: Module.cwrap("ds10_web_clear_hit", "number",
+                           ["number", "number"]),
+    pattern: Module.cwrap("ds10_web_pattern", "number", []),
     keyHit: Module.cwrap("ds10_web_key_hit", "number",
                          ["number", "number", "number"]),
     keyButton: Module.cwrap("ds10_web_key_button", "number",

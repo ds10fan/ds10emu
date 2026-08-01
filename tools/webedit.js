@@ -54,6 +54,9 @@ M.onRuntimeInitialized = () => {
     mapHit: c('ds10_web_map_hit', 'string', ['number', 'number']),
     mapSynth: c('ds10_web_map_synth', 'number', ['number', 'number']),
     patternHit: c('ds10_web_pattern_hit', 'number', ['number', 'number']),
+    mapButtonHit: c('ds10_web_mapbutton_hit', 'number', ['number', 'number']),
+    clearHit: c('ds10_web_clear_hit', 'number', ['number', 'number']),
+    laneKnob: c('ds10_web_lane_knob', 'number', ['number']),
     pattern: c('ds10_web_pattern', 'number', []),
     track: c('ds10_web_track', 'number', []),
     seqMode: c('ds10_web_seq_mode', 'number', []),
@@ -195,6 +198,17 @@ M.onRuntimeInitialized = () => {
     }
     check(api.seqModeNext() === NAMES[0], 'and wraps back to the note grid');
     check(api.seqModeHit(46, 8) !== 0, 'the button is where it was found');
+    /* The other two the probe found on that bar, and the gaps between. */
+    check(api.mapButtonHit(240, 8) !== 0, 'the map button');
+    check(api.mapButtonHit(240, 15) !== 0, 'on both rows');
+    check(api.mapButtonHit(220, 8) === 0, 'and not where nothing responded');
+    check(api.clearHit(140, 8) !== 0, 'the clear button');
+    check(api.clearHit(128, 8) === 0, 'and not left of it');
+    check(api.seqModeHit(140, 8) === 0, 'the two do not overlap');
+    check(api.mapButtonHit(140, 8) === 0, 'nor those two');
+    /* The lanes name the knobs the pad drives. */
+    check(api.laneKnob(0) >= 0 && api.laneKnob(0) < 31, 'lane 0 names a knob');
+    check(api.laneKnob(1) >= 0 && api.laneKnob(1) < 31, 'lane 1 names a knob');
     check(api.seqModeHit(20, 8) === 0, 'and not where nothing responded');
 
     /* Gate: five rows, LEGATO down to 25%, so row 2 is the default 3. */

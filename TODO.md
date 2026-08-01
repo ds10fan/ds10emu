@@ -175,13 +175,11 @@ Remaining, roughly in order:
   step grids, and the transport. Their hit boxes come from the decompiled
   tables, not from measurements.
 
-  Not wired: each page's own top-bar buttons - CLR, the play button, the track
-  selector. Those are not placed by the shared helper the other screens use, so
-  their rectangles are inside the update's sub-states rather than in a table.
-  The browser page drives those functions from HTML controls instead, which is
-  the main way it still does not respond like the original. `32_PATTERN` and
-  `31_SONG` are drawn but not interactive; the arrangement is edited from HTML
-  too.
+  Not wired: the two controls in the middle of the sequencer's top bar, which
+  did not respond to a tap at all, and the CLEAR prompt's own dialog. The
+  transport, the arrangement and the pattern length are still driven from HTML
+  controls rather than from the screen. `31_SONG` draws but is not
+  interactive, and nothing on the map opens it.
 
   `tools/probe_buttons.py` finds them by tapping rather than by reading. Two
   are identified so far, and the first is wired:
@@ -189,8 +187,13 @@ Remaining, roughly in order:
   - the sub-mode button, between x 41 and 58 at y 8, which cycles NOTE, GATE,
     VOLUME, PAN and the two automation lanes. All five variants are captured
     and drawn from the pattern, and editable through the same grid.
-  - CLR, at about x 132 y 8, which raises a modal CLEAR ALL DATA prompt with
-    YES and NO. Not wired: the prompt would have to be drawn too.
+  - CLR, x 130 to 158, which raises a modal CLEAR ALL DATA prompt. The prompt
+    itself is not drawn, so the browser asks in its own dialog instead.
+  - the map button, x 222 to 255, which brings the navigation map to the touch
+    screen as the L shoulder does. Wired.
+
+  Nothing between those two changed anything the probe could see, so the two
+  controls drawn there are not simple buttons.
 
   `32_PATTERN` is wired the same way - its sixteen buttons select the pattern
   and the marker follows, reproducing the captured frame. What is left on that

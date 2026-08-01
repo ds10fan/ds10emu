@@ -2118,10 +2118,18 @@ A rest draws no value marker on any of them. All three captured pages carry
 nine markers, and those are exactly the nine steps of that pattern which
 sound, though the bytes exist on every step.
 
-CLR, at about x 132 y 8, raises a modal CLEAR ALL DATA prompt with YES and NO
-- modal enough that it swallows the map key, which is what made the first
-three probe runs useless. Identified but not wired: the prompt would have to
-be drawn too.
+Sweeping the rest of that bar with the prompt dismissed between taps finds two
+more:
+
+| x | what it does |
+|---|---|
+| 130 - 158 | raises a modal CLEAR ALL DATA prompt with YES and NO |
+| 222 - 255 | brings the navigation map to the touch screen, as the L shoulder does |
+
+Both respond on either row of the bar. The prompt is modal enough to swallow
+the map key, which is what made the first three probe runs useless. Nothing
+between them changed anything the probe could see, so whatever the two
+controls drawn there are, they are not simple buttons.
 
 `32_PATTERN`'s sixteen buttons came out the same way. Its columns break
 between x 64 and 69, 129 and 134, 194 and 199 - a pitch of 65 - and its rows

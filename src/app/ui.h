@@ -110,6 +110,12 @@ int ds10_ui_seq_mode_rows(int mode);
 int ds10_ui_seq_row_value(int mode, int row);
 int ds10_ui_seq_value_row(int mode, int value);
 
+/* The button that brings the navigation map to the touch screen, and the one
+ * that raises the CLEAR ALL DATA prompt. Both are on the sequencer's top bar
+ * and neither is in a table; see tools/probe_buttons.py. */
+int ds10_ui_mapbutton_hit(int x, int y);
+int ds10_ui_clear_hit(int x, int y);
+
 /* Hit-test 32_PATTERN's sixteen buttons. Returns 0..15, or -1. */
 int ds10_ui_pattern_hit(int x, int y);
 void ds10_ui_pattern_box(int n, int *x, int *y);

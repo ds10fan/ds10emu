@@ -1343,6 +1343,32 @@ void ds10_ui_pattern_mark(ds10_ui *u, int n)
     park_from(u, 0, slot);
 }
 
+/* The button at the right of the sequencer's top bar brings the navigation
+ * map to the touch screen - the same thing the L shoulder does. Tapping it
+ * was the only thing in that half of the bar that changed anything: the two
+ * controls between it and CLR did nothing the probe could see.
+ *
+ * It responded from x 224 to 252 and at both y 8 and y 15, and not at x 220,
+ * so the box below is that bracket rounded to the drawn icon. */
+#define MAPBTN_X 222
+#define MAPBTN_Y 2
+#define MAPBTN_W 34
+#define MAPBTN_H 16
+
+int ds10_ui_mapbutton_hit(int x, int y)
+{
+    return x >= MAPBTN_X && x < MAPBTN_X + MAPBTN_W &&
+           y >= MAPBTN_Y && y < MAPBTN_Y + MAPBTN_H;
+}
+
+/* And the one next to the sub-mode button, which raises the CLEAR ALL DATA
+ * prompt. It responded from x 132 to 156 on both rows. Not wired: the prompt
+ * is modal and would have to be drawn. */
+int ds10_ui_clear_hit(int x, int y)
+{
+    return x >= 130 && x < 159 && y >= 2 && y < 18;
+}
+
 /* The sequencer's sub-mode button.
  *
  * This one is not in any table. The screens that place widgets through the

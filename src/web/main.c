@@ -1124,6 +1124,12 @@ int ds10_web_lane_knob(int lane)
     return k >= 0 && k < DS10_SONG_KNOBS ? k : (lane ? 12 : 11);
 }
 
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_mapbutton_hit(int x, int y) { return ds10_ui_mapbutton_hit(x, y); }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_clear_hit(int x, int y) { return ds10_ui_clear_hit(x, y); }
+
 /* Which of 32_PATTERN's sixteen buttons is under a touch, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_pattern_hit(int x, int y) { return ds10_ui_pattern_hit(x, y); }
