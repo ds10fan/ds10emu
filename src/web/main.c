@@ -716,6 +716,43 @@ int ds10_web_song_load(int len)
     return ds10_web_song_bytes(import_buf, len);
 }
 
+/* Take an edited copy of the song that is already playing.
+ *
+ * Loading goes through the whole start-up - voices back to their constructor
+ * state, mixer reloaded, transport restarted at bar zero - which is right for
+ * a song you just chose and wrong for one you are editing. Sending the whole
+ * song after every change therefore restarted it, which is what "changing the
+ * volume resets the pattern" was. This replaces the data and leaves the
+ * transport, the voices and the mixer exactly where they are.
+ */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song_update(int len)
+{
+    static int8_t last_drums[DS10_SONG_DRUMS * DS10_SONG_KNOBS];
+    int8_t now[DS10_SONG_DRUMS * DS10_SONG_KNOBS];
+    int i;
+
+    if (len <= 0 || len > (int)sizeof import_buf) return -1;
+    if (!song_loaded) return ds10_web_song_bytes(import_buf, len);
+    if (ds10_editor_init(&ed, import_buf, (size_t)len) != DS10_SONG_OK)
+        return -1;
+    for (i = 0; i < DS10_SONG_PATTERNS; i++)
+        build_rt(&song_rt[i], &ed.song.pattern[i]);
+    song_bars = ds10_editor_bars(&ed);
+
+    /* A drum is a rendered buffer, not a live voice, so it only has to be
+     * made again when its patch actually changed - four one-second renders
+     * on every slider movement would not keep up. */
+    for (i = 0; i < DS10_SONG_DRUMS; i++)
+        memcpy(now + i * DS10_SONG_KNOBS, ds10_song_drum_knobs(&ed.song, i),
+               DS10_SONG_KNOBS);
+    if (memcmp(now, last_drums, sizeof now) != 0) {
+        memcpy(last_drums, now, sizeof now);
+        render_drums();
+    }
+    return 0;
+}
+
 /* Write the song out as a file the hardware would load, and hand the page its
  * address and length so it can offer it as a download. */
 static uint8_t export_buf[16 + 12252];

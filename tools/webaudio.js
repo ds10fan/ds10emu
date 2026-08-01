@@ -76,6 +76,35 @@ global.sampleRate = 32768;
   check(cursors.size >= 4,
         'the transport advances, saw ' + cursors.size + ' steps');
 
+  /* An edit must not restart the song. Sending the whole song after every
+   * change went through the load path, which puts the transport back to bar
+   * zero - "changing the volume resets the pattern". */
+  {
+    let bar = 0;
+    for (let i = 0; i < 60 && bar < 2; i++) {
+      p.process([], [out]);
+      bar = p.api.songBar();
+    }
+    for (let i = 0; i < 4000 && p.api.songBar() < 2; i++) p.process([], [out]);
+    const before = p.api.songBar();
+    check(before >= 2, 'the transport reached bar ' + before);
+    p.port.onmessage({data: {
+      type: 'song', bytes: new Uint8Array(song),
+      pattern: 0, track: 0, songMode: true, playing: true,
+    }});
+    const after = p.api.songBar();
+    check(after >= before, 'an edit left it at bar ' + after
+          + ', was ' + before);
+    /* And a song you chose does restart it. */
+    p.port.onmessage({data: {
+      type: 'song', bytes: new Uint8Array(song), reset: true,
+      pattern: 0, track: 0, songMode: true, playing: true,
+    }});
+    p.process([], [out]);
+    check(p.api.songBar() === 0, 'choosing a song restarts it, bar '
+          + p.api.songBar());
+  }
+
   /* And stops when told to. Not instantly: the drums are one-second buffers
    * and the effect has a delay line, so what has to be true is that it decays
    * rather than that it cuts. */

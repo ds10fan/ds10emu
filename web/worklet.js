@@ -35,6 +35,7 @@ class DS10Processor extends AudioWorkletProcessor {
         audioInit: c("ds10_web_audio_init", "number", []),
         songIn: c("ds10_web_song_in", "number", []),
         songLoad: c("ds10_web_song_load", "number", ["number"]),
+        songUpdate: c("ds10_web_song_update", "number", ["number"]),
         render: c("ds10_web_audio", "number", ["number"]),
         buf: c("ds10_web_audio_buf", "number", []),
         rate: c("ds10_web_rate", "number", []),
@@ -51,6 +52,7 @@ class DS10Processor extends AudioWorkletProcessor {
         cursor: c("ds10_web_cursor", "number", []),
         trackNotes: c("ds10_web_track_notes", "number", ["number"]),
         playPattern: c("ds10_web_play_pattern", "number", []),
+        songBar: c("ds10_web_song_bar", "number", []),
         seqStep: c("ds10_web_seq_step", null, ["number", "number", "number"]),
         instant: c("ds10_web_set_instant_pattern", null, ["number"]),
       };
@@ -72,14 +74,19 @@ class DS10Processor extends AudioWorkletProcessor {
        * 12 KB, and it keeps the two copies from ever drifting. It goes into a
        * static buffer because this build exports no allocator. */
       this.M.HEAPU8.set(m.bytes, a.songIn());
-      const rc = a.songLoad(m.bytes.length);
+      /* An edit replaces the data and leaves the transport alone; only a
+       * song you actually chose restarts it. */
+      const rc = m.reset ? a.songLoad(m.bytes.length)
+                         : a.songUpdate(m.bytes.length);
       this.songs++;
+      if (m.reset) {
+        a.setSongMode(m.songMode ? 1 : 0);
+        a.play(m.playing ? 1 : 0);
+      }
       this.port.postMessage({type: "loaded", rc: rc, len: m.bytes.length,
-                             playing: !!m.playing});
+                             reset: !!m.reset, playing: !!m.playing});
       a.setPattern(m.pattern | 0);
       a.setTrack(m.track | 0);
-      a.setSongMode(m.songMode ? 1 : 0);
-      a.play(m.playing ? 1 : 0);
       break;
     }
     case "note":       a.note(m.voice | 0, m.note | 0, m.on ? 1 : 0); break;

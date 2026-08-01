@@ -209,11 +209,13 @@ function goto(page) {
  */
 let worklet = null;
 
-function sendSong() {
+/* `reset` is for a song you chose: it restarts the transport from bar zero.
+ * An edit must not, or every slider movement would jump the song back to the
+ * beginning. */
+function sendSong(reset) {
   if (!worklet) return;
   const n = api.export();
   if (n <= 0) return;
-  trace("sendSong " + n + " bytes, playing " + playing);
   worklet.port.postMessage({
     type: "song",
     bytes: Module.HEAPU8.slice(api.exportBuf(), api.exportBuf() + n),
@@ -221,6 +223,7 @@ function sendSong() {
     track: api.track(),
     songMode: !!api.songMode(),
     playing: playing,
+    reset: !!reset,
   });
 }
 
@@ -269,7 +272,7 @@ async function startAudio() {
               + " note-ons per track " + (m.notes || []).join("/"));
     };
     worklet.connect(audio.destination);
-    sendSong();
+    sendSong(true);
     trace("audio started: context " + audio.sampleRate + " Hz, state "
           + audio.state + ", destination channels "
           + audio.destination.maxChannelCount);
@@ -602,7 +605,7 @@ function loadSong(name) {
    * empty. The ROM's own songs run from 34 to 80. */
   api.seqFollow();
   playing = true;
-  sendSong();
+  sendSong(true);
   syncControls();
   say(name + "   " + api.songBars() + " bars");
 }
@@ -626,7 +629,7 @@ async function openFile(e) {
   startAudio();
   api.seqFollow();
   playing = true;
-  sendSong();
+  sendSong(true);
   syncControls();
   repanel();
   say(f.name + "   " + api.songBars() + " bars");
