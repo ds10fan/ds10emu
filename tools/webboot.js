@@ -25,11 +25,16 @@ for (const m of fs.readFileSync(repo + '/web/index.html', 'utf8')
 const listeners = {};
 function element(id) {
   const kids = [];
+  let text = '';
   return {
     tag: id,
     id: id,
     value: '',
-    textContent: '',
+    /* Setting textContent removes the children, as it does in a browser.
+     * Without that a section that rebuilds itself appears never to, and the
+     * old controls stay in the tree. */
+    get textContent() { return text; },
+    set textContent(v) { text = v; kids.length = 0; },
     files: [],
     style: {},
     dataset: {},
@@ -245,6 +250,36 @@ const boot = () => {
   } catch (e) {
     console.error('FAIL: the saved songs: ' + (e.message || e));
     process.exit(1);
+  }
+  /* SYNC is a switch and belongs to the delay alone. */
+  {
+    const mixerGet2 = cw('ds10_web_mixer_get', 'number', ['number']);
+    const all2 = [];
+    const walk2 = (e) => { all2.push(e); for (const c of e.children || []) walk2(c); };
+    const findSync = () => {
+      all2.length = 0;
+      walk2(els.panel);
+      return all2.find((e) => /^SYNC/.test(e.textContent || '') && e._on.click);
+    };
+    byText('DELAY').dispatch('click');
+    const sw = findSync();
+    if (!sw) { console.error('FAIL: no SYNC switch on the delay'); process.exit(1); }
+    const was = mixerGet2(6);
+    sw.dispatch('click');
+    if (mixerGet2(6) === was) {
+      console.error('FAIL: the SYNC switch did not toggle');
+      process.exit(1);
+    }
+    if (mixerGet2(6) !== 0 && mixerGet2(6) !== 1) {
+      console.error('FAIL: SYNC took ' + mixerGet2(6) + ', wanted 0 or 1');
+      process.exit(1);
+    }
+    byText('CHORUS').dispatch('click');
+    if (findSync()) {
+      console.error('FAIL: SYNC is showing on the chorus');
+      process.exit(1);
+    }
+    byText('DELAY').dispatch('click');
   }
   console.log('  panel: ' + panel + ' sections, route/type/lanes all respond');
   console.log('PASS: the page starts up, no TextDecoder, status '

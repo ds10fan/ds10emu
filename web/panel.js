@@ -81,6 +81,13 @@ function slider(name, lo, hi, get, set, commit) {
  * touch; without this the panel was the one surface that went unrecorded, and
  * a transport that stopped on its own could not be told from one the user
  * stopped. */
+/* A switch, for the settings that are one bit rather than a range. */
+function toggle(name, get, set) {
+  const b = button(name, () => { set(get() ? 0 : 1); panelSync(); });
+  b.sync = () => b.classList.toggle("on", !!get());
+  return b;
+}
+
 function button(name, fn, id) {
   const wrapped = (e) => { trace("panel: " + name); fn(e); };
   return el("button", id ? {text: name, onclick: wrapped, id: id}
@@ -300,17 +307,32 @@ function buildPanel() {
                                            send({type: "mixer", id: id,
                                                  value: v}); },
                                   sendSong));
-    fxParams.appendChild(mixCtl(MIX_SYNC));
+    /* SYNC is a switch, not a range: only 0 and 1 appear anywhere in the
+     * ROM's songs, and the dispatcher passes the song's tempo when it is on
+     * and literally zero when it is off. It only does anything for a delay -
+     * the setter returns early for the other two types - so it is only
+     * offered there. */
+    if (t === 0) {
+      const sw = toggle("SYNC to the song's BPM",
+                        () => api.mixerGet(MIX_SYNC),
+                        (v) => setMix(MIX_SYNC, v));
+      sw.sync();
+      fxSync = sw;
+      fxParams.appendChild(sw);
+    } else {
+      fxSync = null;
+    }
     fxParams.appendChild(mixCtl(MIX_DRYWET));
   };
   /* Only when the type changes: this rebuilds sliders, and the sync runs on
    * every touch. */
-  let shownType = -1;
+  let shownType = -1, fxSync = null;
   syncers.push(() => {
     const r = api.mixerGet(MIX_ROUTE), t = api.mixerGet(MIX_TYPE);
     routeBtns.forEach((b, i) => b.classList.toggle("on", i === r));
     typeBtns.forEach((b, i) => b.classList.toggle("on", i === t));
     if (t !== shownType) { shownType = t; rebuildFx(); }
+    if (fxSync) fxSync.sync();
   });
   host.appendChild(group("effect", [
     el("div", {cls: "hint", text: "which channels go through it"}),
