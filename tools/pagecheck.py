@@ -68,6 +68,17 @@ def diff(mine, ref):
     return n
 
 
+# The pattern the captured frame was showing. tools/pages.py takes the step
+# markers out of the display list because they are state, not chrome, so
+# reproducing the frame means drawing them from here - which is the check that
+# the grid's origin, its cell size and its row-to-note mapping are all right.
+#
+# Six markers at steps 0,2,3,4,6,7 on rows 9,9,5,2,0,0, and the top row is A4.
+SEQ_STATE = {
+    "60_SYN_SEQ_PIANO": "0/0:60,2:60,3:64,4:67,6:69,7:69",
+}
+
+
 def main():
     srcdir = sys.argv[1] if len(sys.argv) > 1 else "out/sweep"
     index = page_index("data/nitrofs/mainbg")
@@ -78,8 +89,10 @@ def main():
         if not bot or not top or (bot, top) in seen:
             continue
         seen.add((bot, top))
-        r = subprocess.run(["./out/ds10view", bot, top, "out/pagecheck"],
-                           capture_output=True)
+        cmd = ["./out/ds10view", bot, top, "out/pagecheck"]
+        if bot in SEQ_STATE:
+            cmd.append(SEQ_STATE[bot])
+        r = subprocess.run(cmd, capture_output=True)
         if r.returncode:
             rows.append(("%s / %s" % (bot, top), "-",
                          r.stderr.decode().strip().split("\n")[-1]))

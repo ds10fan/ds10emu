@@ -116,6 +116,29 @@ def build(half, banks):
     return rec
 
 
+# Records that are state, not chrome.
+#
+# A captured frame shows whatever pattern happened to be loaded, and keeping
+# those records would freeze someone else's notes into the page. The
+# reimplementation draws them from its own pattern instead - so they come out
+# here, and `make test-page` still has to reproduce the frame, which is what
+# says the two agree.
+#
+# For the synth sequencer that is the step markers (cell 7 of the page's own
+# sheet) and the cursor above the grid (CHARACTER_c cell 4, the only sprite in
+# that band).
+def is_state(page, rec):
+    if rec[0] != 0:
+        return False
+    name, idx, prio, flags, affine, base, x, y, mtx = rec[1]
+    if page in ("60_SYN_SEQ_PIANO", "62_DRUM_SEQ_GATE"):
+        if name == page + "_c" and idx == 7:
+            return True
+        if name == "CHARACTER_c" and idx == 4 and (y >> 12) == 20:
+            return True
+    return False
+
+
 def main():
     srcdir = sys.argv[1] if len(sys.argv) > 1 else "out/sweep"
     out = sys.argv[2] if len(sys.argv) > 2 else "data/pages.bin"
@@ -133,7 +156,8 @@ def main():
         for name, engine, half in ((bot, 0, s.oam[:1024]),
                                    (top, 1, s.oam[1024:])):
             if name and name not in seen:
-                seen[name] = (engine, build(half, banks))
+                rec = [r for r in build(half, banks) if not is_state(name, r)]
+                seen[name] = (engine, rec)
 
     with open(out, "wb") as f:
         f.write(b"PAGE")

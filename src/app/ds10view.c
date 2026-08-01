@@ -4,6 +4,15 @@
  *     out/ds10view 61_SYN_EDIT 90_MAP out/page
  *
  * writes out/page_bot.ppm and out/page_top.ppm.
+ *
+ * An optional fourth argument gives the sequencer state to draw over the
+ * page, as `cursor/step:note,...` with the notes in MIDI numbers:
+ *
+ *     out/ds10view 60_SYN_SEQ_PIANO 90_MAP out/page 0/0:60,2:60,3:64
+ *
+ * That is what lets `make test-page` check the grid: the page itself no
+ * longer carries the captured pattern's markers, so reproducing the frame
+ * means drawing them from this.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -48,6 +57,27 @@ int main(int argc, char **argv)
     if (ds10_ui_page(u, bot, tp) < 0) {
         fprintf(stderr, "%s\n", ds10_ui_error(u));
         return 2;
+    }
+    if (argc > 4) {
+        int note[16], i, cursor = -1;
+        const char *p = argv[4];
+
+        for (i = 0; i < 16; i++) note[i] = -1;
+        if (strchr(p, '/')) {
+            cursor = atoi(p);
+            p = strchr(p, '/') + 1;
+        }
+        while (*p) {
+            int step = atoi(p);
+            const char *colon = strchr(p, ':');
+
+            if (!colon) break;
+            if (step >= 0 && step < 16) note[step] = atoi(colon + 1);
+            p = strchr(colon, ',');
+            if (!p) break;
+            p++;
+        }
+        ds10_ui_seq_grid(u, bot, note, 16, ds10_ui_seq_top_default(), cursor);
     }
     ds10_ui_frame(u, top, bottom);
 

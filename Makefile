@@ -6,10 +6,10 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: fonttest test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
+.PHONY: fonttest test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-obj test-cell test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-obj test-cell test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -145,6 +145,15 @@ out/test_song: tests/test_song.c src/core/song.c src/core/md5.c \
                src/core/song.h src/core/md5.h
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_song.c src/core/song.c src/core/md5.c
+
+test-editor: out/test_editor
+	@./out/test_editor
+
+out/test_editor: tests/test_editor.c src/app/editor.c src/core/song.c \
+                 src/core/md5.c src/app/editor.h src/core/song.h
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_editor.c src/app/editor.c \
+	    src/core/song.c src/core/md5.c
 
 out/test_seq: tests/test_seq.c src/core/seq.c src/core/seq.h
 	@mkdir -p out

@@ -95,6 +95,10 @@ struct ds10_ui {
      * rotation matrix in another, named by attr1 bits 9-13. */
     int knob_slot[16];
     int knob_affine[16];
+    /* The first OAM slot each engine's static page left free. Anything drawn
+     * from live state - step markers, the cursor - goes after it, so a redraw
+     * of the state does not have to rebuild the page. */
+    int free_slot[2];
 };
 
 static uint8_t *slurp(ds10_ui *u, const char *dir, const char *name,
@@ -649,6 +653,55 @@ static void draw_page(ds10_ui *u, const char *name, int engine)
             write_affine_mtx(oam, it->affine, it->mtx);
         slot += n;
     }
+    u->free_slot[engine ? 1 : 0] = slot;
+}
+
+/* Put one cell from a named bank into the next free OAM slot. This is how the
+ * live parts of a screen are drawn: the same expander the page itself uses,
+ * pointed at whatever the state says should be there. */
+static int put_cell(ds10_ui *u, int engine, int *slot, const char *bank,
+                    int cell, int x, int y, int prio, int base)
+{
+    uint8_t *oam = u->gpu.oam + (engine ? 0x400 : 0);
+    const cell_bank *b = find_bank(u, bank);
+    ds10_cell c;
+    ds10_cell_ref ref;
+    int32_t pos[2];
+    int n, k;
+
+    if (!b || ds10_ncer_cell(&b->ncer, cell, &c) < 0) return 0;
+    ref.nobj = c.nobj;
+    ref.obj = c.obj;
+    pos[0] = x * 0x1000;
+    pos[1] = y * 0x1000;
+    n = ds10_cell_to_oam(oam + *slot * 8, 128 - *slot, &ref, NULL, pos, 0, 0);
+    for (k = 0; k < n; k++) {
+        uint8_t *e = oam + (*slot + k) * 8;
+        int a2 = e[4] | (e[5] << 8);
+
+        a2 = (a2 & ~0x3FF) | (((a2 & 0x3FF) + base) & 0x3FF);
+        a2 = (a2 & ~0x0C00) | (prio << 10);
+        e[4] = (uint8_t)a2;
+        e[5] = (uint8_t)(a2 >> 8);
+    }
+    *slot += n;
+    return n;
+}
+
+/* Park every slot from `slot` on, so a redraw that draws fewer markers than
+ * the last one does not leave the old ones behind. */
+static void park_from(ds10_ui *u, int engine, int slot)
+{
+    uint8_t *oam = u->gpu.oam + (engine ? 0x400 : 0);
+
+    for (; slot < 128; slot++) {
+        oam[slot * 8] = 192;
+        oam[slot * 8 + 1] = 0;
+        oam[slot * 8 + 2] = 0;
+        oam[slot * 8 + 3] = 0;
+        oam[slot * 8 + 4] = 0;
+        oam[slot * 8 + 5] = 0;
+    }
 }
 
 static int load_sprites(ds10_ui *u)
@@ -959,6 +1012,10 @@ static const int FX_KNOB_X[4] = {64, 118, 172, 226};
 #define SEQ_Y0 35
 #define SEQ_COLS 16
 #define SEQ_ROWS 12
+/* The one sprite the captured frame puts above the grid, at the first
+ * column's left edge. */
+#define SEQ_CURSOR_CELL 4
+#define SEQ_CURSOR_Y 20
 
 /* 71_KAOSS, from 0x02049150: the pad is the whole width below the button bar,
  * placed by FUN_02060330(pad, 0, 0x14, 0x100, 0xac) - x 0, y 20, 256 by 172.
@@ -1208,6 +1265,80 @@ int ds10_ui_seq_hit(int x, int y, int *step, int *row)
     *step = c;
     *row = r;
     return 0;
+}
+
+/* The step grids, drawn from the pattern instead of replayed from a capture.
+ *
+ * The marker is cell 7 of the page's own sheet. That is what the captured
+ * frame drew - six of them, and every one lands exactly on this grid, which
+ * is the check that the origin and the cell size above are right.
+ *
+ * The row is the note's distance below the top of the window, so row 0 is the
+ * highest. What fixes the direction and the pitch is the keyboard down the
+ * left of that frame: reading its whites and blacks off gives an octave with
+ * A4 on the top row, and the game labels row nine "C4" with two font sprites
+ * of its own. Hence note = top - row, with the captured window's top at 69.
+ *
+ * The scrollable range is the constructor's 0x138, twenty-four rows against
+ * the twelve on screen, so the window slides over two octaves. Which two the
+ * range ends on is not something the capture shows; C3 to B4 is assumed, and
+ * only the default scroll position is evidence.
+ */
+#define SEQ_MARK_CELL 7
+#define SEQ_MARK_BASE 0x200
+#define SEQ_RANGE 24            /* the scrollable height, in rows */
+#define SEQ_TOP_DEFAULT 69      /* A4 on the top row, as the capture had it */
+
+int ds10_ui_seq_top_default(void) { return SEQ_TOP_DEFAULT; }
+
+int ds10_ui_seq_row_note(int top, int row) { return top - row; }
+
+void ds10_ui_seq_grid(ds10_ui *u, const char *page, const int *note,
+                      int nsteps, int top, int cursor)
+{
+    int slot = u->free_slot[0], i;
+    char bank[32];
+
+    snprintf(bank, sizeof bank, "%s_c", page);
+    if (nsteps > SEQ_COLS) nsteps = SEQ_COLS;
+    for (i = 0; i < nsteps; i++) {
+        int row = top - note[i];
+
+        if (note[i] < 0 || row < 0 || row >= SEQ_ROWS) continue;
+        put_cell(u, 0, &slot, bank, SEQ_MARK_CELL, SEQ_X0 + i * SEQ_CELL,
+                 SEQ_Y0 + row * SEQ_CELL, 2, SEQ_MARK_BASE);
+    }
+    /* The cursor above the grid. The captured frame has one sprite there, at
+     * the first column, and nothing else sits in that band - but the frame's
+     * transport was stopped, so that it follows the step is inference. */
+    if (cursor >= 0 && cursor < SEQ_COLS)
+        put_cell(u, 0, &slot, "CHARACTER_c", SEQ_CURSOR_CELL,
+                 SEQ_X0 + 1 + cursor * SEQ_CELL, SEQ_CURSOR_Y, 1,
+                 SEQ_MARK_BASE);
+    park_from(u, 0, slot);
+}
+
+/* The drum grid: one row per drum, on for a step that sounds. */
+void ds10_ui_drum_grid(ds10_ui *u, const char *page, const uint8_t *on,
+                       int nrows, int nsteps, int cursor)
+{
+    int slot = u->free_slot[0], r, i;
+    char bank[32];
+
+    snprintf(bank, sizeof bank, "%s_c", page);
+    if (nsteps > SEQ_COLS) nsteps = SEQ_COLS;
+    if (nrows > DSEQ_ROWS) nrows = DSEQ_ROWS;
+    for (r = 0; r < nrows; r++)
+        for (i = 0; i < nsteps; i++) {
+            if (!on[r * SEQ_COLS + i]) continue;
+            put_cell(u, 0, &slot, bank, SEQ_MARK_CELL, SEQ_X0 + i * SEQ_CELL,
+                     SEQ_Y0 + r * SEQ_CELL, 2, SEQ_MARK_BASE);
+        }
+    if (cursor >= 0 && cursor < SEQ_COLS)
+        put_cell(u, 0, &slot, "CHARACTER_c", SEQ_CURSOR_CELL,
+                 SEQ_X0 + 1 + cursor * SEQ_CELL, SEQ_CURSOR_Y, 1,
+                 SEQ_MARK_BASE);
+    park_from(u, 0, slot);
 }
 
 int ds10_ui_fx_hit(int x, int y, int type)

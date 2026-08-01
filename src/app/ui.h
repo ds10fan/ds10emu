@@ -81,6 +81,24 @@ int ds10_ui_drumseq_hit(int x, int y, int *step, int *row);
  * (0 at the top of the twelve visible), returns 0 on a hit. */
 int ds10_ui_seq_hit(int x, int y, int *step, int *row);
 
+/* Draw the synth sequencer's grid from the pattern. `note` is one entry per
+ * step, -1 for a rest; `top` is the note on the top row, and notes outside
+ * the twelve visible rows are not drawn, as the original's are not. `cursor`
+ * is the step the transport is on, or -1 for none. Call after ds10_ui_page:
+ * the markers go in the slots the static page left free, so this can be
+ * called again on every edit without rebuilding the screen. */
+void ds10_ui_seq_grid(ds10_ui *u, const char *page, const int *note,
+                      int nsteps, int top, int cursor);
+
+/* The same for the drum grid: `on` is nrows by sixteen, non-zero to light. */
+void ds10_ui_drum_grid(ds10_ui *u, const char *page, const uint8_t *on,
+                       int nrows, int nsteps, int cursor);
+
+/* The note on the top row when the grid has not been scrolled, and the note a
+ * row shows for a given top. */
+int ds10_ui_seq_top_default(void);
+int ds10_ui_seq_row_note(int top, int row);
+
 /* Hit-test the FX page. Returns the mixer knob id the control drives, or -1.
  * `type` picks which set of three knobs is showing: 0 delay, 1 flanger,
  * 2 chorus. Decompiled from 0x0205e1e4. */
