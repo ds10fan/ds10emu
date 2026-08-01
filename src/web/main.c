@@ -1110,6 +1110,20 @@ static void refresh(void)
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_map_synth(int x, int y) { return ds10_ui_map_synth(x, y); }
 
+/* Which knob an automation lane drives.
+ *
+ * The KAOSS pad's two axes are this pair. Across the ROM's songs the lane
+ * knob fields are almost entirely 11 and 12 - cutoff and peak - so that is
+ * the fallback where a pattern names nothing usable. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_lane_knob(int lane)
+{
+    int track = ed.track < NSYN ? ed.track : 0;
+    int k = ds10_editor_get_lane_knob(&ed, track, lane);
+
+    return k >= 0 && k < DS10_SONG_KNOBS ? k : (lane ? 12 : 11);
+}
+
 /* Which of 32_PATTERN's sixteen buttons is under a touch, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_pattern_hit(int x, int y) { return ds10_ui_pattern_hit(x, y); }

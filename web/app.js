@@ -172,6 +172,16 @@ function dragTo(ev) {
   }
 }
 
+/* The pad drives whichever two knobs the pattern's automation lanes name -
+ * across the ROM's songs that is almost always cutoff and peak. */
+function kaossSet(h) {
+  const kx = api.laneKnob(0), ky = api.laneKnob(1);
+  api.knobSet(kx, h & 0xFF);
+  api.knobSet(ky, h >> 8);
+  say("KAOSS  " + api.knobName(kx) + " " + (h & 0xFF) + "   "
+      + api.knobName(ky) + " " + (h >> 8));
+}
+
 function mixerName(id) {
   if (id >= 17 && id < 23) return "VOLUME " + (id - 16);
   if (id >= 9 && id < 15) return "PAN " + (id - 8);
@@ -243,11 +253,7 @@ function onMove(ev) {
   if (kaoss) {
     const [x, y] = screenPos(ev);
     const h = api.kaossHit(x, y);
-    if (h >= 0) {
-      api.knobSet(11, h & 0xFF);
-      api.knobSet(12, h >> 8);
-      say("KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8));
-    }
+    if (h >= 0) kaossSet(h);
     return;
   }
   if (paint) {
@@ -320,12 +326,8 @@ function onDown(which, ev) {
   if (page === "71_KAOSS") {
     const h = api.kaossHit(x, y);
     if (h < 0) return;
-    /* The real pad's two axes are a per-song assignment that is not read yet;
-     * cutoff and peak are the usual pair and make the pad audible. */
     kaoss = true;
-    api.knobSet(11, h & 0xFF);
-    api.knobSet(12, h >> 8);
-    say("KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8));
+    kaossSet(h);
     ev.target.setPointerCapture(ev.pointerId);
     return;
   }
@@ -422,6 +424,7 @@ Module.onRuntimeInitialized = () => {
                            ["number", "number"]),
     patternHit: Module.cwrap("ds10_web_pattern_hit", "number",
                              ["number", "number"]),
+    laneKnob: Module.cwrap("ds10_web_lane_knob", "number", ["number"]),
     keyHit: Module.cwrap("ds10_web_key_hit", "number",
                          ["number", "number", "number"]),
     keyButton: Module.cwrap("ds10_web_key_button", "number",
