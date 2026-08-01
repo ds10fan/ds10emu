@@ -34,7 +34,7 @@ static int32_t clamp_one(int32_t v)
 }
 
 void ds10_mixer_render(ds10_mixer *m, const int16_t *const *in,
-                       const ds10_fx_tables *t, int16_t *out_l, int16_t *out_r,
+                       int16_t *out_l, int16_t *out_r,
                        int n)
 {
     int ch, i;
@@ -42,7 +42,7 @@ void ds10_mixer_render(ds10_mixer *m, const int16_t *const *in,
     for (ch = 0; ch < DS10_MIX_CHANNELS; ch++)
         m->prod[ch] = ds10_mul32(m->pan[ch], m->vol[ch]) >> 15;
 
-    ds10_fx_update(&m->fx, t);
+    ds10_fx_update(&m->fx);
 
     for (i = 0; i < n; i++) {
         int32_t s1l, s1r, s2l, s2r, dl, dr;
@@ -120,31 +120,30 @@ void ds10_mixer_render(ds10_mixer *m, const int16_t *const *in,
     }
 }
 
-void ds10_mixer_set_knob(ds10_mixer *m, int knob, int value,
-                         const ds10_fx_tables *t)
+void ds10_mixer_set_knob(ds10_mixer *m, int knob, int value)
 {
     if (knob > 22)
         return;
     if (knob == 0) {
         m->route = value;
         ds10_fx_set(&m->fx, DS10_FX_P_DRYWET,
-                    value == DS10_ROUTE_OFF ? 0 : m->drywet, t);
+                    value == DS10_ROUTE_OFF ? 0 : m->drywet);
     } else if (knob == 8) {
         m->drywet = value;
         if (m->route != DS10_ROUTE_OFF)
-            ds10_fx_set(&m->fx, DS10_FX_P_DRYWET, value, t);
+            ds10_fx_set(&m->fx, DS10_FX_P_DRYWET, value);
     } else if (knob >= 9 && knob <= 14) {
         m->pan[knob - 9] = value * DS10_MIX_PAN_STEP;
     } else if (knob >= 17 && knob <= 22) {
         m->vol[knob - 17] =
             (int32_t)(((int32_t)value * value) * DS10_MIX_VOL_SCALE) >> 15;
     } else {
-        ds10_fx_set(&m->fx, knob, value, t);
+        ds10_fx_set(&m->fx, knob, value);
     }
 }
 
 void ds10_mixer_event(ds10_mixer *m, int opcode, int channel, uint16_t payload,
-                      int32_t arg, const ds10_fx_tables *t)
+                      int32_t arg)
 {
     if (opcode > DS10_MIX_EV_MUTE_ON) {
         return;
@@ -158,7 +157,7 @@ void ds10_mixer_event(ds10_mixer *m, int opcode, int channel, uint16_t payload,
         /* Retunes a tempo-synced delay, by way of re-applying the time knob. */
         if (m->fx.tempo != arg) {
             m->fx.tempo = arg;
-            ds10_fx_set(&m->fx, DS10_FX_P_TIME, m->fx.k_time, t);
+            ds10_fx_set(&m->fx, DS10_FX_P_TIME, m->fx.k_time);
         }
         return;
     } else if (opcode != DS10_MIX_EV_KNOB) {
@@ -169,8 +168,8 @@ void ds10_mixer_event(ds10_mixer *m, int opcode, int channel, uint16_t payload,
         int value = (int8_t)(payload >> 8);
 
         if (knob == DS10_MIX_EVK_VOL)
-            ds10_mixer_set_knob(m, channel + 17, value, t);
+            ds10_mixer_set_knob(m, channel + 17, value);
         else if (knob == DS10_MIX_EVK_PAN)
-            ds10_mixer_set_knob(m, channel + 9, value, t);
+            ds10_mixer_set_knob(m, channel + 9, value);
     }
 }

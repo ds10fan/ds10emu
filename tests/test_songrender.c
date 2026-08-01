@@ -32,7 +32,7 @@
 #include "../src/core/drum.h"
 #include "../src/core/mixer_state.h"
 #include "../src/core/song.h"
-#include "../src/core/tables.h"
+#include "../src/core/tables_data.h"
 #include "../src/core/voice.h"
 #include "../src/core/voice_state.h"
 
@@ -72,11 +72,9 @@ static int32_t next_word(void)
 
 /* The automation processor pushes lane values straight into the machine through
  * vtable slot +0x18, which for a synth is the knob handler. */
-static const ds10_tables *g_tables;
-
 static void knob_hook(void *machine, int knob, int value)
 {
-    ds10_patch_set_knob((ds10_voice *)machine, knob, value, g_tables);
+    ds10_patch_set_knob((ds10_voice *)machine, knob, value);
 }
 
 static void player_noop(ds10_song_player *p, ds10_seq *s)
@@ -88,20 +86,10 @@ static void player_noop(ds10_song_player *p, ds10_seq *s)
 int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "tests/vectors/songrender.bin";
-    const char *tbl = argc > 2 ? argv[2] : "data/tables.bin";
     char magic[4];
     uint32_t ncases, frames, frame, drumlen, i;
     unsigned long total = 0, bad = 0, badcases = 0;
-    ds10_table_set ts;
-    ds10_pitch_tables pt;
-    ds10_vcf_tables ft;
 
-    if (ds10_tables_load(&ts, tbl) != 0) {
-        fprintf(stderr, "cannot read %s - run `make tables`\n", tbl);
-        return 2;
-    }
-    ds10_tables_views(&ts.t, &pt, &ft);
-    g_tables = &ts.t;
 
     g = fopen(path, "rb");
     if (!g) {
@@ -248,8 +236,8 @@ int main(int argc, char **argv)
 
                 autom[t].lane[v].knob = (uint8_t)kn;
                 if (kn < 31) {
-                    autom[t].lane[v].offset = (int8_t)ts.knob_min[kn];
-                    autom[t].lane[v].scale = (uint8_t)ts.knob_range[kn];
+                    autom[t].lane[v].offset = (int8_t)ds10_tbl_knob_min[kn];
+                    autom[t].lane[v].scale = (uint8_t)ds10_tbl_knob_range[kn];
                 }
             }
         }
@@ -316,12 +304,12 @@ int main(int argc, char **argv)
             unsigned long bad0 = bad;
 
             memset(&dv, 0, sizeof dv);
-            ds10_voice_state_load(&dv, ts.voice_init);
+            ds10_voice_state_load(&dv, ds10_tbl_voice_init);
             /* The drum patches are per song, not per pattern. */
-            ds10_patch_load(&dv, drum_knobs[v], &ts.t);
-            ds10_voice_note_on(&dv, 60, &ts.t);
+            ds10_patch_load(&dv, drum_knobs[v]);
+            ds10_voice_note_on(&dv, 60);
             for (j = 0; j < drumlen; j += DS10_FRAME)
-                ds10_voice_render(&dv, &pt, &ft, dbuf[v] + j, DS10_FRAME);
+                ds10_voice_render(&dv, dbuf[v] + j, DS10_FRAME);
             for (j = 0; j < drumlen; j++) {
                 unsigned char b[2];
 
@@ -362,11 +350,11 @@ int main(int argc, char **argv)
                     if (op != DS10_EV_NOTE_ON && op != DS10_EV_NOTE_OFF)
                         continue;
                     if (dst < NSYN)
-                        ds10_voice_event(&voice[dst], op, note, 0, &ts.t);
+                        ds10_voice_event(&voice[dst], op, note, 0);
                     else if (dst < NTRK) {
                         if (op == DS10_EV_NOTE_ON)
                             ds10_drum_note_on(&drum[dst - NSYN], note,
-                                              ts.drum_pitch);
+                                              ds10_tbl_drum_pitch);
                         else
                             ds10_drum_note_off(&drum[dst - NSYN]);
                     }
@@ -374,7 +362,7 @@ int main(int argc, char **argv)
                 for (j = 0; j < n; j++)
                     if (ev[j].dest == DS10_BUS1(NTRK))
                         ds10_mixer_event(&mix, ev[j].opcode, ev[j].channel,
-                                         ev[j].payload, 0, &ts.fx);
+                                         ev[j].payload, 0);
                 if (ctx.pat == 0) {
                     ctx.pat = &pat;
                     seq.pattern = 1;
@@ -382,14 +370,14 @@ int main(int argc, char **argv)
                 }
             }
             for (v = 0; v < NSYN; v++)
-                ds10_voice_render(&voice[v], &pt, &ft, got[v], DS10_FRAME);
+                ds10_voice_render(&voice[v], got[v], DS10_FRAME);
             for (v = 0; v < NDRUM; v++) {
                 memset(got[NSYN + v], 0, sizeof got[NSYN + v]);
                 ds10_drum_render(&drum[v], got[NSYN + v], DS10_FRAME);
             }
             for (v = 0; v < DS10_MIX_CHANNELS; v++)
                 chp[v] = got[v];
-            ds10_mixer_render(&mix, chp, &ts.fx, got[NSYN + NDRUM],
+            ds10_mixer_render(&mix, chp, got[NSYN + NDRUM],
                               got[NSYN + NDRUM + 1], DS10_FRAME);
 
             for (v = 0; v < NCH; v++) {
@@ -418,7 +406,6 @@ int main(int argc, char **argv)
             badcases++;
     }
     fclose(g);
-    ds10_tables_free(&ts);
 
     printf("%s: %lu samples over %u cases, %lu mismatches",
            bad ? "FAIL" : "PASS", total, ncases, bad);

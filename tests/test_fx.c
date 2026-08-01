@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "../src/core/fx.h"
+#include "vectortables.h"
 
 #define MAGIC "FXP1"
 #define NF 17
@@ -97,7 +98,6 @@ int main(int argc, char **argv)
     unsigned long bad = 0, total = 0;
     static int32_t phase_off[3], delay_div[12], lfo_rate[128];
     static int16_t flanger_fb[128], depth[128];
-    ds10_fx_tables t;
 
     g = fopen(path, "rb");
     if (!g) {
@@ -126,11 +126,13 @@ int main(int argc, char **argv)
         delay_div[k] = (int32_t)rd32();
     for (k = 0; k < 128; k++)
         lfo_rate[k] = (int32_t)rd32();
-    t.lfo_phase_off = phase_off;
-    t.flanger_fb = flanger_fb;
-    t.depth = depth;
-    t.delay_div = (const uint32_t *)delay_div;
-    t.lfo_rate = (const uint32_t *)lfo_rate;
+    vt_i32("fx_lfo_phase", phase_off, ds10_tbl_fx_lfo_phase, 3);
+    vt_i16("fx_flanger_fb", flanger_fb, ds10_tbl_fx_flanger_fb, 128);
+    vt_i16("fx_depth", depth, ds10_tbl_fx_depth, 128);
+    vt_u32("fx_delay_div", (const uint32_t *)delay_div,
+           ds10_tbl_fx_delay_div, 12);
+    vt_u32("fx_lfo_rate", (const uint32_t *)lfo_rate,
+           ds10_tbl_fx_lfo_rate, 128);
 
     for (i = 0; i < nseq; i++) {
         ds10_fx fx;
@@ -153,7 +155,7 @@ int main(int argc, char **argv)
             for (k = 0; k < NF; k++)
                 want[k] = (int32_t)rd32();
 
-            ds10_fx_set(&fx, param, value, &t);
+            ds10_fx_set(&fx, param, value);
             store(&fx, got);
             total++;
 

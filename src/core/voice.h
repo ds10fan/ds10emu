@@ -46,7 +46,6 @@ typedef struct {
 
 /* Render `n` samples (normally DS10_FRAME). The per-frame preamble runs once,
  * then the sample loop. */
-void ds10_voice_render(ds10_voice *v, const ds10_pitch_tables *pt,
-                       const ds10_vcf_tables *ft, int16_t *out, int n);
+void ds10_voice_render(ds10_voice *v, int16_t *out, int n);
 
 #endif /* DS10_VOICE_H */

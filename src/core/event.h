@@ -19,10 +19,9 @@ enum ds10_event {
     DS10_EV_DRUM_SHAPE = 0x1E,
 };
 
-void ds10_voice_event(ds10_voice *v, int opcode, int note, int32_t arg,
-                      const ds10_tables *t);
-void ds10_voice_note_on(ds10_voice *v, int note, const ds10_tables *t);
-void ds10_voice_note_off(ds10_voice *v, const ds10_tables *t);
-void ds10_voice_set_bpm(ds10_voice *v, int32_t bpm, const ds10_tables *t);
+void ds10_voice_event(ds10_voice *v, int opcode, int note, int32_t arg);
+void ds10_voice_note_on(ds10_voice *v, int note);
+void ds10_voice_note_off(ds10_voice *v);
+void ds10_voice_set_bpm(ds10_voice *v, int32_t bpm);
 
 #endif /* DS10_EVENT_H */

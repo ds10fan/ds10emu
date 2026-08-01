@@ -18,7 +18,7 @@
 #include "../core/mixer.h"
 #include "../core/mixer_state.h"
 #include "../core/patch.h"
-#include "../core/tables.h"
+#include "../core/tables_data.h"
 #include "../core/voice.h"
 #include "../core/voice_state.h"
 #include "../core/seq.h"
@@ -35,9 +35,6 @@
 #define WEB_FRAME DS10_FRAME
 
 static ds10_ui *ui;
-static ds10_table_set tables;
-static ds10_pitch_tables pitch_tables;
-static ds10_vcf_tables vcf_tables;
 static ds10_voice voice[NSYN];
 static ds10_mixer mixer;
 /* The effect's delay lines. The mixer renders through the effect whatever the
@@ -184,9 +181,9 @@ static void seq_install(ds10_seq_ctx *c, ds10_rt_pattern *pat)
     if (!song_loaded || i < 0 || i >= DS10_SONG_PATTERNS) return;
     q = &ed.song.pattern[i];
     for (t = 0; t < NSYN; t++)
-        ds10_patch_load(&voice[t], q->knobs[t], &tables.t);
+        ds10_patch_load(&voice[t], q->knobs[t]);
     for (t = 0; t < DS10_MIX_KNOBS; t++)
-        ds10_mixer_set_knob(&mixer, t, q->mixer[t], &tables.fx);
+        ds10_mixer_set_knob(&mixer, t, q->mixer[t]);
     memcpy(seq_chan, q->mixer, DS10_MIX_KNOBS);
 
     for (t = 0; t < NSYN; t++) {
@@ -202,8 +199,8 @@ static void seq_install(ds10_seq_ctx *c, ds10_rt_pattern *pat)
 
             c->autom[t].lane[l].knob = (uint8_t)kn;
             if (kn < DS10_SONG_KNOBS) {
-                c->autom[t].lane[l].offset = (int8_t)tables.knob_min[kn];
-                c->autom[t].lane[l].scale = (uint8_t)tables.knob_range[kn];
+                c->autom[t].lane[l].offset = (int8_t)ds10_tbl_knob_min[kn];
+                c->autom[t].lane[l].scale = (uint8_t)ds10_tbl_knob_range[kn];
             }
         }
     }
@@ -235,11 +232,11 @@ static void render_drums(void)
 
     for (i = 0; i < NDRUM; i++) {
         memset(&v, 0, sizeof v);
-        ds10_voice_state_load(&v, tables.voice_init);
-        ds10_patch_load(&v, ds10_song_drum_knobs(&ed.song, i), &tables.t);
-        ds10_voice_note_on(&v, DRUM_ROOT, &tables.t);
+        ds10_voice_state_load(&v, ds10_tbl_voice_init);
+        ds10_patch_load(&v, ds10_song_drum_knobs(&ed.song, i));
+        ds10_voice_note_on(&v, DRUM_ROOT);
         for (j = 0; j < DRUM_LEN; j += WEB_FRAME)
-            ds10_voice_render(&v, &pitch_tables, &vcf_tables,
+            ds10_voice_render(&v,
                               drumbuf[i] + j, WEB_FRAME);
         memset(&drum[i], 0, sizeof drum[i]);
         drum[i].env.stage = DS10_DRUM_RELEASE;
@@ -260,11 +257,10 @@ static void dispatch(int n)
     for (j = 0; j < n; j++) {
         if (seq_ev[j].dest < NSYN)
             ds10_voice_event(&voice[seq_ev[j].dest], seq_ev[j].opcode, 0,
-                             (int32_t)seq_ev[j].payload, &tables.t);
+                             (int32_t)seq_ev[j].payload);
         else if (seq_ev[j].dest == DS10_BUS1(DS10_SONG_TRACKS))
             ds10_mixer_event(&mixer, seq_ev[j].opcode, seq_ev[j].channel,
-                             seq_ev[j].payload, (int32_t)seq_ev[j].payload,
-                             &tables.fx);
+                             seq_ev[j].payload, (int32_t)seq_ev[j].payload);
     }
 }
 
@@ -272,7 +268,7 @@ static void dispatch(int n)
  * synth track is its knob handler. */
 static void seq_knob(void *machine, int knob, int value)
 {
-    ds10_patch_set_knob((ds10_voice *)machine, knob, value, &tables.t);
+    ds10_patch_set_knob((ds10_voice *)machine, knob, value);
 }
 /* What each screen is showing, so the live redraw knows which page's state to
  * draw, and how far the piano roll is scrolled. */
@@ -321,13 +317,9 @@ int ds10_web_audio_init(void)
     if (audio_ready) return 0;
     memset(voice, 0, sizeof voice);
     memset(&mixer, 0, sizeof mixer);
-    /* Compiled in by tools/mktables.py, so the audio build needs no
-     * filesystem - an AudioWorklet has none. */
-    if (ds10_tables_builtin(&tables) != 0) {
-        snprintf(last_error, sizeof last_error, "cannot parse the tables");
-        return -1;
-    }
-    ds10_tables_views(&tables.t, &pitch_tables, &vcf_tables);
+    /* The tables are compiled in by tools/mktables.py and read by name, so
+     * there is nothing to load here and nothing that needs a filesystem -
+     * which an AudioWorklet has none of. */
     /* A bare sawtooth with the filter open, so a key is audible before any
      * patch has been chosen. All 31 knobs go in, not a subset: the rest of
      * the constructor's state is not a usable patch on its own. */
@@ -344,18 +336,18 @@ int ds10_web_audio_init(void)
         };
 
         for (i = 0; i < NSYN; i++) {
-            ds10_voice_state_load(&voice[i], tables.voice_init);
-            ds10_patch_load(&voice[i], PATCH, &tables.t);
+            ds10_voice_state_load(&voice[i], ds10_tbl_voice_init);
+            ds10_patch_load(&voice[i], PATCH);
         }
     }
-    ds10_mixer_state_load(&mixer, tables.mixer_init);
-    ds10_fx_state_load(&mixer.fx, tables.fx_init);
+    ds10_mixer_state_load(&mixer, ds10_tbl_mixer_init);
+    ds10_fx_state_load(&mixer.fx, ds10_tbl_fx_init);
     mixer.fx.buf_l = delay_l;
     mixer.fx.buf_r = delay_r;
-    ds10_mixer_set_knob(&mixer, 0, 5, &tables.fx);         /* effect off */
+    ds10_mixer_set_knob(&mixer, 0, 5);         /* effect off */
     for (i = 0; i < NSYN; i++) {
-        ds10_mixer_set_knob(&mixer, 9 + i, 64, &tables.fx);   /* centre */
-        ds10_mixer_set_knob(&mixer, 17 + i, 127, &tables.fx); /* full */
+        ds10_mixer_set_knob(&mixer, 9 + i, 64);   /* centre */
+        ds10_mixer_set_knob(&mixer, 17 + i, 127); /* full */
     }
     /* The sequencer starts with every step empty: gate 0, note 0xFF. */
     /* The transport fields the constructor does not set. `starting` makes the
@@ -478,9 +470,9 @@ int ds10_web_song_bytes(const uint8_t *blob, int len)
     memset(voice, 0, sizeof voice);
     memset(&mixer, 0, sizeof mixer);
     for (i = 0; i < NSYN; i++)
-        ds10_voice_state_load(&voice[i], tables.voice_init);
-    ds10_mixer_state_load(&mixer, tables.mixer_init);
-    ds10_fx_state_load(&mixer.fx, tables.fx_init);
+        ds10_voice_state_load(&voice[i], ds10_tbl_voice_init);
+    ds10_mixer_state_load(&mixer, ds10_tbl_mixer_init);
+    ds10_fx_state_load(&mixer.fx, ds10_tbl_fx_init);
     mixer.fx.buf_l = delay_l;
     mixer.fx.buf_r = delay_r;
     memset(delay_l, 0, sizeof delay_l);
@@ -533,7 +525,7 @@ void ds10_web_seq_play(int on)
     if (on) preview_ready = 0;   /* the sequencer takes it back over */
     if (!on)
         for (i = 0; i < NSYN; i++)
-            ds10_voice_event(&voice[i], DS10_EV_NOTE_OFF, 0, 0, &tables.t);
+            ds10_voice_event(&voice[i], DS10_EV_NOTE_OFF, 0, 0);
 }
 
 /* The editor.
@@ -817,8 +809,8 @@ void ds10_web_note(int v, int note, int on)
 {
     if (!audio_ready || v < 0 || v >= NSYN) return;
     if (on) ensure_preview();
-    if (on) ds10_voice_note_on(&voice[v], note, &tables.t);
-    else ds10_voice_event(&voice[v], DS10_EV_NOTE_OFF, note, 0, &tables.t);
+    if (on) ds10_voice_note_on(&voice[v], note);
+    else ds10_voice_event(&voice[v], DS10_EV_NOTE_OFF, note, 0);
 }
 
 /* Render `frames` samples of stereo into a float buffer for Web Audio.
@@ -861,36 +853,34 @@ int ds10_web_audio(int frames)
                     }
                     if (dest < NSYN && (op == DS10_EV_NOTE_ON ||
                                         op == DS10_EV_NOTE_OFF)) {
-                        ds10_voice_event(&voice[dest], op, note, 0,
-                                         &tables.t);
+                        ds10_voice_event(&voice[dest], op, note, 0);
                     } else if (dest >= NSYN && dest < DS10_SONG_TRACKS &&
                                (op == DS10_EV_NOTE_ON ||
                                 op == DS10_EV_NOTE_OFF)) {
                         if (op == DS10_EV_NOTE_ON)
                             ds10_drum_note_on(&drum[dest - NSYN], note,
-                                              tables.drum_pitch);
+                                              ds10_tbl_drum_pitch);
                         else
                             ds10_drum_note_off(&drum[dest - NSYN]);
                     } else if (dest == DS10_BUS1(DS10_SONG_TRACKS)) {
                         ds10_mixer_event(&mixer, op, seq_ev[k].channel,
-                                         seq_ev[k].payload, 0, &tables.fx);
+                                         seq_ev[k].payload, 0);
                     } else if (dest < NSYN) {
                         ds10_voice_event(&voice[dest], op, 0,
-                                         (int32_t)seq_ev[k].payload,
-                                         &tables.t);
+                                         (int32_t)seq_ev[k].payload);
                     }
                 }
             }
         }
         for (i = 0; i < NSYN; i++)
-            ds10_voice_render(&voice[i], &pitch_tables, &vcf_tables,
+            ds10_voice_render(&voice[i],
                               buf[i], WEB_FRAME);
         for (i = NSYN; i < 6; i++) {
             memset(buf[i], 0, sizeof buf[i]);
             if (song_loaded) ds10_drum_render(&drum[i - NSYN], buf[i],
                                               WEB_FRAME);
         }
-        ds10_mixer_render(&mixer, chp, &tables.fx, l, r, WEB_FRAME);
+        ds10_mixer_render(&mixer, chp, l, r, WEB_FRAME);
         for (k = 0; k < WEB_FRAME; k++) {
             audio_out[(done + k) * 2] = (float)l[k] / 32768.0f;
             audio_out[(done + k) * 2 + 1] = (float)r[k] / 32768.0f;
@@ -1086,7 +1076,7 @@ EMSCRIPTEN_KEEPALIVE
 void ds10_web_drum_hit_play(int n)
 {
     if (!song_loaded || n < 0 || n >= NDRUM) return;
-    ds10_drum_note_on(&drum[n], DRUM_ROOT, tables.drum_pitch);
+    ds10_drum_note_on(&drum[n], DRUM_ROOT, ds10_tbl_drum_pitch);
 }
 
 /* Which synth knob a touch on the patch bay drives, or -1. */
@@ -1123,8 +1113,7 @@ int ds10_web_factory_patch(int n)
 
         for (i = 0; i < DS10_SONG_KNOBS; i++)
             ds10_editor_knob(&ed, track, i, ((const int8_t *)blob)[0x20 + i]);
-        ds10_patch_load(&voice[track], (const int8_t *)(blob + 0x20),
-                        &tables.t);
+        ds10_patch_load(&voice[track], (const int8_t *)(blob + 0x20));
     }
     return 0;
 }
@@ -1184,7 +1173,7 @@ void ds10_web_mixer_set(int id, int value)
     /* Into the pattern too, for the same reason as the patch knobs: a bar
      * line pushes the pattern's stored mixer back in. */
     ds10_editor_mixer(&ed, id, value);
-    ds10_mixer_set_knob(&mixer, id, value, &tables.fx);
+    ds10_mixer_set_knob(&mixer, id, value);
     /* And the screen's redraw pass: a volume moves its fader handle. */
     if (id >= 17 && id < 23) ds10_ui_mixer_fader(ui, id - 17, value);
 }
@@ -1204,14 +1193,14 @@ EMSCRIPTEN_KEEPALIVE
 int ds10_web_knob_min(int id)
 {
     if (!audio_ready || id < 0 || id > 30) return 0;
-    return tables.knob_min[id];
+    return ds10_tbl_knob_min[id];
 }
 
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_knob_range(int id)
 {
     if (!audio_ready || id < 0 || id > 30) return 1;
-    return tables.knob_range[id];
+    return ds10_tbl_knob_range[id];
 }
 
 /* Apply a knob to both voices, through the engine's own dispatch, and turn
@@ -1225,13 +1214,13 @@ void ds10_web_knob_set(int id, int value)
     int track = ed.track < NSYN ? ed.track : 0;
 
     if (id < 0 || id > 30 || !audio_ready) return;
-    if (value < tables.knob_min[id]) value = tables.knob_min[id];
-    if (value > tables.knob_min[id] + tables.knob_range[id] - 1)
-        value = tables.knob_min[id] + tables.knob_range[id] - 1;
+    if (value < ds10_tbl_knob_min[id]) value = ds10_tbl_knob_min[id];
+    if (value > ds10_tbl_knob_min[id] + ds10_tbl_knob_range[id] - 1)
+        value = ds10_tbl_knob_min[id] + ds10_tbl_knob_range[id] - 1;
     ds10_editor_knob(&ed, track, id, value);
-    ds10_patch_set_knob(&voice[track], id, value, &tables.t);
-    ds10_ui_knob_value(ui, id, value, tables.knob_min[id],
-                       tables.knob_range[id]);
+    ds10_patch_set_knob(&voice[track], id, value);
+    ds10_ui_knob_value(ui, id, value, ds10_tbl_knob_min[id],
+                       ds10_tbl_knob_range[id]);
 }
 
 /* What a knob is set to now, so a drag can start from it instead of jumping
@@ -1368,7 +1357,7 @@ static void refresh(void)
     } else if (strcmp(page_bottom, "61_SYN_EDIT") == 0) {
         for (i = 0; i < DS10_SONG_KNOBS; i++)
             ds10_ui_knob_value(ui, i, ds10_editor_get_knob(&ed, track, i),
-                               tables.knob_min[i], tables.knob_range[i]);
+                               ds10_tbl_knob_min[i], ds10_tbl_knob_range[i]);
     } else if (strcmp(page_bottom, "32_PATTERN") == 0) {
         ds10_ui_pattern_mark(ui, ed.pattern);
     } else if (strcmp(page_bottom, "30_MIXER") == 0) {

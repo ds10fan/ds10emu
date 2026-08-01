@@ -1,4 +1,5 @@
 #include "patch.h"
+#include "tables_data.h"
 
 #include "fixed.h"
 
@@ -77,7 +78,7 @@ static void set_mod_source(ds10_voice *v, int dest, int src)
     }
 }
 
-static void set_lfo_rate(ds10_voice *v, int knob, const ds10_tables *t)
+static void set_lfo_rate(ds10_voice *v, int knob)
 {
     if (knob < 0)
         knob = 0;
@@ -86,19 +87,18 @@ static void set_lfo_rate(ds10_voice *v, int knob, const ds10_tables *t)
     v->lfo.rate_knob = (int16_t)knob;
 
     if (v->lfo.bpm_sync) {
-        uint32_t u = (knob < 0x7E) ? t->lfo_bpm[knob >> 3] : 0x4459A045u;
+        uint32_t u = (knob < 0x7E) ? ds10_tbl_lfo_bpm[knob >> 3] : 0x4459A045u;
 
         /* Split into high and low halves so the product fits: the tempo value
          * is 24-bit-ish and the multiplier can be large. */
         v->lfo.inc = ds10_mul32((int32_t)u >> 9, v->lfo.bpm) +
                      (ds10_mul32((int32_t)(u & 0x1FF), v->lfo.bpm) >> 9);
     } else {
-        v->lfo.inc = (int32_t)t->lfo_free[knob];
+        v->lfo.inc = (int32_t)ds10_tbl_lfo_free[knob];
     }
 }
 
-void ds10_patch_set_knob(ds10_voice *v, int knob, int value,
-                         const ds10_tables *t)
+void ds10_patch_set_knob(ds10_voice *v, int knob, int value)
 {
     switch (knob) {
     case 0: /* octave */
@@ -108,7 +108,7 @@ void ds10_patch_set_knob(ds10_voice *v, int knob, int value,
         v->pc.eg_depth = value + 0x40;
         break;
     case 2: /* portamento */
-        v->nc.rate = (int32_t)t->porta[value];
+        v->nc.rate = (int32_t)ds10_tbl_porta[value];
         break;
     case 3: /* pitch.in depth - common */
         v->vco.pitch_in = value + 0x3F;
@@ -149,8 +149,8 @@ void ds10_patch_set_knob(ds10_voice *v, int knob, int value,
         v->vcf.cutoff = ds10_shl(value, 15);
         break;
     case 12: /* peak */
-        v->vcf.peak_raw = (int32_t)t->peak[value];
-        v->vcf.q = ds10_vcf_peak_to_q(t->peak, value);
+        v->vcf.peak_raw = (int32_t)ds10_tbl_peak[value];
+        v->vcf.q = ds10_vcf_peak_to_q(value);
         break;
     case 13: /* filter type */
         v->vcf.type_req = value;
@@ -179,24 +179,24 @@ void ds10_patch_set_knob(ds10_voice *v, int knob, int value,
         v->amp.level_knob = value * AMP_LEVEL_STEP;
         break;
     case 20: /* attack */
-        v->env_params.attack = (int32_t)t->env_rate[value];
+        v->env_params.attack = (int32_t)ds10_tbl_env_rate[value];
         break;
     case 21: /* decay */
-        v->env_params.decay = (int32_t)t->env_rate[value];
+        v->env_params.decay = (int32_t)ds10_tbl_env_rate[value];
         break;
     case 22: /* sustain - a level, not a rate, so no table */
         v->env_params.sustain = ds10_shl(value, 17);
         break;
     case 23: /* release */
-        v->env_params.release = (int32_t)t->env_rate[value];
+        v->env_params.release = (int32_t)ds10_tbl_env_rate[value];
         break;
     case 24: /* LFO rate */
-        set_lfo_rate(v, value, t);
+        set_lfo_rate(v, value);
         break;
     case 25: /* LFO BPM sync - re-derives the rate from the stored knob */
         if (v->lfo.bpm_sync != (value != 0)) {
             v->lfo.bpm_sync = (value != 0);
-            set_lfo_rate(v, v->lfo.rate_knob, t);
+            set_lfo_rate(v, v->lfo.rate_knob);
         }
         break;
     case 26:
@@ -211,20 +211,10 @@ void ds10_patch_set_knob(ds10_voice *v, int knob, int value,
     }
 }
 
-void ds10_patch_load(ds10_voice *v, const int8_t *knobs, const ds10_tables *t)
+void ds10_patch_load(ds10_voice *v, const int8_t *knobs)
 {
     int i;
 
     for (i = 0; i < DS10_NKNOBS; i++)
-        ds10_patch_set_knob(v, i, knobs[i], t);
-}
-
-void ds10_tables_views(const ds10_tables *t, ds10_pitch_tables *pt,
-                       ds10_vcf_tables *ft)
-{
-    pt->depth = t->depth;
-    pt->pitch = t->pitch;
-    ft->mod_a = t->mod_a;
-    ft->mod_b = t->mod_b;
-    ft->coef = t->coef;
+        ds10_patch_set_knob(v, i, knobs[i]);
 }

@@ -1,4 +1,5 @@
 #include "fx.h"
+#include "tables_data.h"
 
 #include "fixed.h"
 
@@ -32,7 +33,7 @@ static void map_drywet(ds10_fx *fx, int v)
  * at 32768 Hz, and just inside the 65536-sample buffer). */
 #define DELAY_TIME_SCALE 0x103BA
 
-static void map_time(ds10_fx *fx, int v, const ds10_fx_tables *t)
+static void map_time(ds10_fx *fx, int v)
 {
     int32_t div;
 
@@ -65,7 +66,7 @@ static void map_time(ds10_fx *fx, int v, const ds10_fx_tables *t)
         int32_t q, r;
 
         for (i = 11; i >= 0; i--) {
-            if ((int32_t)(t->delay_div[i] >> 15) < ds10_shl(div, 16)) {
+            if ((int32_t)(ds10_tbl_fx_delay_div[i] >> 15) < ds10_shl(div, 16)) {
                 idx = i;
                 break;
             }
@@ -75,8 +76,8 @@ static void map_time(ds10_fx *fx, int v, const ds10_fx_tables *t)
         else if ((v >> 3) <= idx)
             idx = v >> 3;
 
-        q = (int32_t)t->delay_div[idx] / div;
-        r = (int32_t)t->delay_div[idx] % div;
+        q = (int32_t)ds10_tbl_fx_delay_div[idx] / div;
+        r = (int32_t)ds10_tbl_fx_delay_div[idx] % div;
         if (q > 0xFFFF)
             q = 0xFFFF;
         fx->time = (r >> 16) + ds10_shl(q, 15);
@@ -112,20 +113,20 @@ static void map_lr_ratio(ds10_fx *fx, int v)
 
 #define DEPTH_SCALE 0x0105D2F1
 
-static void map_depth(ds10_fx *fx, int v, const ds10_fx_tables *t)
+static void map_depth(ds10_fx *fx, int v)
 {
     if (fx->type == DS10_FX_DELAY) {
         fx->depth = 0; /* a delay does not modulate its time */
         return;
     }
-    fx->depth = (int32_t)(((int64_t)t->depth[v] * (int64_t)DEPTH_SCALE) >> 15);
+    fx->depth = (int32_t)(((int64_t)ds10_tbl_fx_depth[v] * (int64_t)DEPTH_SCALE) >> 15);
 }
 
 /* Delay feedback saturates at the top of the knob; below that it is linear in
  * (knob + 63), i.e. the bipolar knob is folded to unipolar. */
 #define FB_STEP 0x105
 
-static void map_feedback(ds10_fx *fx, int v, const ds10_fx_tables *t)
+static void map_feedback(ds10_fx *fx, int v)
 {
     switch (fx->type) {
     case DS10_FX_DELAY:
@@ -137,22 +138,22 @@ static void map_feedback(ds10_fx *fx, int v, const ds10_fx_tables *t)
     default:
         /* Flanger feedback is inverted, and the table is indexed from its
          * centre so the knob can be bipolar. */
-        fx->feedback = -(int32_t)t->flanger_fb[63 + v];
+        fx->feedback = -(int32_t)ds10_tbl_fx_flanger_fb[63 + v];
         break;
     }
 }
 
-static void reapply_all(ds10_fx *fx, const ds10_fx_tables *t)
+static void reapply_all(ds10_fx *fx)
 {
-    map_time(fx, fx->k_time, t);
+    map_time(fx, fx->k_time);
     map_lr_ratio(fx, fx->k_ratio);
-    fx->lfo_inc = (int32_t)t->lfo_rate[fx->k_lfo];
-    map_depth(fx, fx->k_depth, t);
-    map_feedback(fx, fx->k_fb, t);
+    fx->lfo_inc = (int32_t)ds10_tbl_fx_lfo_rate[fx->k_lfo];
+    map_depth(fx, fx->k_depth);
+    map_feedback(fx, fx->k_fb);
     map_drywet(fx, fx->k_drywet);
 }
 
-void ds10_fx_set(ds10_fx *fx, int param, int value, const ds10_fx_tables *t)
+void ds10_fx_set(ds10_fx *fx, int param, int value)
 {
     switch (param) {
     case DS10_FX_P_TYPE:
@@ -162,11 +163,11 @@ void ds10_fx_set(ds10_fx *fx, int param, int value, const ds10_fx_tables *t)
         /* Chorus is the only type with feedback disabled at the DSP level, as
          * well as by its own mapping returning zero. */
         fx->fb_enable = (value == DS10_FX_CHORUS) ? 0 : 1;
-        reapply_all(fx, t);
+        reapply_all(fx);
         break;
     case DS10_FX_P_TIME:
         fx->k_time = (int16_t)value;
-        map_time(fx, value, t);
+        map_time(fx, value);
         break;
     case DS10_FX_P_LR_RATIO:
         fx->k_ratio = (int16_t)value;
@@ -174,22 +175,22 @@ void ds10_fx_set(ds10_fx *fx, int param, int value, const ds10_fx_tables *t)
         break;
     case DS10_FX_P_LFO_RATE:
         fx->k_lfo = (int16_t)value;
-        fx->lfo_inc = (int32_t)t->lfo_rate[value];
+        fx->lfo_inc = (int32_t)ds10_tbl_fx_lfo_rate[value];
         break;
     case DS10_FX_P_DEPTH:
         fx->k_depth = (int16_t)value;
-        map_depth(fx, value, t);
+        map_depth(fx, value);
         break;
     case DS10_FX_P_SYNC:
         /* Only meaningful for a delay, and it re-derives the time. */
         if (fx->type != DS10_FX_DELAY || fx->sync == value)
             return;
         fx->sync = (int16_t)value;
-        map_time(fx, fx->k_time, t);
+        map_time(fx, fx->k_time);
         break;
     case DS10_FX_P_FEEDBACK:
         fx->k_fb = (int16_t)value;
-        map_feedback(fx, value, t);
+        map_feedback(fx, value);
         break;
     case DS10_FX_P_DRYWET:
         fx->k_drywet = (int16_t)value;
@@ -226,7 +227,7 @@ static void lfo_tap(int32_t phase, int32_t *tri, int32_t *cubed)
     *cubed = (c == 0) ? 1 : c;
 }
 
-void ds10_fx_update(ds10_fx *fx, const ds10_fx_tables *t)
+void ds10_fx_update(ds10_fx *fx)
 {
     int32_t base, mod, target;
 
@@ -234,7 +235,7 @@ void ds10_fx_update(ds10_fx *fx, const ds10_fx_tables *t)
     lfo_tap(fx->lfo_phase, &fx->lfo_l[1], &fx->lfo_l[2]);
     /* The right tap is offset in phase by a per-type constant: 0 for delay,
      * half a cycle for chorus, about a ninth for flanger. */
-    lfo_tap(fx->lfo_phase + t->lfo_phase_off[fx->type],
+    lfo_tap(fx->lfo_phase + ds10_tbl_fx_lfo_phase[fx->type],
             &fx->lfo_r[1], &fx->lfo_r[2]);
 
     base = ds10_mul15(fx->time, fx->ratio_l);

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "../src/core/patch.h"
+#include "vectortables.h"
 
 #define MAGIC "PAT1"
 #define NF 45
@@ -55,7 +56,6 @@ int main(int argc, char **argv)
     unsigned long bad = 0, badcases = 0;
     static uint32_t env_rate[128], lfo_bpm[16], lfo_free[128], porta[128],
         peak[128];
-    ds10_tables t;
 
     g = fopen(path, "rb");
     if (!g) {
@@ -83,12 +83,11 @@ int main(int argc, char **argv)
         porta[k] = rd32();
     for (k = 0; k < 128; k++)
         peak[k] = rd32();
-    memset(&t, 0, sizeof t);
-    t.env_rate = env_rate;
-    t.lfo_bpm = lfo_bpm;
-    t.lfo_free = lfo_free;
-    t.porta = porta;
-    t.peak = peak;
+    vt_u32("env_rate", env_rate, ds10_tbl_env_rate, 128);
+    vt_u32("lfo_bpm", lfo_bpm, ds10_tbl_lfo_bpm, 16);
+    vt_u32("lfo_free", lfo_free, ds10_tbl_lfo_free, 128);
+    vt_u32("porta", porta, ds10_tbl_porta, 128);
+    vt_u32("peak", peak, ds10_tbl_peak, 128);
 
     for (i = 0; i < ncases; i++) {
         ds10_voice v;
@@ -103,7 +102,7 @@ int main(int argc, char **argv)
         for (k = 0; k < NF; k++)
             want[k] = (int32_t)rd32();
 
-        ds10_patch_load(&v, knobs, &t);
+        ds10_patch_load(&v, knobs);
 
         k = 0;
         got[k++] = v.pc.octave12;

@@ -14,6 +14,7 @@
 #include <string.h>
 
 #include "../src/core/pitch.h"
+#include "vectortables.h"
 
 #define MAGIC "PIT1"
 #define NDEPTH 128
@@ -40,7 +41,6 @@ int main(int argc, char **argv)
     uint32_t ncases, i, k;
     unsigned long bad = 0;
     static int32_t depth[NDEPTH], pitch[NPITCH];
-    ds10_pitch_tables tables;
 
     if (!f) {
         fprintf(stderr, "cannot open %s\n"
@@ -56,8 +56,8 @@ int main(int argc, char **argv)
         depth[k] = (int32_t)rd32(f);
     for (k = 0; k < NPITCH; k++)
         pitch[k] = (int32_t)rd32(f);
-    tables.depth = depth;
-    tables.pitch = pitch;
+    vt_i32("depth", depth, ds10_tbl_depth, NDEPTH);
+    vt_i32("pitch", pitch, ds10_tbl_pitch, NPITCH);
 
     for (i = 0; i < ncases; i++) {
         ds10_notectrl nc;
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
 
         /* The original updates NOTECTRL before PITCHCTRL reads it. */
         ds10_notectrl_step(&nc);
-        ds10_pitchctrl_step(&pc, &nc, env, lfo, &tables);
+        ds10_pitchctrl_step(&pc, &nc, env, lfo);
 
         if (nc.current != want_cur || pc.inc1 != want_i1 ||
             pc.inc2 != want_i2) {

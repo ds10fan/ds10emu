@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "../src/core/event.h"
+#include "vectortables.h"
 
 #define MAGIC "EVT1"
 #define NF 19
@@ -94,7 +95,6 @@ int main(int argc, char **argv)
     uint32_t nseq, nf, i, k;
     unsigned long bad = 0, total = 0;
     static uint32_t lfo_bpm[16], lfo_free[128];
-    ds10_tables t;
 
     g = fopen(path, "rb");
     if (!g) {
@@ -116,9 +116,8 @@ int main(int argc, char **argv)
         lfo_bpm[k] = rd32();
     for (k = 0; k < 128; k++)
         lfo_free[k] = rd32();
-    memset(&t, 0, sizeof t);
-    t.lfo_bpm = lfo_bpm;
-    t.lfo_free = lfo_free;
+    vt_u32("lfo_bpm", lfo_bpm, ds10_tbl_lfo_bpm, 16);
+    vt_u32("lfo_free", lfo_free, ds10_tbl_lfo_free, 128);
 
     for (i = 0; i < nseq; i++) {
         int32_t nsteps = (int32_t)rd32();
@@ -144,7 +143,7 @@ int main(int argc, char **argv)
             memset(&v, 0, sizeof v);
             load(&v, before);
             for (e = 0; e < nbatch; e++)
-                ds10_voice_event(&v, ops[e], notes[e], args[e], &t);
+                ds10_voice_event(&v, ops[e], notes[e], args[e]);
             store(&v, got);
             total++;
 

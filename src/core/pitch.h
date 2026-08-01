@@ -19,15 +19,6 @@
 
 #include <stdint.h>
 
-/* ROM tables. `depth` is the bipolar modulation-depth curve at 0x0207EB38
- * (128 signed entries spanning roughly -32768..+32767, indexed by knob+0x40).
- * `pitch` is the semitone pitch table at 0x0207E950; the code reads entry and
- * entry+1 to interpolate, so it must have one extra readable element. */
-typedef struct {
-    const int32_t *depth;
-    const int32_t *pitch;
-} ds10_pitch_tables;
-
 typedef struct {
     int32_t target;   /* +0x00 note << 15 */
     int32_t current;  /* +0x04 glides toward target */
@@ -51,7 +42,6 @@ void ds10_notectrl_step(ds10_notectrl *n);
 /* `env_out` is the envelope's output pair (level, aux) - i.e. a pointer to
  * ENV+0x08. `lfo_out` is the LFO's four-shape array. */
 void ds10_pitchctrl_step(ds10_pitchctrl *p, const ds10_notectrl *n,
-                         const int32_t *env_out, const int32_t *lfo_out,
-                         const ds10_pitch_tables *t);
+                         const int32_t *env_out, const int32_t *lfo_out);
 
 #endif /* DS10_PITCH_H */

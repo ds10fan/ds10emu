@@ -1,8 +1,14 @@
-/* Loader for the ROM tables the engine indexes.
+/* Reader for data/tables.bin, the ROM's own copy of the engine's tables.
  *
- * These are data, not code: ten curve tables the synth reads and five the effect
- * reads. `tools/oracle.py tables` writes them to out/tables.bin, which is
- * ROM-derived and so never committed - regenerate it with `make tables`.
+ * The engine does not use this. It indexes the named arrays in tables_data.h,
+ * which are generated from the same file and compiled in - one fixed set of
+ * constants, so nothing has to be handed them.
+ *
+ * What this is for is checking that those arrays are still the ROM's:
+ * `make tables` re-extracts the binary and reports any difference against the
+ * committed copy, and tests/test_tables.c parses that copy with this and
+ * compares every entry against what is compiled in. A regenerated binary with
+ * a stale tables_data.c would otherwise be silent.
  */
 #ifndef DS10_TABLES_H
 #define DS10_TABLES_H
@@ -39,9 +45,6 @@ int ds10_tables_load(ds10_table_set *s, const char *path);
 int ds10_tables_parse(ds10_table_set *s, const unsigned char *data,
                       size_t len);
 
-/* And from the copy compiled in by tools/mktables.py, so a build with no
- * filesystem - the audio worklet - still starts. Same parser, same bytes. */
-int ds10_tables_builtin(ds10_table_set *s);
 void ds10_tables_free(ds10_table_set *s);
 
 #endif /* DS10_TABLES_H */

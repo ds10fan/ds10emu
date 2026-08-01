@@ -1,7 +1,6 @@
 #include "voice.h"
 
-void ds10_voice_render(ds10_voice *v, const ds10_pitch_tables *pt,
-                       const ds10_vcf_tables *ft, int16_t *out, int n)
+void ds10_voice_render(ds10_voice *v, int16_t *out, int n)
 {
     /* The modulation sources are read through small arrays whose last element
      * is a permanent zero - that is how the routing expresses "no
@@ -21,13 +20,13 @@ void ds10_voice_render(ds10_voice *v, const ds10_pitch_tables *pt,
         lfo_out[i] = v->lfo.out[i];
 
     ds10_notectrl_step(&v->nc);
-    ds10_pitchctrl_step(&v->pc, &v->nc, env_out, lfo_out, pt);
+    ds10_pitchctrl_step(&v->pc, &v->nc, env_out, lfo_out);
 
     ds10_vco_update(&v->vco, v->pc.inc1, v->pc.inc2);
 
     /* The filter's oscillator-modulation term reads OSC+0x4C, which the sample
      * loop last wrote in the PREVIOUS frame. Order matters here. */
-    ds10_vcf_update(&v->vcf, env_out, lfo_out, v->vco.prev2, ft);
+    ds10_vcf_update(&v->vcf, env_out, lfo_out, v->vco.prev2);
 
     ds10_amp_update(&v->amp, env_out, lfo_out);
 

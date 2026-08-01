@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "../src/core/voice.h"
+#include "vectortables.h"
 #include "../src/core/voice_state.h"
 
 #define MAGIC "VOI1"
@@ -60,8 +61,6 @@ int main(int argc, char **argv)
     unsigned long total = 0, bad = 0, badframes = 0;
     static int32_t depth[NDEPTH], pitchtab[NPITCH], coef[NCOEF];
     static int16_t mod_a[NMOD], mod_b[NMOD];
-    ds10_pitch_tables pt;
-    ds10_vcf_tables ft;
 
     g = fopen(path, "rb");
     if (!g) {
@@ -85,11 +84,11 @@ int main(int argc, char **argv)
         mod_b[k] = rd16();
     for (k = 0; k < NCOEF; k++)
         coef[k] = s();
-    pt.depth = depth;
-    pt.pitch = pitchtab;
-    ft.mod_a = mod_a;
-    ft.mod_b = mod_b;
-    ft.coef = coef;
+    vt_i32("depth", depth, ds10_tbl_depth, NDEPTH);
+    vt_i32("pitch", pitchtab, ds10_tbl_pitch, NPITCH);
+    vt_i16("mod_a", mod_a, ds10_tbl_mod_a, NMOD);
+    vt_i16("mod_b", mod_b, ds10_tbl_mod_b, NMOD);
+    vt_i32("coef", coef, ds10_tbl_coef, NCOEF);
 
     if (nfields != DS10_VOICE_STATE_FIELDS) {
         fprintf(stderr, "vector file has %u state fields, expected %d - "
@@ -115,7 +114,7 @@ int main(int argc, char **argv)
         for (j = 0; j < FRAME; j++)
             want[j] = rd16();
 
-        ds10_voice_render(&v, &pt, &ft, got, FRAME);
+        ds10_voice_render(&v, got, FRAME);
 
         for (j = 0; j < FRAME; j++) {
             total++;

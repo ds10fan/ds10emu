@@ -15,6 +15,7 @@
 #include <string.h>
 
 #include "../src/core/vcf.h"
+#include "vectortables.h"
 
 #define MAGIC "VCU1"
 #define NFIELDS 19
@@ -69,7 +70,6 @@ int main(int argc, char **argv)
     unsigned long bad = 0;
     static int16_t mod_a[NMOD], mod_b[NMOD];
     static int32_t coef[NCOEF];
-    ds10_vcf_tables tables;
 
     if (!f) {
         fprintf(stderr, "cannot open %s\n"
@@ -87,9 +87,9 @@ int main(int argc, char **argv)
         mod_b[k] = rd16(f);
     for (k = 0; k < NCOEF; k++)
         coef[k] = (int32_t)rd32(f);
-    tables.mod_a = mod_a;
-    tables.mod_b = mod_b;
-    tables.coef = coef;
+    vt_i16("mod_a", mod_a, ds10_tbl_mod_a, NMOD);
+    vt_i16("mod_b", mod_b, ds10_tbl_mod_b, NMOD);
+    vt_i32("coef", coef, ds10_tbl_coef, NCOEF);
 
     for (i = 0; i < ncases; i++) {
         ds10_vcf vcf;
@@ -108,7 +108,7 @@ int main(int argc, char **argv)
         for (k = 0; k < NFIELDS; k++)
             want[k] = (int32_t)rd32(f);
 
-        ds10_vcf_update(&vcf, env, lfo, prev2, &tables);
+        ds10_vcf_update(&vcf, env, lfo, prev2);
 
         for (c = 0; c < sizeof CHECK / sizeof *CHECK; c++) {
             int idx = CHECK[c];

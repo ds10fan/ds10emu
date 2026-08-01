@@ -18,8 +18,16 @@
 
 #define DS10_NKNOBS 31
 
-/* The contiguous table bank in ROM at 0x0207FD80..0x02080A20. Entry counts are
- * as listed; `coef` is read at idx and idx+1 so it needs one spare element.
+/* The contiguous table bank in ROM at 0x0207FD80..0x02080A20.
+ *
+ * The engine does not use this struct: it indexes the named arrays in
+ * tables_data.h, which are one fixed set of constants. What this describes is
+ * a set parsed out of data/tables.bin at run time, which only tables.c
+ * produces and only tests/test_tables.c consumes - the check that the
+ * compiled-in copy is still the ROM's.
+ *
+ * Entry counts are as listed; `coef` is read at idx and idx+1 so it needs one
+ * spare element.
  *
  *   env_rate  0x0207FD80  128  shared by attack, decay and release
  *   lfo_bpm   0x0207FF80   16  BPM-synced LFO increments, indexed by knob>>3
@@ -46,15 +54,9 @@ typedef struct {
 } ds10_tables;
 
 /* Apply a single knob, exactly as the original's dispatch does. */
-void ds10_patch_set_knob(ds10_voice *v, int knob, int value,
-                         const ds10_tables *t);
+void ds10_patch_set_knob(ds10_voice *v, int knob, int value);
 
 /* Apply all 31 knobs in order. */
-void ds10_patch_load(ds10_voice *v, const int8_t *knobs,
-                     const ds10_tables *t);
-
-/* Fill the pitch/filter table views ds10_voice_render needs from a ds10_tables. */
-void ds10_tables_views(const ds10_tables *t, ds10_pitch_tables *pt,
-                       ds10_vcf_tables *ft);
+void ds10_patch_load(ds10_voice *v, const int8_t *knobs);
 
 #endif /* DS10_PATCH_H */

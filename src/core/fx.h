@@ -41,7 +41,11 @@ enum ds10_fx_param {
     DS10_FX_P_DRYWET = 8,
 };
 
-/* ROM tables. All contiguous in the image:
+/* ROM tables, as parsed out of data/tables.bin - the engine reads the named
+ * arrays in tables_data.h instead, and this is only how tables.c describes a
+ * set read from the file so tests/test_tables.c can compare the two.
+ *
+ * All contiguous in the image:
  *   lfo_phase_off 0x0207EF38    3  per-type LFO phase offset for the right tap
  *   flanger_fb    0x0207EF44  128  s16, indexed 63 + knob (bipolar)
  *   depth         0x0207F044  128  s16
@@ -95,10 +99,10 @@ typedef struct {
 
 /* Apply one parameter. Setting the type reapplies all six others through the
  * new mapping, exactly as the original does. */
-void ds10_fx_set(ds10_fx *fx, int param, int value, const ds10_fx_tables *t);
+void ds10_fx_set(ds10_fx *fx, int param, int value);
 
 /* Per-frame: advance the LFO and recompute the ramp targets. */
-void ds10_fx_update(ds10_fx *fx, const ds10_fx_tables *t);
+void ds10_fx_update(ds10_fx *fx);
 
 /* Per-sample. `in_*` is the wet-path input; the caller adds the dry bypass. */
 void ds10_fx_step(ds10_fx *fx, int32_t in_l, int32_t in_r,

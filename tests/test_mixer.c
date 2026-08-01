@@ -47,6 +47,7 @@ static int16_t rd16(void)
 }
 
 #include "../src/core/mixer_state.h"
+#include "vectortables.h"
 
 int main(int argc, char **argv)
 {
@@ -58,7 +59,6 @@ int main(int argc, char **argv)
     static int16_t flanger_fb[128], depth[128];
     static int16_t buf_l[DS10_FX_BUFLEN], buf_r[DS10_FX_BUFLEN];
     static int16_t chan[6][FRAME];
-    ds10_fx_tables t;
 
     g = fopen(path, "rb");
     if (!g) {
@@ -88,11 +88,13 @@ int main(int argc, char **argv)
         delay_div[k] = (int32_t)rd32();
     for (k = 0; k < 128; k++)
         lfo_rate[k] = (int32_t)rd32();
-    t.lfo_phase_off = phase_off;
-    t.flanger_fb = flanger_fb;
-    t.depth = depth;
-    t.delay_div = (const uint32_t *)delay_div;
-    t.lfo_rate = (const uint32_t *)lfo_rate;
+    vt_i32("fx_lfo_phase", phase_off, ds10_tbl_fx_lfo_phase, 3);
+    vt_i16("fx_flanger_fb", flanger_fb, ds10_tbl_fx_flanger_fb, 128);
+    vt_i16("fx_depth", depth, ds10_tbl_fx_depth, 128);
+    vt_u32("fx_delay_div", (const uint32_t *)delay_div,
+           ds10_tbl_fx_delay_div, 12);
+    vt_u32("fx_lfo_rate", (const uint32_t *)lfo_rate,
+           ds10_tbl_fx_lfo_rate, 128);
 
     for (i = 0; i < ncases; i++) {
         ds10_mixer m;
@@ -128,7 +130,7 @@ int main(int argc, char **argv)
             for (s = 0; s < FRAME; s++)
                 want_r[s] = rd16();
 
-            ds10_mixer_render(&m, ptrs, &t, got_l, got_r, FRAME);
+            ds10_mixer_render(&m, ptrs, got_l, got_r, FRAME);
 
             for (s = 0; s < FRAME; s++) {
                 total += 2;

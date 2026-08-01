@@ -1,4 +1,5 @@
 #include "vcf.h"
+#include "tables_data.h"
 
 #include "fixed.h"
 
@@ -50,9 +51,9 @@ int32_t ds10_vcf_step(ds10_vcf *f, int32_t in)
 
 /* Mirrors FUN_02075F58. The 0x40 multiply saturates for all but the very top
  * of the table, which is why high peak values collapse to a narrow range. */
-int32_t ds10_vcf_peak_to_q(const uint32_t *peak_table, int peak)
+int32_t ds10_vcf_peak_to_q(int peak)
 {
-    int32_t raw = (int32_t)peak_table[peak];
+    int32_t raw = (int32_t)ds10_tbl_peak[peak];
     int32_t t = 0xFFFFFF - (raw >> 7);
     int32_t t2 = t * 0x40;
 
@@ -81,18 +82,17 @@ int32_t ds10_vcf_peak_to_q(const uint32_t *peak_table, int peak)
 #define VCF_RES_SCALE 0x01800000
 
 void ds10_vcf_update(ds10_vcf *f, const int32_t *env_out,
-                     const int32_t *lfo_out, int32_t osc_prev2,
-                     const ds10_vcf_tables *t)
+                     const int32_t *lfo_out, int32_t osc_prev2)
 {
     int32_t mod, v, idx, frac, lo, hi;
     int32_t res, sq, damped, target;
 
     /* Three modulation terms, same shape as the pitch block but with s16 depth
      * curves instead of s32, and a third term driven by the oscillator. */
-    mod = ds10_mul32(t->mod_a[f->in_depth],
+    mod = ds10_mul32(ds10_tbl_mod_a[f->in_depth],
                      (env_out[f->env_sel] + lfo_out[f->lfo_sel]) >> 9) >> 15;
-    mod += ds10_mul32(t->mod_a[f->eg_depth], env_out[0] >> 9) >> 15;
-    mod += ds10_mul32(t->mod_b[f->in_depth],
+    mod += ds10_mul32(ds10_tbl_mod_a[f->eg_depth], env_out[0] >> 9) >> 15;
+    mod += ds10_mul32(ds10_tbl_mod_b[f->in_depth],
                       ds10_mul32(f->osc_depth, osc_prev2) >> 9) >> 15;
 
     v = mod * VCF_MOD_SCALE + f->cutoff;
@@ -104,8 +104,8 @@ void ds10_vcf_update(ds10_vcf *f, const int32_t *env_out,
     v += VCF_BIAS;
     idx = v >> 15;
     frac = v & VCF_FRAC_MASK;
-    lo = t->coef[idx];
-    hi = t->coef[idx + 1];
+    lo = ds10_tbl_coef[idx];
+    hi = ds10_tbl_coef[idx + 1];
     f->coef = lo + ds10_mul15(frac, hi - lo);
 
     /* Resonance: the coefficient is biased, squared, and used to scale down the

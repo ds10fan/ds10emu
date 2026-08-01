@@ -45,7 +45,7 @@
 #include "../core/mixer_state.h"
 #include "../core/seq.h"
 #include "../core/song.h"
-#include "../core/tables.h"
+#include "../core/tables_data.h"
 #include "../core/voice.h"
 #include "../core/voice_state.h"
 
@@ -62,11 +62,9 @@
 
 /* The automation processor writes straight into the machine, which for a synth
  * track is its knob handler. */
-static const ds10_tables *g_tables;
-
 static void knob_hook(void *machine, int knob, int value)
 {
-    ds10_patch_set_knob((ds10_voice *)machine, knob, value, g_tables);
+    ds10_patch_set_knob((ds10_voice *)machine, knob, value);
 }
 
 typedef struct {
@@ -83,8 +81,6 @@ typedef struct {
     int8_t *chan;
     int8_t *lane_raw;
     const int8_t **dflt;
-    const ds10_table_set *t;
-    const ds10_fx_tables *ft;
 } song_player;
 
 /* Everything a pattern change re-initialises, in the order and at the moment the
@@ -104,9 +100,9 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
     q = &sp->song->pattern[i];
 
     for (t = 0; t < NSYN; t++)
-        ds10_patch_load(&sp->voice[t], q->knobs[t], &sp->t->t);
+        ds10_patch_load(&sp->voice[t], q->knobs[t]);
     for (t = 0; t < DS10_MIX_KNOBS; t++)
-        ds10_mixer_set_knob(sp->mix, t, q->mixer[t], sp->ft);
+        ds10_mixer_set_knob(sp->mix, t, q->mixer[t]);
     /* The sequencer reads per-channel volume and pan out of this same array. */
     memcpy(sp->chan, q->mixer, DS10_MIX_KNOBS);
 
@@ -123,8 +119,8 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
 
             c->autom[t].lane[l].knob = (uint8_t)kn;
             if (kn < DS10_SONG_KNOBS) {
-                c->autom[t].lane[l].offset = (int8_t)sp->t->knob_min[kn];
-                c->autom[t].lane[l].scale = (uint8_t)sp->t->knob_range[kn];
+                c->autom[t].lane[l].offset = (int8_t)ds10_tbl_knob_min[kn];
+                c->autom[t].lane[l].scale = (uint8_t)ds10_tbl_knob_range[kn];
             }
         }
     }
@@ -203,7 +199,7 @@ static void wav_header(FILE *f, unsigned long frames)
 static void usage(void)
 {
     fprintf(stderr,
-            "usage: songplay [-b bars] [-o out.wav] [-p pattern] [-t tables]"
+            "usage: songplay [-b bars] [-o out.wav] [-p pattern]"
             " song.dat\n"
             "  -b  bars to render (default: the whole chain)\n"
             "  -p  loop one pattern instead of following the chain\n"
@@ -216,12 +212,9 @@ static void usage(void)
 
 int main(int argc, char **argv)
 {
-    const char *out = "song.wav", *tbl = "data/tables.bin", *in = NULL;
+    const char *out = "song.wav", *in = NULL;
     int bars = 0, only = -1, i, chmask = 0x3F, automin = 0;
     static uint16_t fill[2 * DS10_SONG_PATTERNS];
-    ds10_table_set ts;
-    ds10_pitch_tables pt;
-    ds10_vcf_tables ft;
     static ds10_song song;
     static ds10_rt_pattern rt[DS10_SONG_PATTERNS];
     static ds10_voice voice[NSYN];
@@ -251,8 +244,6 @@ int main(int argc, char **argv)
     for (i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-o") == 0 && i + 1 < argc)
             out = argv[++i];
-        else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc)
-            tbl = argv[++i];
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc)
             bars = atoi(argv[++i]);
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
@@ -268,13 +259,6 @@ int main(int argc, char **argv)
     }
     if (!in)
         usage();
-
-    if (ds10_tables_load(&ts, tbl) != 0) {
-        fprintf(stderr, "cannot read %s - run `make tables`\n", tbl);
-        return 2;
-    }
-    ds10_tables_views(&ts.t, &pt, &ft);
-    g_tables = &ts.t;
 
     f = fopen(in, "rb");
     if (!f) {
@@ -308,11 +292,11 @@ int main(int argc, char **argv)
         int j;
 
         memset(&v, 0, sizeof v);
-        ds10_voice_state_load(&v, ts.voice_init);
-        ds10_patch_load(&v, ds10_song_drum_knobs(&song, i), &ts.t);
-        ds10_voice_note_on(&v, DRUM_ROOT, &ts.t);
+        ds10_voice_state_load(&v, ds10_tbl_voice_init);
+        ds10_patch_load(&v, ds10_song_drum_knobs(&song, i));
+        ds10_voice_note_on(&v, DRUM_ROOT);
         for (j = 0; j < DRUM_LEN; j += FRAME)
-            ds10_voice_render(&v, &pt, &ft, drumbuf[i] + j, FRAME);
+            ds10_voice_render(&v, drumbuf[i] + j, FRAME);
         memset(&drum[i], 0, sizeof drum[i]);
         drum[i].env.stage = DS10_DRUM_RELEASE;
         drum[i].env.retrig = 1;
@@ -359,7 +343,7 @@ int main(int argc, char **argv)
         trk[i].live_note = -1;
 
     for (i = 0; i < NSYN; i++)
-        ds10_voice_state_load(&voice[i], ts.voice_init);
+        ds10_voice_state_load(&voice[i], ds10_tbl_voice_init);
 
     sp.base.handle = player_handle;
     sp.song = &song;
@@ -370,15 +354,13 @@ int main(int argc, char **argv)
     sp.chan = chan;
     sp.lane_raw = lane_raw;
     sp.dflt = dflt;
-    sp.t = &ts;
-    sp.ft = &ts.fx;
 
         /* The mixer starts from its constructor's state; each pattern's own 25 knobs
      * go in when it is installed. The tempo event is the only way a synced delay
      * learns the BPM - nothing the sequencer broadcasts carries it. */
     memset(&mix, 0, sizeof mix);
-    ds10_mixer_state_load(&mix, ts.mixer_init);
-    ds10_fx_state_load(&mix.fx, ts.fx_init);
+    ds10_mixer_state_load(&mix, ds10_tbl_mixer_init);
+    ds10_fx_state_load(&mix.fx, ds10_tbl_fx_init);
     mix.fx.buf_l = dl;
     mix.fx.buf_r = dr;
     /* The array the sequencer reads per-channel volume and pan defaults from,
@@ -419,11 +401,10 @@ int main(int argc, char **argv)
         for (j = 0; j < n; j++) {
             if (ev[j].dest < NSYN)
                 ds10_voice_event(&voice[ev[j].dest], ev[j].opcode, 0,
-                                 (int32_t)ev[j].payload, &ts.t);
+                                 (int32_t)ev[j].payload);
             else if (ev[j].dest == DS10_BUS1(NTRK))
                 ds10_mixer_event(&mix, ev[j].opcode, ev[j].channel,
-                                 ev[j].payload, (int32_t)ev[j].payload,
-                                 &ts.fx);
+                                 ev[j].payload, (int32_t)ev[j].payload);
         }
     }
 
@@ -457,28 +438,28 @@ int main(int argc, char **argv)
                         fprintf(stderr, "[ev] f=%lu syn%d %s note=%d\n",
                                 nframes / FRAME, dest,
                                 op == DS10_EV_NOTE_ON ? "on " : "off", note);
-                    ds10_voice_event(&voice[dest], op, note, 0, &ts.t);
+                    ds10_voice_event(&voice[dest], op, note, 0);
                 } else if (dest >= NSYN && dest < NTRK &&
                            (op == DS10_EV_NOTE_ON || op == DS10_EV_NOTE_OFF)) {
                     if (op == DS10_EV_NOTE_ON)
                         ds10_drum_note_on(&drum[dest - NSYN], note,
-                                          ts.drum_pitch);
+                                          ds10_tbl_drum_pitch);
                     else
                         ds10_drum_note_off(&drum[dest - NSYN]);
                 } else if (dest == DS10_BUS1(NTRK)) {
-                    ds10_mixer_event(&mix, op, ev[k].channel, ev[k].payload, 0,
-                                     &ts.fx);
+                    ds10_mixer_event(&mix, op, ev[k].channel, ev[k].payload,
+                                     0);
                 } else if (dest < NSYN) {
                     /* Everything else a voice acts on, the tempo included - the
                      * payload word carries its argument. */
                     ds10_voice_event(&voice[dest], op, 0,
-                                     (int32_t)ev[k].payload, &ts.t);
+                                     (int32_t)ev[k].payload);
                 }
             }
         }
 
         for (i = 0; i < NSYN; i++)
-            ds10_voice_render(&voice[i], &pt, &ft, buf[i], FRAME);
+            ds10_voice_render(&voice[i], buf[i], FRAME);
         for (i = 0; i < NDRUM; i++) {
             memset(buf[NSYN + i], 0, sizeof buf[NSYN + i]);
             ds10_drum_render(&drum[i], buf[NSYN + i], FRAME);
@@ -486,7 +467,7 @@ int main(int argc, char **argv)
         for (i = 0; i < NTRK; i++)
             if (!(chmask & (1 << i)))
                 memset(buf[i], 0, sizeof buf[i]);
-        ds10_mixer_render(&mix, chp, &ts.fx, l, r, FRAME);
+        ds10_mixer_render(&mix, chp, l, r, FRAME);
         for (k = 0; k < FRAME; k++) {
             put16(f, (unsigned)(uint16_t)l[k]);
             put16(f, (unsigned)(uint16_t)r[k]);
@@ -502,7 +483,6 @@ int main(int argc, char **argv)
     fseek(f, 0, SEEK_SET);
     wav_header(f, nframes);
     fclose(f);
-    ds10_tables_free(&ts);
     printf("%s: %lu frames, %.2f s\n", out, nframes,
            (double)nframes / RATE);
     return 0;

@@ -46,22 +46,11 @@ typedef struct {
     int32_t damp_target; /* +0x58 ramp target for damp */
 } ds10_vcf;
 
-/* ROM tables the cutoff mapping needs.
- *   mod_a  0x020803C4, 128 x s16 - depth curve for the routed terms
- *   mod_b  0x020804C4, 128 x s16 - depth curve for the oscillator term
- *   coef   0x020807C4, 151 x u32 - cutoff coefficient, read at idx and idx+1 */
-typedef struct {
-    const int16_t *mod_a;
-    const int16_t *mod_b;
-    const int32_t *coef;
-} ds10_vcf_tables;
-
 /* Recompute the cutoff coefficients for the coming frame and set up their
  * per-sample ramps. `env_out` is ENV+0x08 (3 entries), `lfo_out` the LFO
  * output array (5 entries), `osc_prev2` the oscillator's OSC+0x4C feedback. */
 void ds10_vcf_update(ds10_vcf *f, const int32_t *env_out,
-                     const int32_t *lfo_out, int32_t osc_prev2,
-                     const ds10_vcf_tables *t);
+                     const int32_t *lfo_out, int32_t osc_prev2);
 
 /* Advance one sample. `in` is the mixed oscillator output (Q15-ish); the
  * return value is in the same scale. */
@@ -69,6 +58,6 @@ int32_t ds10_vcf_step(ds10_vcf *f, int32_t in);
 
 /* Map the peak knob (0..127) to the resonance coefficient `q`.
  * Mirrors FUN_02075F58; the table lives at 0x020805C4 in the ROM. */
-int32_t ds10_vcf_peak_to_q(const uint32_t *peak_table, int peak);
+int32_t ds10_vcf_peak_to_q(int peak);
 
 #endif /* DS10_VCF_H */

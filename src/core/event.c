@@ -39,8 +39,7 @@ static void zero_env(ds10_env *e)
     e->level = 0;
 }
 
-void ds10_voice_event(ds10_voice *v, int opcode, int note, int32_t arg,
-                      const ds10_tables *t)
+void ds10_voice_event(ds10_voice *v, int opcode, int note, int32_t arg)
 {
     switch (opcode) {
     case DS10_EV_NOTE_OFF:
@@ -67,7 +66,7 @@ void ds10_voice_event(ds10_voice *v, int opcode, int note, int32_t arg,
         v->lfo.bpm = arg;
         /* Re-derive the LFO rate from the stored knob; when BPM sync is on the
          * rate depends on the tempo. */
-        ds10_patch_set_knob(v, 24, v->lfo.rate_knob, t);
+        ds10_patch_set_knob(v, 24, v->lfo.rate_knob);
         break;
 
     case DS10_EV_STOP_ABRUPT:
@@ -107,17 +106,17 @@ void ds10_voice_event(ds10_voice *v, int opcode, int note, int32_t arg,
     }
 }
 
-void ds10_voice_note_on(ds10_voice *v, int note, const ds10_tables *t)
+void ds10_voice_note_on(ds10_voice *v, int note)
 {
-    ds10_voice_event(v, DS10_EV_NOTE_ON, note, 0, t);
+    ds10_voice_event(v, DS10_EV_NOTE_ON, note, 0);
 }
 
-void ds10_voice_note_off(ds10_voice *v, const ds10_tables *t)
+void ds10_voice_note_off(ds10_voice *v)
 {
-    ds10_voice_event(v, DS10_EV_NOTE_OFF, 0, 0, t);
+    ds10_voice_event(v, DS10_EV_NOTE_OFF, 0, 0);
 }
 
-void ds10_voice_set_bpm(ds10_voice *v, int32_t bpm, const ds10_tables *t)
+void ds10_voice_set_bpm(ds10_voice *v, int32_t bpm)
 {
-    ds10_voice_event(v, DS10_EV_SET_BPM, 0, bpm, t);
+    ds10_voice_event(v, DS10_EV_SET_BPM, 0, bpm);
 }
