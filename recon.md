@@ -2062,6 +2062,22 @@ therefore the highest note and `note = top - row`. Notes outside the twelve
 visible rows are not drawn - which is why no pattern in the ROM matches the six
 markers that frame shows.
 
+The button left of the grid's top row cycles the sequencer's sub-mode. Tapping
+the same point seven times walks
+
+```
+PIANO -> GATE -> VOL -> PAN -> KAOSS -> KAOSS -> PIANO -> ...
+```
+
+so there are six positions, and the two that come up as KAOSS are the two
+automation lanes the song format carries - the pattern's `lane[0]` and
+`lane[1]`, which share a page image. That is `tools/probe_buttons.py`, which
+taps a page and reports what changed: these buttons are not placed by the
+shared widget helper, so there is no table to read them out of, and their
+rectangles live inside the update's own code. The button responds between
+x 41 and 58 at y 8, which is where tapping does and does not reach it rather
+than a rectangle read out of the ROM.
+
 These markers are **state**, so `tools/pages.py` takes them out of the display
 list rather than freezing the captured pattern into the page, and `make
 test-page` draws them back from `tools/pagecheck.py`'s `SEQ_STATE`. That makes

@@ -177,11 +177,24 @@ Remaining, roughly in order:
 
   Not wired: each page's own top-bar buttons - CLR, the play button, the track
   selector. Those are not placed by the shared helper the other screens use, so
-  their rectangles are inside the update's sub-states rather than in a table,
-  and they have not been read. The browser page drives those functions from
-  HTML controls instead, which is the main way it still does not respond like
-  the original. `32_PATTERN` and `31_SONG` are drawn but not interactive; the
-  arrangement is edited from HTML too.
+  their rectangles are inside the update's sub-states rather than in a table.
+  The browser page drives those functions from HTML controls instead, which is
+  the main way it still does not respond like the original. `32_PATTERN` and
+  `31_SONG` are drawn but not interactive; the arrangement is edited from HTML
+  too.
+
+  `tools/probe_buttons.py` finds them by tapping rather than by reading, and
+  has identified one: the button between x 41 and 58 at y 8 on the sequencer
+  cycles its sub-mode, PIANO to GATE to VOL to PAN and through two KAOSS pages
+  which are the pattern's two automation lanes. Wiring it needs those five
+  variants captured - the sweep can reach them now that the button is known -
+  and a way to draw a per-step value rather than a marker. The editor model
+  already has the operations: `ds10_editor_gate`, `_vel` and `_pan`.
+
+  The probe cannot yet tell a control that clears the pattern from one that
+  redraws it, because a tap on the grid toggles the cell, so re-entering the
+  same notes before each probe alternates the baseline. That needs a run which
+  enters notes once and never taps the grid again.
 - **Which octave the keyboard starts on.** The layout says it starts on an F;
   F3 is an assumption, not a reading.
 
