@@ -192,6 +192,10 @@ Remaining, roughly in order:
   - CLR, at about x 132 y 8, which raises a modal CLEAR ALL DATA prompt with
     YES and NO. Not wired: the prompt would have to be drawn too.
 
+  `32_PATTERN` is wired the same way - its sixteen buttons select the pattern
+  and the marker follows, reproducing the captured frame. What is left on that
+  page is the mute and solo strip along the bottom, and its live text.
+
   The probe cannot yet tell a control that clears the pattern from one that
   redraws it, because a tap on the grid toggles the cell, so re-entering the
   same notes before each probe alternates the baseline. That needs a run which

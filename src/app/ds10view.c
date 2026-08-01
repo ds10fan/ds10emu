@@ -94,7 +94,9 @@ int main(int argc, char **argv)
             if (!p) break;
             p++;
         }
-        if (drums) {
+        if (strcmp(bot, "32_PATTERN") == 0) {
+            ds10_ui_pattern_mark(u, cursor < 0 ? 0 : cursor);
+        } else if (drums) {
             ds10_ui_drum_grid(u, bot, on, 4, 16, cursor);
         } else if (mode > 0) {
             /* A value page: the pairs were step:row, so turn each row back

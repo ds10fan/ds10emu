@@ -157,6 +157,10 @@ def is_state(page, rec):
     # and by cell 8 of CHARACTER_c, and which one the matcher picks depends on
     # its tie-break - so a name-based test here silently stops filtering when
     # that changes, and the captured pattern gets baked back into the page.
+    # 32_PATTERN's selection marker sits on whichever button is current, so
+    # it is state too.
+    if page == "32_PATTERN" and idx == 20 and name == "CHARACTER_c":
+        return True
     if page.startswith("60_SYN_SEQ_") or page == "51_ALL_DRUMS":
         if x >= SEQ_X0 and y >= SEQ_Y0 and \
            (x - SEQ_X0) % SEQ_CELL == 0 and (y - SEQ_Y0) % SEQ_CELL == 0:

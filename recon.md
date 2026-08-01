@@ -2118,9 +2118,18 @@ A rest draws no value marker on any of them. All three captured pages carry
 nine markers, and those are exactly the nine steps of that pattern which
 sound, though the bytes exist on every step.
 
-Two other buttons are identified but not read: CLR, at about x 132 y 8, raises
-a modal CLEAR ALL DATA prompt with YES and NO - modal enough that it swallows
-the map key, which is what made the first three probe runs useless.
+CLR, at about x 132 y 8, raises a modal CLEAR ALL DATA prompt with YES and NO
+- modal enough that it swallows the map key, which is what made the first
+three probe runs useless. Identified but not wired: the prompt would have to
+be drawn too.
+
+`32_PATTERN`'s sixteen buttons came out the same way. Its columns break
+between x 64 and 69, 129 and 134, 194 and 199 - a pitch of 65 - and its rows
+between y 56 and 60, 88 and 92, 120 and 124, a pitch of 32. The marker on the
+selected one is `CHARACTER_c` cell 20 at the button's origin plus (4,-2),
+which is where the captured page has it. Drawing it from the current pattern
+reproduces that frame exactly; what the page still differs by is its live
+text.
 
 These markers are **state**, so `tools/pages.py` takes them out of the display
 list rather than freezing the captured pattern into the page, and `make

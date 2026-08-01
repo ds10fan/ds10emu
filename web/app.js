@@ -297,6 +297,16 @@ function onDown(which, ev) {
     ev.target.setPointerCapture(ev.pointerId);
     return;
   }
+  if (page === "32_PATTERN") {
+    const n = api.patternHit(x, y);
+    if (n >= 0) {
+      api.setPattern(n);
+      api.seqFollow();
+      syncControls();
+      say("pattern " + (n + 1));
+    }
+    return;
+  }
   if (page === "33_DRUM_SELECTER") {
     const n = api.drumHit(x, y);
     if (n >= 0) { api.drumPlay(n); say("DRUM" + (n + 1)); }
@@ -410,6 +420,8 @@ Module.onRuntimeInitialized = () => {
     mapHit: Module.cwrap("ds10_web_map_hit", "string", ["number", "number"]),
     mapSynth: Module.cwrap("ds10_web_map_synth", "number",
                            ["number", "number"]),
+    patternHit: Module.cwrap("ds10_web_pattern_hit", "number",
+                             ["number", "number"]),
     keyHit: Module.cwrap("ds10_web_key_hit", "number",
                          ["number", "number", "number"]),
     keyButton: Module.cwrap("ds10_web_key_button", "number",

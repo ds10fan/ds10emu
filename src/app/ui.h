@@ -110,6 +110,13 @@ int ds10_ui_seq_mode_rows(int mode);
 int ds10_ui_seq_row_value(int mode, int row);
 int ds10_ui_seq_value_row(int mode, int value);
 
+/* Hit-test 32_PATTERN's sixteen buttons. Returns 0..15, or -1. */
+int ds10_ui_pattern_hit(int x, int y);
+void ds10_ui_pattern_box(int n, int *x, int *y);
+
+/* Draw the marker on the selected pattern. */
+void ds10_ui_pattern_mark(ds10_ui *u, int n);
+
 /* The sequencer's sub-mode button, which steps NOTE, GATE, VOL, PAN and the
  * two automation lanes. Returns non-zero for a hit; the page each position
  * shows is ds10_ui_seq_mode_page(). */

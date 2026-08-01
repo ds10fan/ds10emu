@@ -27,10 +27,15 @@ decompiled engine with the cursor walking the grid. Patches, the mixer, the
 effect and the KAOSS pad respond, the map navigates, and **save** writes a
 `.dat` the hardware would load.
 
-What is *not* done: each page's own top-bar buttons — CLR, play, the track
-selector — are not wired, so the browser page drives those from HTML controls
-instead; `32_PATTERN` and `31_SONG` draw but are not interactive. Captions
-still come from the captured frame rather than being rasterised. See
+The sequencer's own sub-mode button steps NOTE, GATE, VOLUME, PAN and the two
+automation lanes, and each of those pages is drawn from the pattern and
+editable; the pattern page selects patterns; the map's per-synth boxes pick
+the track.
+
+What is *not* done: CLR and the transport buttons on each page's top bar are
+not wired, so the browser page drives those from HTML controls instead;
+`31_SONG` draws but is not interactive, and nothing on the map opens it.
+Captions still come from the captured frame rather than being rasterised. See
 [`TODO.md`](TODO.md) §6.
 
 - [`recon.md`](recon.md) — what the ROM actually contains: container layout, the

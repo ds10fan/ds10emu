@@ -53,6 +53,8 @@ M.onRuntimeInitialized = () => {
     factoryPatch: c('ds10_web_factory_patch', 'number', ['number']),
     mapHit: c('ds10_web_map_hit', 'string', ['number', 'number']),
     mapSynth: c('ds10_web_map_synth', 'number', ['number', 'number']),
+    patternHit: c('ds10_web_pattern_hit', 'number', ['number', 'number']),
+    pattern: c('ds10_web_pattern', 'number', []),
     track: c('ds10_web_track', 'number', []),
     seqMode: c('ds10_web_seq_mode', 'number', []),
     seqModeNext: c('ds10_web_seq_mode_next', 'string', []),
@@ -156,6 +158,28 @@ M.onRuntimeInitialized = () => {
     check(box('30_MIXER', 221, 33) === -1, 'the mixer is not per-synth');
     check(box('51_ALL_DRUMS', 34, 157) === -1, 'nor the drums');
     check(api.mapHit(100, 180) === '', 'and a gap opens nothing');
+  }
+
+  /* 32_PATTERN's sixteen buttons, and the marker that follows the selected one. */
+  {
+    check(api.patternHit(30, 40) === 0, 'the first pattern button');
+    check(api.patternHit(100, 40) === 1, 'the second');
+    check(api.patternHit(230, 40) === 3, 'the fourth');
+    check(api.patternHit(30, 70) === 4, 'the second row');
+    check(api.patternHit(230, 140) === 15, 'the last');
+    check(api.patternHit(30, 10) === -1, 'above the grid is nothing');
+    check(api.patternHit(30, 170) === -1, 'below it too');
+
+    api.page('32_PATTERN', '90_MAP');
+    const first = screen();
+    api.setPattern(api.patternHit(100, 70));
+    check(api.pattern() === 5, 'tapping the fifth box selects pattern 6');
+    check(Buffer.compare(Buffer.from(screen()),
+                         Buffer.from(first)) !== 0, 'and the marker moves');
+    api.setPattern(0);
+    check(Buffer.compare(Buffer.from(screen()),
+                         Buffer.from(first)) === 0, 'and comes back');
+    api.page('60_SYN_SEQ_PIANO', '90_MAP');
   }
 
   /* The value sub-modes. The page's own button steps them, and each one edits

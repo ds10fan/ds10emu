@@ -1092,6 +1092,8 @@ static void refresh(void)
         for (i = 0; i < DS10_SONG_KNOBS; i++)
             ds10_ui_knob_value(ui, i, ds10_editor_get_knob(&ed, track, i),
                                tables.knob_min[i], tables.knob_range[i]);
+    } else if (strcmp(page_bottom, "32_PATTERN") == 0) {
+        ds10_ui_pattern_mark(ui, ed.pattern);
     } else if (strcmp(page_bottom, "30_MIXER") == 0) {
         for (i = 0; i < DS10_SONG_TRACKS; i++)
             ds10_ui_mixer_fader(ui, i, ds10_editor_get_mixer(&ed, 17 + i));
@@ -1107,6 +1109,10 @@ static void refresh(void)
  * pairs are what makes SYN2 EDIT open synth 2's patch. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_map_synth(int x, int y) { return ds10_ui_map_synth(x, y); }
+
+/* Which of 32_PATTERN's sixteen buttons is under a touch, or -1. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_pattern_hit(int x, int y) { return ds10_ui_pattern_hit(x, y); }
 
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_render(void)

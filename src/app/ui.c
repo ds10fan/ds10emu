@@ -1289,6 +1289,60 @@ int ds10_ui_drumseq_hit(int x, int y, int *step, int *row)
     return 0;
 }
 
+/* 32_PATTERN's sixteen buttons, four by four.
+ *
+ * This page does not use the shared widget helper either, so the grid comes
+ * from tapping the real thing rather than from a table: tools/probe_buttons.py
+ * sweeps a row and a column and reports where the selection moves. The
+ * columns break between x 64 and 69, 129 and 134, 194 and 199 - a pitch of 65
+ * - and the rows between y 56 and 60, 88 and 92, 120 and 124, a pitch of 32.
+ * The origins below are the boundaries those bracket; the probe stepped by
+ * four and five, so they are good to about that.
+ */
+#define PAT_X0 2
+#define PAT_Y0 26
+#define PAT_XSTEP 65
+#define PAT_YSTEP 32
+#define PAT_COLS 4
+#define PAT_ROWS 4
+
+int ds10_ui_pattern_hit(int x, int y)
+{
+    int c, r;
+
+    if (x < PAT_X0 || y < PAT_Y0) return -1;
+    c = (x - PAT_X0) / PAT_XSTEP;
+    r = (y - PAT_Y0) / PAT_YSTEP;
+    if (c >= PAT_COLS || r >= PAT_ROWS) return -1;
+    return r * PAT_COLS + c;
+}
+
+/* Where that button is, so the selection marker can be drawn on it. */
+void ds10_ui_pattern_box(int n, int *x, int *y)
+{
+    if (n < 0 || n >= PAT_COLS * PAT_ROWS) n = 0;
+    *x = PAT_X0 + (n % PAT_COLS) * PAT_XSTEP;
+    *y = PAT_Y0 + (n / PAT_COLS) * PAT_YSTEP;
+}
+
+/* The marker on the selected pattern. The captured page has CHARACTER_c cell
+ * 20 at (6,24), which is the first box's origin plus (4,-2) - so that offset
+ * is what puts it on any of them. */
+#define PAT_MARK_CELL 20
+#define PAT_MARK_DX 4
+#define PAT_MARK_DY -2
+#define PAT_MARK_BASE 0x200   /* CHARACTER_c's tile base, as everywhere */
+
+void ds10_ui_pattern_mark(ds10_ui *u, int n)
+{
+    int slot = u->free_slot[0], x, y;
+
+    ds10_ui_pattern_box(n, &x, &y);
+    put_cell(u, 0, &slot, "CHARACTER_c", PAT_MARK_CELL, x + PAT_MARK_DX,
+             y + PAT_MARK_DY, 2, PAT_MARK_BASE);
+    park_from(u, 0, slot);
+}
+
 /* The sequencer's sub-mode button.
  *
  * This one is not in any table. The screens that place widgets through the

@@ -84,6 +84,9 @@ SEQ_STATE = {
     "60_SYN_SEQ_GATE": "0/0:2,2:0,3:0,4:0,6:0,7:0,8:0,10:0,12:0",
     "60_SYN_SEQ_VOL": "0/0:0,2:0,3:0,4:0,6:0,7:0,8:0,10:0,12:0",
     "60_SYN_SEQ_PAN": "0/0:2,2:2,3:2,4:2,6:2,7:2,8:2,10:2,12:2",
+    # 32_PATTERN carries the selected pattern in the cursor field. The rest of
+    # what that page differs by is live text - the pattern names.
+    "32_PATTERN": "0/",
 }
 
 
