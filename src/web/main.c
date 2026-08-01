@@ -93,6 +93,22 @@ static ds10_song_player seq_player;
  */
 static int preview_ready;
 
+/* Note-ons the sequencer has dispatched, per track, since anyone last asked.
+ * Sound that is missing for one track and not another is either not being
+ * emitted or not being heard, and from outside those look the same. */
+static uint32_t track_notes[DS10_SONG_TRACKS];
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_track_notes(int t)
+{
+    int n;
+
+    if (t < 0 || t >= DS10_SONG_TRACKS) return -1;
+    n = (int)track_notes[t];
+    track_notes[t] = 0;
+    return n;
+}
+
 /* Whether the transport follows the arrangement or loops the one pattern
  * being edited. Entering notes is done against a looping pattern, which is
  * what the original's pattern mode is for. */
@@ -749,6 +765,9 @@ int ds10_web_audio(int frames)
                     /* The same dispatch songplay uses; anything else a
                      * voice acts on - the tempo included - takes its
                      * argument from the payload word. */
+                    if (op == DS10_EV_NOTE_ON && dest >= 0 &&
+                        dest < DS10_SONG_TRACKS)
+                        track_notes[dest]++;
                     if (dest < NSYN && (op == DS10_EV_NOTE_ON ||
                                         op == DS10_EV_NOTE_OFF)) {
                         ds10_voice_event(&voice[dest], op, note, 0,

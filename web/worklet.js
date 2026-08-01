@@ -48,6 +48,7 @@ class DS10Processor extends AudioWorkletProcessor {
         setTempo: c("ds10_web_set_tempo", null, ["number"]),
         setSwing: c("ds10_web_set_swing", null, ["number"]),
         cursor: c("ds10_web_cursor", "number", []),
+        trackNotes: c("ds10_web_track_notes", "number", ["number"]),
       };
       this.api.audioInit();
       for (const m of this.pending) this.handle(m);
@@ -100,9 +101,11 @@ class DS10Processor extends AudioWorkletProcessor {
     /* Say what is coming out, once a second or so. Silence with the graph
      * running looks the same from outside as no graph at all. */
     if ((this.blocks++ % 256) === 0) {
+      const notes = [];
+      for (let t = 0; t < 6; t++) notes.push(this.api.trackNotes(t));
       this.port.postMessage({type: "level", peak: +this.peak.toFixed(4),
                              songs: this.songs, got: got,
-                             cursor: this.api.cursor()});
+                             cursor: this.api.cursor(), notes: notes});
       this.peak = 0;
     }
     if (!got) return true;

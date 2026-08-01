@@ -213,6 +213,7 @@ function sendSong() {
   if (!worklet) return;
   const n = api.export();
   if (n <= 0) return;
+  trace("sendSong " + n + " bytes, playing " + playing);
   worklet.port.postMessage({
     type: "song",
     bytes: Module.HEAPU8.slice(api.exportBuf(), api.exportBuf() + n),
@@ -228,6 +229,7 @@ function send(m) { if (worklet) worklet.port.postMessage(m); }
 /* Start or stop. Both engines are told: the worklet's makes the sound, and
  * this one silences its own voices so a preview note does not hang. */
 function transport(on) {
+  trace("transport " + (on ? "start" : "stop"));
   playing = !!on;
   api.seqPlay(playing ? 1 : 0);
   send({type: "play", on: playing});
@@ -255,8 +257,8 @@ async function startAudio() {
         trace("worklet took a song: rc " + m.rc + " len " + m.len
               + " playing " + m.playing);
       else if (m.type === "level")
-        trace("worklet peak " + m.peak + " songs " + m.songs + " got "
-              + m.got + " cursor " + m.cursor);
+        trace("worklet peak " + m.peak + " cursor " + m.cursor
+              + " note-ons per track " + (m.notes || []).join("/"));
     };
     worklet.connect(audio.destination);
     sendSong();

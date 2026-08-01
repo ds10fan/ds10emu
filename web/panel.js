@@ -53,7 +53,8 @@ function slider(name, lo, hi, get, set, commit) {
   const r = el("input", {
     type: "range", min: String(lo), max: String(hi), value: String(get()),
     oninput: (e) => { set(+e.target.value); out.textContent = e.target.value; },
-    onchange: () => { if (commit) commit(); },
+    onchange: () => { trace("panel: " + name + " = " + r.value);
+                      if (commit) commit(); },
   });
   r.dataset.sync = "1";
   r.sync = () => { r.value = String(get()); out.textContent = r.value; };
@@ -61,9 +62,14 @@ function slider(name, lo, hi, get, set, commit) {
                                     out]);
 }
 
+/* Traced, so the log says which control was used. The canvas records every
+ * touch; without this the panel was the one surface that went unrecorded, and
+ * a transport that stopped on its own could not be told from one the user
+ * stopped. */
 function button(name, fn, id) {
-  return el("button", id ? {text: name, onclick: fn, id: id}
-                         : {text: name, onclick: fn});
+  const wrapped = (e) => { trace("panel: " + name); fn(e); };
+  return el("button", id ? {text: name, onclick: wrapped, id: id}
+                         : {text: name, onclick: wrapped});
 }
 
 function buildPanel() {
