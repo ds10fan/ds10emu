@@ -758,13 +758,34 @@ int ds10_web_page(const char *bottom, const char *top)
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_seq_top(void) { return seq_top; }
 
+/* The scroll's limits are not read from the ROM - the constructor gives the
+ * window's twelve rows but not where the range ends - so they are set wide
+ * enough that no note the format can hold is unreachable. The ROM's own songs
+ * use 34 to 80, which a narrower guess would have put out of reach. */
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_set_seq_top(int note)
 {
-    int hi = ds10_ui_seq_top_default() + 2;   /* B4 at the top of the range */
-    int lo = hi - (24 - 12);
+    seq_top = note < 11 ? 11 : note > 127 ? 127 : note;
+}
 
-    seq_top = note < lo ? lo : note > hi ? hi : note;
+/* Put the track's notes in view. Entering a song means seeing what is already
+ * there, and a pattern's notes can sit anywhere in the range. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_seq_follow(void)
+{
+    int track = ed.track < NSYN ? ed.track : 0;
+    int lo = -1, hi = -1, i;
+
+    for (i = 0; i < DS10_SONG_STEPS; i++) {
+        int n = ds10_editor_get_note(&ed, track, i);
+
+        if (n < 0) continue;
+        if (lo < 0 || n < lo) lo = n;
+        if (hi < 0 || n > hi) hi = n;
+    }
+    if (hi < 0) return;                  /* nothing to look at; leave it */
+    /* Show the top of the run, and centre it when the whole run fits. */
+    ds10_web_set_seq_top(hi - lo < 12 ? hi + (11 - (hi - lo)) / 2 : hi);
 }
 
 /* The note a grid row stands for at the current scroll. */

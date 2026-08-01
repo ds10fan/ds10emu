@@ -340,6 +340,10 @@ function syncControls() {
 function loadSong(name) {
   if (api.song(name) < 0) { say("error: " + api.error()); return; }
   startAudio();
+  /* Scroll the roll to whatever the loaded pattern actually uses, or the
+   * notes would be off the top or bottom of the window and it would look
+   * empty. The ROM's own songs run from 34 to 80. */
+  api.seqFollow();
   syncControls();
   say(name + "   " + api.songBars() + " bars");
 }
@@ -415,6 +419,7 @@ Module.onRuntimeInitialized = () => {
     rowNote: Module.cwrap("ds10_web_row_note", "number", ["number"]),
     seqTop: Module.cwrap("ds10_web_seq_top", "number", []),
     setSeqTop: Module.cwrap("ds10_web_set_seq_top", null, ["number"]),
+    seqFollow: Module.cwrap("ds10_web_seq_follow", null, []),
     pattern: Module.cwrap("ds10_web_pattern", "number", []),
     setPattern: Module.cwrap("ds10_web_set_pattern", null, ["number"]),
     track: Module.cwrap("ds10_web_track", "number", []),
@@ -453,10 +458,13 @@ Module.onRuntimeInitialized = () => {
     $(id).addEventListener("change", show);
   $("pick-pattern").addEventListener("change", (e) => {
     api.setPattern(+e.target.value);
+    api.seqFollow();
+    syncControls();
     say("pattern " + (+e.target.value + 1));
   });
   $("pick-track").addEventListener("change", (e) => {
     api.setTrack(+e.target.value);
+    api.seqFollow();
     say(TRACKS[+e.target.value]);
   });
   $("pick-steps").addEventListener("change",
@@ -480,6 +488,7 @@ Module.onRuntimeInitialized = () => {
     }
     if (api.song("opened") < 0) { say(f.name + ": " + api.error()); return; }
     startAudio();
+    api.seqFollow();
     syncControls();
     say(f.name + "   " + api.songBars() + " bars");
   });
@@ -534,7 +543,7 @@ Module.onRuntimeInitialized = () => {
    * rather than needing a song chosen first. No AudioContext yet: the
    * browser wants a gesture before one will run. */
   if (api.song("ds10init") < 0) say("error: " + api.error());
-  else syncControls();
+  else { api.seqFollow(); syncControls(); }
   show();
   loop();
 };
