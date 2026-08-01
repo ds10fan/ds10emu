@@ -6,11 +6,11 @@
   body {
     margin: 0; min-height: 100vh; background: #14161a; color: #e6e6e6;
     font: 14px/1.5 system-ui, sans-serif;
-    display: flex; flex-direction: column; align-items: center; gap: 1rem;
-    padding: 1.5rem 1rem;
+    display: flex; flex-direction: column; align-items: center; gap: .75rem;
+    padding: 1.25rem 1rem 2rem;
   }
   h1 { font-size: 1.1rem; margin: 0; font-weight: 600; }
-  p  { margin: 0; color: #9aa4b2; max-width: 40rem; text-align: center; }
+  p  { margin: 0; color: #9aa4b2; max-width: 44rem; text-align: center; }
   #ds { display: flex; flex-direction: column; gap: 6px; align-items: center; }
   canvas {
     image-rendering: pixelated;
@@ -22,11 +22,17 @@
   kbd { background:#21252b; border:1px solid #343a42; border-radius:3px;
         padding:0 .3rem; font-family:ui-monospace,monospace; font-size:.85em; }
   code { background:#21252b; padding:.1rem .35rem; border-radius:3px; }
-  .row { display: flex; gap: .5rem; flex-wrap: wrap; justify-content: center; }
-  select, button {
+  .row { display: flex; gap: .4rem; flex-wrap: wrap; justify-content: center;
+         align-items: center; }
+  .row label { display: flex; gap: .3rem; align-items: center;
+               color: #9aa4b2; font-size: .85rem; }
+  select, button, input {
     background: #21252b; color: #e6e6e6; border: 1px solid #343a42;
-    border-radius: 4px; padding: .3rem .6rem; font: inherit;
+    border-radius: 4px; padding: .25rem .5rem; font: inherit; font-size: .85rem;
   }
+  button { cursor: pointer; }
+  button:hover { background: #2a2f37; }
+  button.on { background: #2f6f4f; border-color: #3d8a63; }
   #status { font-family: ui-monospace, monospace; font-size: .8rem;
             color: #7d8794; min-height: 1.2em; }
   @media (max-width: 560px) { canvas { width: 256px; height: 192px; } }
@@ -34,20 +40,34 @@
 
 <h1>KORG DS-10 PLUS &mdash; decompiled</h1>
 <p>Both screens are drawn by a C reimplementation of the DS 2D graphics
-hardware, compiled to WebAssembly, reading the game's own asset files.
-Touch the keyboard to play it &mdash; that is the decompiled synth engine.
-Touch a box on <code>90_MAP</code> to open that page, tap the grid on
-<code>60_SYN_SEQ_PIANO</code> to sequence, and drag the knobs on
-<code>61_SYN_EDIT</code>, <code>30_MIXER</code> and <code>52_FX</code>.
-Pick a song to hear the whole engine - patterns, patches, drums, mixer and
-effect. <kbd>space</kbd> starts and stops, <kbd>1</kbd>&ndash;<kbd>9</kbd> load
-factory patches, <kbd>z</kbd> and <kbd>x</kbd> shift the keyboard an
-octave.</p>
+hardware, compiled to WebAssembly, reading the game's own asset files; the
+sound is the decompiled synth engine. A new song starts from the ROM's own
+blank template, and <b>save</b> writes a <code>.dat</code> the hardware would
+load. Tap the grid on <code>60_SYN_SEQ_PIANO</code> to enter notes, drag the
+knobs on <code>61_SYN_EDIT</code>, and touch a box on <code>90_MAP</code> to
+move around. <kbd>space</kbd> starts and stops.</p>
 
 <div class="row">
+  <button id="play">play</button>
+  <label>pattern <select id="pick-pattern"></select></label>
+  <label>track <select id="pick-track"></select></label>
+  <label>steps <select id="pick-steps"></select></label>
+  <button id="mode">pattern</button>
+  <label>bpm <input id="bpm" type="number" min="20" max="300" size="4"
+                   style="width:4.5rem"></label>
+  <label>swing <input id="swing" type="number" min="50" max="75"
+                      style="width:4rem"></label>
+</div>
+
+<div class="row">
+  <label>song <select id="pick-song"></select></label>
+  <label>name <input id="name" maxlength="6" style="width:5rem"></label>
+  <button id="save">save .dat</button>
+  <button id="clear">clear pattern</button>
+  <button id="oct-down">oct &minus;</button>
+  <button id="oct-up">oct +</button>
   <label>bottom <select id="pick-bottom"></select></label>
   <label>top <select id="pick-top"></select></label>
-  <label>song <select id="pick-song"></select></label>
 </div>
 
 <div id="ds">

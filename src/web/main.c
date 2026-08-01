@@ -23,6 +23,7 @@
 #include "../core/voice_state.h"
 #include "../core/seq.h"
 #include "../core/song.h"
+#include "../app/editor.h"
 #include "../core/drum.h"
 
 #define FB (DS10_SCR_W * DS10_SCR_H)
@@ -66,7 +67,10 @@ static int seq_acc, seq_playing;
 #define DRUM_LEN 0x8000     /* one second at 32768 Hz */
 #define DRUM_ROOT 60
 
-static ds10_song song;
+/* The song being edited. Playback and editing share it: an edit writes the
+ * song record and rebuilds that pattern's runtime copy, so what you hear is
+ * always what would be written to a file. */
+static ds10_editor ed;
 static ds10_rt_pattern song_rt[DS10_SONG_PATTERNS];
 static int16_t drumbuf[NDRUM][DRUM_LEN];
 static ds10_drum drum[NDRUM];
@@ -77,9 +81,14 @@ static int song_loaded, song_bar, song_bars;
 
 static ds10_song_player seq_player;
 
+/* Whether the transport follows the arrangement or loops the one pattern
+ * being edited. Entering notes is done against a looping pattern, which is
+ * what the original's pattern mode is for. */
+static int song_mode;
+
 /* The tick asks the song player what to do at a bar line. With no song loaded
- * the answer is always the scratch pattern, so it loops; with one, it walks
- * the arrangement and wraps at the end. */
+ * the answer is always the scratch pattern, so it loops; with one, it either
+ * repeats the pattern under the cursor or walks the arrangement. */
 static void seq_handle(ds10_song_player *p, ds10_seq *s)
 {
     if (p->msg != DS10_MSG_BAR) return;
@@ -87,12 +96,12 @@ static void seq_handle(ds10_song_player *p, ds10_seq *s)
         p->answer = &seq_pat;
         return;
     }
-    if (song_bars <= 0) {
-        p->answer = &song_rt[0];
+    if (!song_mode || song_bars <= 0) {
+        p->answer = &song_rt[ed.pattern % DS10_SONG_PATTERNS];
         return;
     }
     song_bar = s->bar % song_bars;
-    p->answer = &song_rt[song.chain[song_bar] % DS10_SONG_PATTERNS];
+    p->answer = &song_rt[ed.song.chain[song_bar] % DS10_SONG_PATTERNS];
 }
 
 /* What a pattern change re-initialises: both patches, the mixer's 25 knobs,
@@ -104,7 +113,7 @@ static void seq_install(ds10_seq_ctx *c, ds10_rt_pattern *pat)
     const ds10_song_pattern *q;
 
     if (!song_loaded || i < 0 || i >= DS10_SONG_PATTERNS) return;
-    q = &song.pattern[i];
+    q = &ed.song.pattern[i];
     for (t = 0; t < NSYN; t++)
         ds10_patch_load(&voice[t], q->knobs[t], &tables.t);
     for (t = 0; t < DS10_MIX_KNOBS; t++)
@@ -158,7 +167,7 @@ static void render_drums(void)
     for (i = 0; i < NDRUM; i++) {
         memset(&v, 0, sizeof v);
         ds10_voice_state_load(&v, tables.voice_init);
-        ds10_patch_load(&v, ds10_song_drum_knobs(&song, i), &tables.t);
+        ds10_patch_load(&v, ds10_song_drum_knobs(&ed.song, i), &tables.t);
         ds10_voice_note_on(&v, DRUM_ROOT, &tables.t);
         for (j = 0; j < DRUM_LEN; j += WEB_FRAME)
             ds10_voice_render(&v, &pitch_tables, &vcf_tables,
@@ -170,12 +179,37 @@ static void render_drums(void)
     }
 }
 
+/* Deliver the events a sequencer call posted.
+ *
+ * The tempo broadcast has to go through here rather than just being posted:
+ * opcode 4 reaches every machine and the mixer, and it is the only thing that
+ * tells a voice the BPM its synced LFO runs against. */
+static void dispatch(int n)
+{
+    int j;
+
+    for (j = 0; j < n; j++) {
+        if (seq_ev[j].dest < NSYN)
+            ds10_voice_event(&voice[seq_ev[j].dest], seq_ev[j].opcode, 0,
+                             (int32_t)seq_ev[j].payload, &tables.t);
+        else if (seq_ev[j].dest == DS10_BUS1(DS10_SONG_TRACKS))
+            ds10_mixer_event(&mixer, seq_ev[j].opcode, seq_ev[j].channel,
+                             seq_ev[j].payload, (int32_t)seq_ev[j].payload,
+                             &tables.fx);
+    }
+}
+
 /* The automation processor writes straight into the machine, which for a
  * synth track is its knob handler. */
 static void seq_knob(void *machine, int knob, int value)
 {
     ds10_patch_set_knob((ds10_voice *)machine, knob, value, &tables.t);
 }
+/* What each screen is showing, so the live redraw knows which page's state to
+ * draw, and how far the piano roll is scrolled. */
+static char page_bottom[32], page_top[32];
+static int seq_top = 69;   /* A4 on the top row; see ds10_ui_seq_grid */
+
 static int audio_ready;
 static float audio_out[4096 * 2];
 static uint32_t fb_top[FB], fb_bottom[FB];
@@ -310,7 +344,10 @@ int ds10_web_audio_init(void)
     return 0;
 }
 
-/* Load one of the ROM's demo songs and play it. */
+/* Load a song file into the editor and start it.
+ *
+ * "ds10init" is the ROM's own blank template, so that is what a new song
+ * starts from rather than anything invented here. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_song(const char *name)
 {
@@ -337,12 +374,12 @@ int ds10_web_song(const char *name)
         return -1;
     }
     fclose(f);
-    if (ds10_song_parse(&song, blob, (size_t)n) != DS10_SONG_OK) {
+    if (ds10_editor_init(&ed, blob, (size_t)n) != DS10_SONG_OK) {
         snprintf(last_error, sizeof last_error, "%s: not a song", path);
         return -1;
     }
     for (i = 0; i < DS10_SONG_PATTERNS; i++)
-        build_rt(&song_rt[i], &song.pattern[i]);
+        build_rt(&song_rt[i], &ed.song.pattern[i]);
     render_drums();
 
     /* Back to the constructor state before the song's own patches go in. The
@@ -360,9 +397,12 @@ int ds10_web_song(const char *name)
     memset(delay_l, 0, sizeof delay_l);
     memset(delay_r, 0, sizeof delay_r);
     memset(seq_track, 0, sizeof seq_track);
-    song_bars = ds10_song_bars(&song);
+    song_bars = ds10_editor_bars(&ed);
     song_bar = 0;
     song_loaded = 1;
+    /* A song with an arrangement plays it; the blank template has none, so it
+     * comes up looping the pattern under the cursor, ready to be edited. */
+    song_mode = song_bars > 0;
 
     /* Restart the transport and let the first bar install pattern zero. */
     seq.accum = DS10_SEQ_TEMPO_NUM / 120 - DS10_SEQ_INCR + 1;
@@ -370,25 +410,9 @@ int ds10_web_song(const char *name)
     seq.starting = 1;
     seq_ctx.pat = &song_rt[0];
     seq_ctx.prev = NULL;
-    ds10_seq_set_swing(&seq, (int)song.swing);
+    ds10_seq_set_swing(&seq, (int)ed.song.swing);
 
-    /* The tempo broadcast has to be dispatched, not just posted: opcode 4 goes
-     * to every machine and the mixer, and it is the only thing that tells a
-     * voice the BPM its synced LFO runs against. */
-    {
-        int n = ds10_seq_tempo(&seq_ctx, (int)song.tempo);
-        int j;
-
-        for (j = 0; j < n; j++) {
-            if (seq_ev[j].dest < NSYN)
-                ds10_voice_event(&voice[seq_ev[j].dest], seq_ev[j].opcode, 0,
-                                 (int32_t)seq_ev[j].payload, &tables.t);
-            else if (seq_ev[j].dest == DS10_BUS1(DS10_SONG_TRACKS))
-                ds10_mixer_event(&mixer, seq_ev[j].opcode, seq_ev[j].channel,
-                                 seq_ev[j].payload,
-                                 (int32_t)seq_ev[j].payload, &tables.fx);
-        }
-    }
+    dispatch(ds10_seq_tempo(&seq_ctx, (int)ed.song.tempo));
     seq_playing = 1;
 
     /* The map's bottom bar shows what was just loaded. */
@@ -396,10 +420,10 @@ int ds10_web_song(const char *name)
         char nm[8];
         int k;
 
-        for (k = 0; k < 6; k++) nm[k] = (char)song.name[k];
+        for (k = 0; k < 6; k++) nm[k] = (char)ed.song.name[k];
         nm[6] = 0;
         for (k = 5; k >= 0 && (nm[k] == ' ' || nm[k] == 0); k--) nm[k] = 0;
-        ds10_ui_map_labels(ui, nm, (int)song.swing, (int)song.tempo);
+        ds10_ui_map_labels(ui, nm, (int)ed.song.swing, (int)ed.song.tempo);
     }
     return 0;
 }
@@ -421,25 +445,208 @@ void ds10_web_seq_play(int on)
             ds10_voice_event(&voice[i], DS10_EV_NOTE_OFF, 0, 0, &tables.t);
 }
 
-/* Set or clear one step. `note` below zero clears it; gate 4 is a full step,
- * which is what tapping a cell means. */
+/* The editor.
+ *
+ * Every edit goes into the song record and then rebuilds that pattern's
+ * runtime copy, so the change is audible on the next bar and would survive
+ * being written to a file. Nothing is kept anywhere else. */
+static void rebuild(int pattern)
+{
+    if (pattern < 0 || pattern >= DS10_SONG_PATTERNS) return;
+    build_rt(&song_rt[pattern], &ed.song.pattern[pattern]);
+}
+
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_seq_step(int track, int step, int note)
 {
-    if (track < 0 || track >= DS10_SEQ_MAXTRACKS) return;
-    if (step < 0 || step >= DS10_SEQ_STEPS) return;
-    seq_pat.step[track][step][0] = (int8_t)(note < 0 ? -1 : note);
-    seq_pat.step[track][step][1] = (int8_t)(note < 0 ? 0 : 4);
+    ds10_editor_note(&ed, track, step, note);
+    rebuild(ed.pattern);
 }
 
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_seq_note(int track, int step)
 {
-    if (track < 0 || track >= DS10_SEQ_MAXTRACKS) return -1;
-    if (step < 0 || step >= DS10_SEQ_STEPS) return -1;
-    if (!seq_pat.step[track][step][1]) return -1;
-    return (uint8_t)seq_pat.step[track][step][0];
+    return ds10_editor_get_note(&ed, track, step);
 }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_step_gate(int track, int step)
+{
+    return ds10_editor_get_gate(&ed, track, step);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_step_gate(int track, int step, int v)
+{
+    ds10_editor_gate(&ed, track, step, v);
+    rebuild(ed.pattern);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_step_vel(int track, int step)
+{
+    return ds10_editor_get_vel(&ed, track, step);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_step_vel(int track, int step, int v)
+{
+    ds10_editor_vel(&ed, track, step, v);
+    rebuild(ed.pattern);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_step_pan(int track, int step)
+{
+    return ds10_editor_get_pan(&ed, track, step);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_step_pan(int track, int step, int v)
+{
+    ds10_editor_pan(&ed, track, step, v);
+    rebuild(ed.pattern);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_pattern(void) { return ed.pattern; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_pattern(int p)
+{
+    if (p < 0 || p >= DS10_SONG_PATTERNS) return;
+    ed.pattern = p;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_track(void) { return ed.track; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_track(int t)
+{
+    if (t < 0 || t >= DS10_SONG_TRACKS) return;
+    ed.track = t;
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_pattern_steps(void) { return ds10_editor_get_steps(&ed); }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_pattern_steps(int n)
+{
+    ds10_editor_steps(&ed, n);
+    rebuild(ed.pattern);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_pattern_clear(int p)
+{
+    ds10_editor_pattern_clear(&ed, p < 0 ? ed.pattern : p);
+    rebuild(p < 0 ? ed.pattern : p);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_pattern_copy(int from, int to)
+{
+    ds10_editor_pattern_copy(&ed, from, to);
+    rebuild(to);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_track_clear(int track)
+{
+    ds10_editor_track_clear(&ed, ed.pattern, track);
+    rebuild(ed.pattern);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_transpose(int track, int by)
+{
+    ds10_editor_transpose(&ed, ed.pattern, track, by);
+    rebuild(ed.pattern);
+}
+
+/* The arrangement. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_chain_get(int bar) { return ds10_editor_chain_get(&ed, bar); }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_chain_set(int bar, int pattern)
+{
+    ds10_editor_chain_set(&ed, bar, pattern);
+    song_bars = ds10_editor_bars(&ed);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_chain_insert(int bar, int pattern)
+{
+    ds10_editor_chain_insert(&ed, bar, pattern);
+    song_bars = ds10_editor_bars(&ed);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_chain_remove(int bar)
+{
+    ds10_editor_chain_remove(&ed, bar);
+    song_bars = ds10_editor_bars(&ed);
+}
+
+/* Follow the arrangement, or loop the pattern being edited. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_song_mode(void) { return song_mode; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_song_mode(int on) { song_mode = on ? 1 : 0; }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_get_tempo(void) { return (int)ed.song.tempo; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_tempo(int bpm)
+{
+    ds10_editor_tempo(&ed, bpm);
+    if (audio_ready) dispatch(ds10_seq_tempo(&seq_ctx, (int)ed.song.tempo));
+}
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_get_swing(void) { return (int)ed.song.swing; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_swing(int percent)
+{
+    ds10_editor_swing(&ed, percent);
+    ds10_seq_set_swing(&seq, (int)ed.song.swing);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_name(const char *name) { ds10_editor_name(&ed, name); }
+
+EMSCRIPTEN_KEEPALIVE
+const char *ds10_web_get_name(void)
+{
+    static char nm[8];
+    int k;
+
+    for (k = 0; k < 6; k++) nm[k] = (char)ed.song.name[k];
+    nm[6] = 0;
+    for (k = 5; k >= 0 && (nm[k] == ' ' || nm[k] == 0); k--) nm[k] = 0;
+    return nm;
+}
+
+/* Write the song out as a file the hardware would load, and hand the page its
+ * address and length so it can offer it as a download. */
+static uint8_t export_buf[16 + 12252];
+static int export_len;
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_export(void)
+{
+    export_len = (int)ds10_editor_export(&ed, export_buf);
+    return export_len;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t *ds10_web_export_buf(void) { return export_buf; }
 
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_seq_tempo(int bpm) { if (audio_ready) ds10_seq_tempo(&seq_ctx, bpm); }
@@ -541,8 +748,32 @@ int ds10_web_page(const char *bottom, const char *top)
         snprintf(last_error, sizeof last_error, "%s", ds10_ui_error(ui));
         return -1;
     }
+    if (bottom && *bottom)
+        snprintf(page_bottom, sizeof page_bottom, "%s", bottom);
+    if (top && *top) snprintf(page_top, sizeof page_top, "%s", top);
     return 0;
 }
+
+/* How far the piano roll is scrolled, as the note on its top row. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_seq_top(void) { return seq_top; }
+
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_seq_top(int note)
+{
+    int hi = ds10_ui_seq_top_default() + 2;   /* B4 at the top of the range */
+    int lo = hi - (24 - 12);
+
+    seq_top = note < lo ? lo : note > hi ? hi : note;
+}
+
+/* The note a grid row stands for at the current scroll. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_row_note(int row) { return ds10_ui_seq_row_note(seq_top, row); }
+
+/* The step the transport is on, or -1 when it is stopped. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_cursor(void) { return seq_playing ? seq.step : -1; }
 
 /* Which drum panel a touch is on, or -1. */
 EMSCRIPTEN_KEEPALIVE
@@ -639,10 +870,16 @@ void ds10_web_mixer_set(int id, int value)
     if (!audio_ready || id < 0 || id >= DS10_MIX_KNOBS) return;
     if (value < 0) value = 0;
     if (value > 127) value = 127;
+    /* Into the pattern too, for the same reason as the patch knobs: a bar
+     * line pushes the pattern's stored mixer back in. */
+    ds10_editor_mixer(&ed, id, value);
     ds10_mixer_set_knob(&mixer, id, value, &tables.fx);
     /* And the screen's redraw pass: a volume moves its fader handle. */
     if (id >= 17 && id < 23) ds10_ui_mixer_fader(ui, id - 17, value);
 }
+
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_mixer_get(int id) { return ds10_editor_get_mixer(&ed, id); }
 
 /* Which knob a touch on the synth edit page is on, or -1. */
 EMSCRIPTEN_KEEPALIVE
@@ -669,17 +906,32 @@ int ds10_web_knob_range(int id)
 /* Apply a knob to both voices, through the engine's own dispatch, and turn
  * its pointer on screen. */
 EMSCRIPTEN_KEEPALIVE
+/* Turning a knob edits the pattern's patch as well as the live voice. Without
+ * that the change would be undone at the next bar line, because installing a
+ * pattern pushes its stored patch back into the machine. */
 void ds10_web_knob_set(int id, int value)
 {
-    int i;
+    int track = ed.track < NSYN ? ed.track : 0;
 
-    if (id < 0 || id > 30) return;
-    if (audio_ready) {
-        for (i = 0; i < NSYN; i++)
-            ds10_patch_set_knob(&voice[i], id, value, &tables.t);
-        ds10_ui_knob_value(ui, id, value, tables.knob_min[id],
-                           tables.knob_range[id]);
-    }
+    if (id < 0 || id > 30 || !audio_ready) return;
+    if (value < tables.knob_min[id]) value = tables.knob_min[id];
+    if (value > tables.knob_min[id] + tables.knob_range[id] - 1)
+        value = tables.knob_min[id] + tables.knob_range[id] - 1;
+    ds10_editor_knob(&ed, track, id, value);
+    ds10_patch_set_knob(&voice[track], id, value, &tables.t);
+    ds10_ui_knob_value(ui, id, value, tables.knob_min[id],
+                       tables.knob_range[id]);
+}
+
+/* What a knob is set to now, so a drag can start from it instead of jumping
+ * the value to wherever the finger landed. */
+EMSCRIPTEN_KEEPALIVE
+int ds10_web_knob_get(int id)
+{
+    int track = ed.track < NSYN ? ed.track : 0;
+
+    if (id < 0 || id > 30) return 0;
+    return ds10_editor_get_knob(&ed, track, id);
 }
 
 /* Which MIDI note a touch on the keyboard page is, or -1. */
@@ -698,10 +950,48 @@ const char *ds10_web_map_hit(int x, int y)
     return p ? p : "";
 }
 
+/* Draw the parts of the current page that come from the song rather than from
+ * the page itself. This runs every frame, so the screen always agrees with
+ * what is loaded - which is what makes it usable for entering a song rather
+ * than only for looking at one. */
+static void refresh(void)
+{
+    int cursor = ds10_web_cursor();
+    int track = ed.track < NSYN ? ed.track : 0;
+    int i;
+
+    if (strcmp(page_bottom, "60_SYN_SEQ_PIANO") == 0) {
+        int note[DS10_SONG_STEPS];
+
+        for (i = 0; i < DS10_SONG_STEPS; i++)
+            note[i] = ds10_editor_get_note(&ed, track, i);
+        ds10_ui_seq_grid(ui, page_bottom, note, ds10_editor_get_steps(&ed),
+                         seq_top, cursor);
+    } else if (strcmp(page_bottom, "62_DRUM_SEQ_GATE") == 0) {
+        uint8_t on[DS10_SONG_DRUMS * DS10_SONG_STEPS];
+        int r;
+
+        for (r = 0; r < DS10_SONG_DRUMS; r++)
+            for (i = 0; i < DS10_SONG_STEPS; i++)
+                on[r * DS10_SONG_STEPS + i] =
+                    (uint8_t)(ds10_editor_get_note(&ed, NSYN + r, i) >= 0);
+        ds10_ui_drum_grid(ui, page_bottom, on, DS10_SONG_DRUMS,
+                          ds10_editor_get_steps(&ed), cursor);
+    } else if (strcmp(page_bottom, "61_SYN_EDIT") == 0) {
+        for (i = 0; i < DS10_SONG_KNOBS; i++)
+            ds10_ui_knob_value(ui, i, ds10_editor_get_knob(&ed, track, i),
+                               tables.knob_min[i], tables.knob_range[i]);
+    } else if (strcmp(page_bottom, "30_MIXER") == 0) {
+        for (i = 0; i < DS10_SONG_TRACKS; i++)
+            ds10_ui_mixer_fader(ui, i, ds10_editor_get_mixer(&ed, 17 + i));
+    }
+}
+
 EMSCRIPTEN_KEEPALIVE
 void ds10_web_render(void)
 {
     if (!ui) return;
+    refresh();
     ds10_ui_frame(ui, fb_top, fb_bottom);
     to_rgba(fb_top);
     to_rgba(fb_bottom);

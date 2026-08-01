@@ -6,7 +6,7 @@ export DS10_ROM = $(ROM)
 
 CORE_HDRS = src/core/fixed.h
 
-.PHONY: fonttest test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: fonttest test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-obj test-cell test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -314,6 +314,7 @@ out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 # Needs the Emscripten SDK; source its emsdk_env.sh, or point EMCC at emcc.
 EMCC ?= emcc
 WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
+          src/app/editor.c \
           src/gfx/nds2d.c src/gfx/nitro.c \
           src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
           src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
@@ -353,6 +354,9 @@ out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c src/app/cell.c \
 # The browser build against songplay, sample for sample. Needs node and the
 # wasm build; both run the same engine, so this catches setup mistakes rather
 # than DSP ones.
+test-webedit: web
+	@node tools/webedit.js
+
 test-websong: web out/songplay
 	@./out/songplay -b 3 -o out/ref_demo.wav \
 	    data/nitrofs/demo/ds10demo01.dat >/dev/null

@@ -1,23 +1,28 @@
-/* Drives the WebAssembly build: pick a page, render it, put the pixels on the
- * canvases, and play the synth when the keyboard page is touched. The C side
- * owns the framebuffers and the audio; this only moves bytes. */
+/* Drives the WebAssembly build.
+ *
+ * The C side owns everything that matters: the song being edited, the synth,
+ * and both framebuffers. This moves pointer events into it, moves pixels out
+ * of it, and keeps a handful of HTML controls in step. Nothing about the song
+ * is stored here - every read goes back to the C side, so what is on screen
+ * and what would be written to a file cannot drift apart.
+ */
 "use strict";
 
 /* The pages under /data/mainbg that are whole screens. Those whose sprite
  * layer is known reproduce the hardware exactly; the rest draw their
  * background only, which is why they look bare. */
 const BOTTOM_PAGES = [
-  "81_KEY_i", "61_SYN_EDIT", "70_PATCH", "30_MIXER", "60_SYN_SEQ_PIANO",
+  "60_SYN_SEQ_PIANO", "81_KEY_i", "61_SYN_EDIT", "70_PATCH", "30_MIXER",
   "71_KAOSS", "52_FX", "32_PATTERN", "51_ALL_DRUMS", "53_DRUMEDIT",
   "54_DRUM_FX", "55_DRUMEDITMAP", "60_SYN_SEQ_GATE", "60_SYN_SEQ_PAN",
   "60_SYN_SEQ_VOL", "60_SYN_SEQ_KAOSS", "62_DRUM_SEQ_GATE",
   "63_DRUM_EDIT_PATCH", "33_DRUM_SELECTER", "01_MAIN_MENU", "15_OPTION",
   "31_SONG", "90_MAP",
 ];
-/* The ROM's demo songs. Loading one plays it through the decompiled engine;
- * the output is sample-identical to what out/songplay renders. */
+/* The ROM's own songs. "ds10init" is its blank template, which is what a new
+ * song starts from. */
 const SONGS = [
-  "(none)", "ds10demo00", "ds10demo01", "ds10demo02", "ds10demo03",
+  "ds10init", "ds10demo00", "ds10demo01", "ds10demo02", "ds10demo03",
   "ds10demo05", "ds10demo06", "ds10demo07",
   "ds10pdemo00", "ds10pdemo01", "ds10pdemo02", "ds10pdemo03",
 ];
@@ -25,12 +30,11 @@ const TOP_PAGES = [
   "90_MAP", "AD0_TITLE", "AD1_KORG", "AD2_PROCYONSTUDIO", "AD3_AQI",
   "AD4_CAVIA", "01_MAIN_MENU",
 ];
+const TRACKS = ["SYN 1", "SYN 2", "DRUM 1", "DRUM 2", "DRUM 3", "DRUM 4"];
 
-const status = document.getElementById("status");
-const canvases = {
-  top: document.getElementById("top"),
-  bottom: document.getElementById("bottom"),
-};
+const $ = (id) => document.getElementById(id);
+const status = $("status");
+const canvases = {top: $("top"), bottom: $("bottom")};
 const ctx = {
   top: canvases.top.getContext("2d"),
   bottom: canvases.bottom.getContext("2d"),
@@ -40,17 +44,18 @@ let api = null;
 let audio = null;      /* AudioContext, once the user has interacted */
 let octave = 0;
 let held = null;       /* the note currently sounding, if any */
-let drag = null;       /* {id, value, y} while a knob is being turned */
-let playing = false;
+let drag = null;       /* {kind, id, from, y} while something is being dragged */
+let paint = null;      /* {track, note} while dragging across the step grid */
 let kaoss = false;
 
 function fill(select, names, initial) {
   for (const n of names) {
     const o = document.createElement("option");
-    o.value = o.textContent = n;
+    o.value = o.textContent = typeof n === "string" ? n : n[0];
+    o.textContent = typeof n === "string" ? n : n[1];
     select.appendChild(o);
   }
-  select.value = initial;
+  if (initial !== undefined) select.value = initial;
 }
 
 function blit(which, ptr, w, h) {
@@ -58,6 +63,9 @@ function blit(which, ptr, w, h) {
   ctx[which].putImageData(new ImageData(bytes, w, h), 0, 0);
 }
 
+/* One frame: let the C side draw the live parts of the page over it, then
+ * copy both screens out. This runs continuously, so the play cursor moves and
+ * every edit shows up without anything here having to know what changed. */
 function draw() {
   api.render();
   const w = api.width(), h = api.height();
@@ -65,9 +73,13 @@ function draw() {
   blit("bottom", api.bottom(), w, h);
 }
 
+function loop() {
+  draw();
+  requestAnimationFrame(loop);
+}
+
 function pageOf(which) {
-  return document.getElementById(
-    which === "bottom" ? "pick-bottom" : "pick-top").value;
+  return $(which === "bottom" ? "pick-bottom" : "pick-top").value;
 }
 
 function show() {
@@ -76,18 +88,26 @@ function show() {
     status.textContent = "error: " + api.error();
     return;
   }
-  draw();
-  status.textContent = bottom + "  /  " + top;
+  say(bottom + "  /  " + top);
+}
+
+function say(s) { status.textContent = s; }
+
+function goto(page) {
+  $("pick-bottom").value = page;
+  show();
 }
 
 /* Audio. The engine runs at 32768 Hz and the browser resamples. Blocks are
  * rendered ahead of the clock and queued, which is enough for a keyboard. */
 function startAudio() {
-  if (audio) return;
-  if (api.audioInit() < 0) {
-    status.textContent = "error: " + api.error();
+  /* A context made before the user has touched anything comes up suspended,
+   * so every entry point that can make a sound comes through here. */
+  if (audio) {
+    if (audio.state === "suspended") audio.resume();
     return;
   }
+  if (api.audioInit() < 0) { say("error: " + api.error()); return; }
   audio = new AudioContext();
   const rate = api.rate();
   const BLOCK = 2048;
@@ -118,14 +138,83 @@ function screenPos(ev) {
           Math.floor((ev.clientY - r.top) * 192 / r.height)];
 }
 
-function setKnob(id, value) {
-  const lo = api.knobMin(id), n = api.knobRange(id);
-  const v = Math.max(lo, Math.min(lo + n - 1, Math.round(value)));
-  api.knobSet(id, v);
-  draw();
-  status.textContent = api.knobName(id) + "  " + v + "   ("
-    + lo + ".." + (lo + n - 1) + ")";
-  return v;
+function pointerY(ev) {
+  const r = ev.target.getBoundingClientRect();
+  return (ev.clientY - r.top) * 192 / r.height;
+}
+
+/* A drag starts from what the control is already set to and moves relatively.
+ * Jumping the value to wherever the finger landed would destroy a patch on
+ * the first touch, which is not what the hardware does. */
+function startDrag(ev, kind, id, from) {
+  drag = {kind: kind, id: id, from: from, y: pointerY(ev)};
+  ev.target.setPointerCapture(ev.pointerId);
+}
+
+function dragTo(ev) {
+  /* Up increases, and a full screen height covers the range about twice,
+   * which is roughly what the device feels like. */
+  const moved = (drag.y - pointerY(ev)) / 96;
+
+  if (drag.kind === "knob") {
+    const lo = api.knobMin(drag.id), n = api.knobRange(drag.id);
+    const v = Math.max(lo, Math.min(lo + n - 1,
+                                    Math.round(drag.from + moved * n)));
+    api.knobSet(drag.id, v);
+    say(api.knobName(drag.id) + "  " + v + "   (" + lo + ".."
+        + (lo + n - 1) + ")");
+  } else {
+    const v = Math.max(0, Math.min(127, Math.round(drag.from + moved * 128)));
+    api.mixerSet(drag.id, v);
+    say(mixerName(drag.id) + "   " + v);
+  }
+}
+
+function mixerName(id) {
+  if (id >= 17 && id < 23) return "VOLUME " + (id - 16);
+  if (id >= 9 && id < 15) return "PAN " + (id - 8);
+  return "FX " + id;
+}
+
+function noteOff() {
+  if (held === null) return;
+  api.note(0, held, 0);
+  held = null;
+}
+
+/* The step grid. A tap toggles the cell; dragging on from it paints the same
+ * thing across the row, which is how a run of steps gets entered. */
+function gridTouch(x, y, first) {
+  const h = api.seqHit(x, y);
+  if (h < 0) return;
+  const step = h & 0xFF, row = h >> 8;
+  const note = api.rowNote(row);
+  const track = api.track() < 2 ? api.track() : 0;
+
+  if (first) paint = {track: track, note: api.seqNote(track, step) === note
+                                          ? -1 : note};
+  api.seqStep(paint.track, step, paint.note);
+  say("step " + (step + 1) + (paint.note < 0 ? "  cleared"
+                              : "  note " + noteName(paint.note)));
+}
+
+function drumTouch(x, y, first) {
+  const h = api.drumseqHit(x, y);
+  if (h < 0) return;
+  const step = h & 0xFF, drum = h >> 8;
+  const track = 2 + drum;
+
+  if (first) paint = {track: track,
+                      note: api.seqNote(track, step) >= 0 ? -1 : 60};
+  api.seqStep(paint.track, step, paint.note);
+  say("DRUM" + (drum + 1) + "  step " + (step + 1)
+      + (paint.note < 0 ? "  off" : "  on"));
+}
+
+const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A",
+                    "A#", "B"];
+function noteName(n) {
+  return NOTE_NAMES[n % 12] + (Math.floor(n / 12) - 1);
 }
 
 function onMove(ev) {
@@ -135,33 +224,17 @@ function onMove(ev) {
     if (h >= 0) {
       api.knobSet(11, h & 0xFF);
       api.knobSet(12, h >> 8);
-      status.textContent = "KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8);
+      say("KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8));
     }
     return;
   }
-  if (!drag) return;
-  const r = ev.target.getBoundingClientRect();
-  const y = (ev.clientY - r.top) * 192 / r.height;
-  /* Up increases. A full screen height covers the whole range twice, which
-   * is about what the device feels like. */
-  if (drag.mixer) {
-    const v = Math.max(0, Math.min(127,
-      Math.round(drag.start + (drag.y - y) * 128 / 96)));
-    api.mixerSet(drag.id, v);
-    draw();
-    status.textContent = (drag.id < 9 ? "FX parameter " + drag.id + " "
-      : drag.id < 17 ? "PAN " + (drag.id - 8)
-      : "VOLUME " + (drag.id - 16)) + "   " + v;
+  if (paint) {
+    const [x, y] = screenPos(ev);
+    if (pageOf("bottom") === "62_DRUM_SEQ_GATE") drumTouch(x, y, false);
+    else gridTouch(x, y, false);
     return;
   }
-  const span = api.knobRange(drag.id);
-  drag.value = setKnob(drag.id, drag.start + (drag.y - y) * span / 96);
-}
-
-function noteOff() {
-  if (held === null) return;
-  api.note(0, held, 0);
-  held = null;
+  if (drag) dragTo(ev);
 }
 
 function onDown(which, ev) {
@@ -170,36 +243,31 @@ function onDown(which, ev) {
 
   if (page === "90_MAP") {
     const next = api.mapHit(x, y);
-    if (next) {
-      document.getElementById("pick-bottom").value = next;
-      show();
-    }
+    if (next) goto(next);
+    return;
+  }
+  startAudio();
+  if (page === "60_SYN_SEQ_PIANO") {
+    gridTouch(x, y, true);
+    ev.target.setPointerCapture(ev.pointerId);
+    return;
+  }
+  if (page === "62_DRUM_SEQ_GATE") {
+    drumTouch(x, y, true);
+    ev.target.setPointerCapture(ev.pointerId);
     return;
   }
   if (page === "33_DRUM_SELECTER") {
-    startAudio();
     const n = api.drumHit(x, y);
-    if (n >= 0) {
-      api.drumPlay(n);
-      status.textContent = "DRUM" + (n + 1)
-        + (api.songBars() ? "" : "  (load a song for drum patches)");
-    }
+    if (n >= 0) { api.drumPlay(n); say("DRUM" + (n + 1)); }
     return;
   }
   if (page === "70_PATCH" || page === "63_DRUM_EDIT_PATCH") {
-    startAudio();
     const id = api.patchHit(x, y);
-    if (id >= 0) {
-      const r = ev.target.getBoundingClientRect();
-      drag = {id: id, start: api.knobMin(id) + api.knobRange(id) / 2,
-              y: (ev.clientY - r.top) * 192 / r.height};
-      setKnob(id, drag.start);
-      ev.target.setPointerCapture(ev.pointerId);
-    }
+    if (id >= 0) startDrag(ev, "knob", id, api.knobGet(id));
     return;
   }
   if (page === "71_KAOSS") {
-    startAudio();
     const h = api.kaossHit(x, y);
     if (h < 0) return;
     /* The real pad's two axes are a per-song assignment that is not read yet;
@@ -207,96 +275,82 @@ function onDown(which, ev) {
     kaoss = true;
     api.knobSet(11, h & 0xFF);
     api.knobSet(12, h >> 8);
-    status.textContent = "KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8);
+    say("KAOSS  cutoff " + (h & 0xFF) + "  peak " + (h >> 8));
     ev.target.setPointerCapture(ev.pointerId);
     return;
   }
-  if (page === "62_DRUM_SEQ_GATE") {
-    startAudio();
-    const h = api.drumseqHit(x, y);
-    if (h < 0) return;
-    const step = h & 0xFF, drum = h >> 8;
-    /* Drum tracks are 2..5; they play their buffer at the root note. */
-    const t = 2 + drum;
-    const cur = api.seqNote(t, step);
-    api.seqStep(t, step, cur >= 0 ? -1 : 60);
-    if (!playing) { playing = true; api.seqPlay(1); }
-    status.textContent = "DRUM" + (drum + 1) + "  step " + (step + 1)
-      + (cur >= 0 ? "  cleared" : "  on");
-    return;
-  }
-  if (page === "60_SYN_SEQ_PIANO") {
-    startAudio();
-    const h = api.seqHit(x, y);
-    if (h < 0) return;
-    const step = h & 0xFF, row = h >> 8;
-    /* Twelve rows, top is the highest note. C4 sits at the bottom. */
-    const note = 60 + (11 - row);
-    const cur = api.seqNote(0, step);
-    api.seqStep(0, step, cur === note ? -1 : note);
-    if (!playing) { playing = true; api.seqPlay(1); }
-    status.textContent = "step " + (step + 1)
-      + (cur === note ? "  cleared" : "  note " + note);
-    return;
-  }
   if (page === "52_FX" || page === "54_DRUM_FX") {
-    startAudio();
     const id = api.fxHit(x, y, 0);   /* delay; the type selector is unwired */
-    if (id >= 0) {
-      const r = ev.target.getBoundingClientRect();
-      drag = {id: id, mixer: true, start: 64,
-              y: (ev.clientY - r.top) * 192 / r.height};
-      api.mixerSet(id, 64);
-      status.textContent = "FX parameter " + id + "   64";
-      ev.target.setPointerCapture(ev.pointerId);
-    }
+    if (id >= 0) startDrag(ev, "mixer", id, api.mixerGet(id));
     return;
   }
   if (page === "30_MIXER") {
-    startAudio();
     const id = api.mixerHit(x, y);
-    if (id >= 0) {
-      const r = ev.target.getBoundingClientRect();
-      drag = {id: id, mixer: true, start: 64,
-              y: (ev.clientY - r.top) * 192 / r.height};
-      api.mixerSet(id, 64);
-      draw();
-      status.textContent = (id < 17 ? "PAN " : "VOLUME ")
-        + ((id < 17 ? id - 9 : id - 17) + 1) + "   64";
-      ev.target.setPointerCapture(ev.pointerId);
-    }
+    if (id >= 0) startDrag(ev, "mixer", id, api.mixerGet(id));
     return;
   }
   if (page === "61_SYN_EDIT" || page === "53_DRUMEDIT") {
-    startAudio();
     const id = api.knobHit(x, y);
-    if (id >= 0) {
-      const r = ev.target.getBoundingClientRect();
-      drag = {id: id, start: api.knobMin(id) + api.knobRange(id) / 2,
-              y: (ev.clientY - r.top) * 192 / r.height};
-      setKnob(id, drag.start);
-      ev.target.setPointerCapture(ev.pointerId);
-    }
+    if (id >= 0) startDrag(ev, "knob", id, api.knobGet(id));
     return;
   }
   if (page.startsWith("81_KEY")) {
-    startAudio();
     const b = api.keyButton(x, y);
     if (b === 0 || b === 1) {
-      octave += b ? 1 : -1;
-      if (octave < -3) octave = -3;
-      if (octave > 3) octave = 3;
-      status.textContent = "octave " + (octave > 0 ? "+" : "") + octave;
+      setOctave(octave + (b ? 1 : -1));
       return;
     }
     const note = api.keyHit(x, y, octave);
     if (note >= 0) {
       noteOff();
-      api.note(0, note, 1);
+      api.note(api.track() < 2 ? api.track() : 0, note, 1);
       held = note;
-      status.textContent = page + "   note " + note;
+      say("note " + noteName(note));
     }
   }
+}
+
+function setOctave(n) {
+  octave = Math.max(-3, Math.min(3, n));
+  say("octave " + (octave > 0 ? "+" : "") + octave);
+}
+
+/* The HTML controls are a view of the C side's state, so they are refilled
+ * from it rather than tracked here. */
+function syncControls() {
+  $("pick-pattern").value = String(api.pattern());
+  $("pick-track").value = String(api.track());
+  $("pick-steps").value = String(api.patternSteps());
+  $("bpm").value = api.getTempo();
+  $("swing").value = api.getSwing();
+  $("name").value = api.getName();
+  $("mode").textContent = api.songMode() ? "song" : "pattern";
+  $("mode").classList.toggle("on", !!api.songMode());
+  $("play").textContent = api.cursor() >= 0 ? "stop" : "play";
+  $("play").classList.toggle("on", api.cursor() >= 0);
+}
+
+function loadSong(name) {
+  if (api.song(name) < 0) { say("error: " + api.error()); return; }
+  startAudio();
+  syncControls();
+  say(name + "   " + api.songBars() + " bars");
+}
+
+/* Writing the file out. The C side produces the same byte image the game's
+ * own serialiser would, MD5 header and all. */
+function save() {
+  const n = api.export();
+  if (n <= 0) { say("nothing to save"); return; }
+  const bytes = Module.HEAPU8.slice(api.exportBuf(), api.exportBuf() + n);
+  const url = URL.createObjectURL(new Blob([bytes],
+                                           {type: "application/octet-stream"}));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = (api.getName() || "song").replace(/[^A-Za-z0-9]/g, "") + ".dat";
+  a.click();
+  URL.revokeObjectURL(url);
+  say("saved " + n + " bytes");
 }
 
 Module.onRuntimeInitialized = () => {
@@ -323,9 +377,11 @@ Module.onRuntimeInitialized = () => {
     knobName: Module.cwrap("ds10_web_knob_name", "string", ["number"]),
     knobMin: Module.cwrap("ds10_web_knob_min", "number", ["number"]),
     knobRange: Module.cwrap("ds10_web_knob_range", "number", ["number"]),
+    knobGet: Module.cwrap("ds10_web_knob_get", "number", ["number"]),
     knobSet: Module.cwrap("ds10_web_knob_set", null, ["number", "number"]),
     mixerHit: Module.cwrap("ds10_web_mixer_hit", "number",
                            ["number", "number"]),
+    mixerGet: Module.cwrap("ds10_web_mixer_get", "number", ["number"]),
     mixerSet: Module.cwrap("ds10_web_mixer_set", null, ["number", "number"]),
     fxHit: Module.cwrap("ds10_web_fx_hit", "number",
                         ["number", "number", "number"]),
@@ -346,62 +402,114 @@ Module.onRuntimeInitialized = () => {
     seqNote: Module.cwrap("ds10_web_seq_note", "number",
                           ["number", "number"]),
     seqPlay: Module.cwrap("ds10_web_seq_play", null, ["number"]),
-    seqTempo: Module.cwrap("ds10_web_seq_tempo", null, ["number"]),
     song: Module.cwrap("ds10_web_song", "number", ["string"]),
     songBars: Module.cwrap("ds10_web_song_bars", "number", []),
+    cursor: Module.cwrap("ds10_web_cursor", "number", []),
+    rowNote: Module.cwrap("ds10_web_row_note", "number", ["number"]),
+    seqTop: Module.cwrap("ds10_web_seq_top", "number", []),
+    setSeqTop: Module.cwrap("ds10_web_set_seq_top", null, ["number"]),
+    pattern: Module.cwrap("ds10_web_pattern", "number", []),
+    setPattern: Module.cwrap("ds10_web_set_pattern", null, ["number"]),
+    track: Module.cwrap("ds10_web_track", "number", []),
+    setTrack: Module.cwrap("ds10_web_set_track", null, ["number"]),
+    patternSteps: Module.cwrap("ds10_web_pattern_steps", "number", []),
+    setPatternSteps: Module.cwrap("ds10_web_set_pattern_steps", null,
+                                  ["number"]),
+    patternClear: Module.cwrap("ds10_web_pattern_clear", null, ["number"]),
+    songMode: Module.cwrap("ds10_web_song_mode", "number", []),
+    setSongMode: Module.cwrap("ds10_web_set_song_mode", null, ["number"]),
+    getTempo: Module.cwrap("ds10_web_get_tempo", "number", []),
+    setTempo: Module.cwrap("ds10_web_set_tempo", null, ["number"]),
+    getSwing: Module.cwrap("ds10_web_get_swing", "number", []),
+    setSwing: Module.cwrap("ds10_web_set_swing", null, ["number"]),
+    getName: Module.cwrap("ds10_web_get_name", "string", []),
+    setName: Module.cwrap("ds10_web_set_name", null, ["string"]),
+    chainSet: Module.cwrap("ds10_web_chain_set", null, ["number", "number"]),
+    export: Module.cwrap("ds10_web_export", "number", []),
+    exportBuf: Module.cwrap("ds10_web_export_buf", "number", []),
   };
-  if (api.init() < 0) {
-    status.textContent = "error: " + api.error();
-    return;
-  }
-  fill(document.getElementById("pick-song"), SONGS, "(none)");
-  document.getElementById("pick-song").addEventListener("change", (e) => {
-    if (e.target.value === "(none)") {
-      playing = false;
-      api.seqPlay(0);
-      status.textContent = "stopped";
-      return;
-    }
-    startAudio();
-    if (api.song(e.target.value) < 0) {
-      status.textContent = "error: " + api.error();
-      return;
-    }
-    playing = true;
-    status.textContent = e.target.value + "  " + api.songBars() + " bars";
-  });
-  fill(document.getElementById("pick-bottom"), BOTTOM_PAGES, "81_KEY_i");
-  fill(document.getElementById("pick-top"), TOP_PAGES, "90_MAP");
+  if (api.init() < 0) { say("error: " + api.error()); return; }
+
+  fill($("pick-song"), SONGS, "ds10init");
+  fill($("pick-bottom"), BOTTOM_PAGES, "60_SYN_SEQ_PIANO");
+  fill($("pick-top"), TOP_PAGES, "90_MAP");
+  fill($("pick-pattern"),
+       Array.from({length: 16}, (_, i) => [String(i), String(i + 1)]), "0");
+  fill($("pick-track"), TRACKS.map((n, i) => [String(i), n]), "0");
+  fill($("pick-steps"),
+       Array.from({length: 16}, (_, i) => [String(i + 1), String(i + 1)]),
+       "16");
+
+  $("pick-song").addEventListener("change",
+                                  (e) => loadSong(e.target.value));
   for (const id of ["pick-bottom", "pick-top"])
-    document.getElementById(id).addEventListener("change", show);
+    $(id).addEventListener("change", show);
+  $("pick-pattern").addEventListener("change", (e) => {
+    api.setPattern(+e.target.value);
+    say("pattern " + (+e.target.value + 1));
+  });
+  $("pick-track").addEventListener("change", (e) => {
+    api.setTrack(+e.target.value);
+    say(TRACKS[+e.target.value]);
+  });
+  $("pick-steps").addEventListener("change",
+                                   (e) => api.setPatternSteps(+e.target.value));
+  $("bpm").addEventListener("change", (e) => api.setTempo(+e.target.value));
+  $("swing").addEventListener("change", (e) => api.setSwing(+e.target.value));
+  $("name").addEventListener("change", (e) => api.setName(e.target.value));
+  $("save").addEventListener("click", save);
+  $("clear").addEventListener("click", () => {
+    api.patternClear(-1);
+    say("pattern " + (api.pattern() + 1) + " cleared");
+  });
+  $("oct-down").addEventListener("click", () => setOctave(octave - 1));
+  $("oct-up").addEventListener("click", () => setOctave(octave + 1));
+  $("mode").addEventListener("click", () => {
+    api.setSongMode(!api.songMode());
+    syncControls();
+  });
+  $("play").addEventListener("click", () => {
+    startAudio();
+    api.seqPlay(api.cursor() >= 0 ? 0 : 1);
+    syncControls();
+  });
+
   for (const which of ["top", "bottom"]) {
     canvases[which].addEventListener("pointerdown", (e) => onDown(which, e));
     canvases[which].addEventListener("pointermove", onMove);
-    canvases[which].addEventListener("pointerup",
-      () => { noteOff(); drag = null; kaoss = false; });
-    canvases[which].addEventListener("pointerleave",
-      () => { noteOff(); drag = null; kaoss = false; });
+    for (const ev of ["pointerup", "pointerleave", "pointercancel"])
+      canvases[which].addEventListener(ev, () => {
+        noteOff();
+        drag = null;
+        paint = null;
+        kaoss = false;
+      });
   }
-  /* Space starts and stops the sequencer; z and x shift the keyboard by an
-   * octave, as the OCT buttons do. */
+
   document.addEventListener("keydown", (e) => {
-    if (e.key === "z") { octave--; status.textContent = "octave " + octave; }
-    if (e.key === "x") { octave++; status.textContent = "octave " + octave; }
+    if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+    if (e.key === "z") setOctave(octave - 1);
+    if (e.key === "x") setOctave(octave + 1);
+    if (e.key === "[") { api.setSeqTop(api.seqTop() - 12); say("scrolled"); }
+    if (e.key === "]") { api.setSeqTop(api.seqTop() + 12); say("scrolled"); }
     if (e.key >= "1" && e.key <= "9") {
       startAudio();
       const n = e.key.charCodeAt(0) - 49;
-      if (api.factoryPatch(n) === 0) {
-        status.textContent = "factory patch " + n;
-        draw();
-      }
+      if (api.factoryPatch(n) === 0) say("factory patch " + n);
     }
     if (e.key === " ") {
       e.preventDefault();
       startAudio();
-      playing = !playing;
-      api.seqPlay(playing ? 1 : 0);
-      status.textContent = playing ? "playing" : "stopped";
+      api.seqPlay(api.cursor() >= 0 ? 0 : 1);
+      syncControls();
     }
   });
+
+  /* Come up on the blank template, so the thing is ready to be played into
+   * rather than needing a song chosen first. No AudioContext yet: the
+   * browser wants a gesture before one will run. */
+  if (api.song("ds10init") < 0) say("error: " + api.error());
+  else syncControls();
   show();
+  loop();
 };
