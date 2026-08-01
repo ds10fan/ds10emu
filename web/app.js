@@ -579,18 +579,10 @@ function setOctave(n) {
 
 /* The HTML controls are a view of the C side's state, so they are refilled
  * from it rather than tracked here. */
-function syncControls() {
-  $("pick-pattern").value = String(api.pattern());
-  $("pick-track").value = String(api.track());
-  $("pick-steps").value = String(api.patternSteps());
-  $("bpm").value = api.getTempo();
-  $("swing").value = api.getSwing();
-  $("name").value = api.getName();
-  $("mode").textContent = api.songMode() ? "song" : "pattern";
-  $("mode").classList.toggle("on", !!api.songMode());
-  $("play").textContent = playing ? "stop" : "play";
-  $("play").classList.toggle("on", playing);
-}
+/* The panel is the control surface; this just pokes it. The two rows of HTML
+ * controls that used to sit above the screens duplicated it, and two surfaces
+ * showing the same state is one more place for them to disagree. */
+function syncControls() { repanel(); }
 
 function loadSong(name) {
   if (api.song(name) < 0) { say("error: " + api.error()); return; }
@@ -607,6 +599,29 @@ function loadSong(name) {
 
 /* Writing the file out. The C side produces the same byte image the game's
  * own serialiser would, MD5 header and all. */
+/* Opening a .dat: staged into the preloaded filesystem under a fixed name and
+ * loaded from there, so it goes through the same parser and hash check the
+ * ROM's own songs do. */
+async function openFile(e) {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const bytes = new Uint8Array(await f.arrayBuffer());
+  try {
+    Module.FS.writeFile("/data/nitrofs/demo/opened.dat", bytes);
+  } catch (err) {
+    report("cannot stage the file: " + err);
+    return;
+  }
+  if (api.song("opened") < 0) { report(f.name + ": " + api.error()); return; }
+  startAudio();
+  api.seqFollow();
+  playing = true;
+  sendSong();
+  syncControls();
+  repanel();
+  say(f.name + "   " + api.songBars() + " bars");
+}
+
 function save() {
   const n = api.export();
   if (n <= 0) { say("nothing to save"); return; }
@@ -638,6 +653,8 @@ function boot() {
     patternHit: Module.cwrap("ds10_web_pattern_hit", "number",
                              ["number", "number"]),
     laneKnob: Module.cwrap("ds10_web_lane_knob", "number", ["number"]),
+    setLaneKnob: Module.cwrap("ds10_web_set_lane_knob", null,
+                              ["number", "number"]),
     mapButtonHit: Module.cwrap("ds10_web_mapbutton_hit", "number",
                                ["number", "number"]),
     clearHit: Module.cwrap("ds10_web_clear_hit", "number",
@@ -721,6 +738,8 @@ function boot() {
     chainRemove: Module.cwrap("ds10_web_chain_remove", null, ["number"]),
     patternCopy: Module.cwrap("ds10_web_pattern_copy", null,
                               ["number", "number"]),
+    transpose: Module.cwrap("ds10_web_transpose", null, ["number", "number"]),
+    trackClear: Module.cwrap("ds10_web_track_clear", null, ["number"]),
     stepGate: Module.cwrap("ds10_web_step_gate", "number",
                            ["number", "number"]),
     setStepGate: Module.cwrap("ds10_web_set_step_gate", null,
@@ -740,84 +759,11 @@ function boot() {
   if (api.init() < 0) { report("init failed: " + api.error()); return; }
   trace("boot: ui initialised");
 
-  fill($("pick-song"), SONGS, "ds10init");
   fill($("pick-bottom"), BOTTOM_PAGES, "60_SYN_SEQ_PIANO");
   fill($("pick-top"), TOP_PAGES, "90_MAP");
-  fill($("pick-pattern"),
-       Array.from({length: 16}, (_, i) => [String(i), String(i + 1)]), "0");
-  fill($("pick-track"), TRACKS.map((n, i) => [String(i), n]), "0");
-  fill($("pick-steps"),
-       Array.from({length: 16}, (_, i) => [String(i + 1), String(i + 1)]),
-       "16");
 
-  $("pick-song").addEventListener("change",
-                                  (e) => loadSong(e.target.value));
   for (const id of ["pick-bottom", "pick-top"])
     $(id).addEventListener("change", show);
-  $("pick-pattern").addEventListener("change", (e) => {
-    api.setPattern(+e.target.value);
-    send({type: "pattern", n: +e.target.value});
-    api.seqFollow();
-    syncControls();
-    say("pattern " + (+e.target.value + 1));
-  });
-  $("pick-track").addEventListener("change", (e) => {
-    api.setTrack(+e.target.value);
-    send({type: "track", n: +e.target.value});
-    api.seqFollow();
-    say(TRACKS[+e.target.value]);
-  });
-  $("pick-steps").addEventListener("change",
-                                   (e) => { api.setPatternSteps(+e.target.value);
-                                            sendSong(); });
-  $("bpm").addEventListener("change", (e) => {
-    api.setTempo(+e.target.value);
-    send({type: "tempo", bpm: +e.target.value});
-  });
-  $("swing").addEventListener("change", (e) => {
-    api.setSwing(+e.target.value);
-    send({type: "swing", percent: +e.target.value});
-  });
-  $("name").addEventListener("change", (e) => api.setName(e.target.value));
-  $("save").addEventListener("click", save);
-  /* Opening a file drops it into the preloaded filesystem under a fixed name
-   * and loads that, so it goes through exactly the path the ROM's own songs
-   * take - the game's parser, hash check included. */
-  $("load").addEventListener("change", async (e) => {
-    const f = e.target.files[0];
-    if (!f) return;
-    const bytes = new Uint8Array(await f.arrayBuffer());
-    try {
-      Module.FS.writeFile("/data/nitrofs/demo/opened.dat", bytes);
-    } catch (err) {
-      say("cannot stage the file: " + err);
-      return;
-    }
-    if (api.song("opened") < 0) { say(f.name + ": " + api.error()); return; }
-    startAudio();
-    api.seqFollow();
-    playing = true;
-    sendSong();
-    syncControls();
-    say(f.name + "   " + api.songBars() + " bars");
-  });
-  $("clear").addEventListener("click", () => {
-    api.patternClear(-1);
-    sendSong();
-    say("pattern " + (api.pattern() + 1) + " cleared");
-  });
-  $("oct-down").addEventListener("click", () => setOctave(octave - 1));
-  $("oct-up").addEventListener("click", () => setOctave(octave + 1));
-  $("mode").addEventListener("click", () => {
-    api.setSongMode(!api.songMode());
-    send({type: "songMode", on: !!api.songMode()});
-    syncControls();
-  });
-  $("play").addEventListener("click", () => {
-    startAudio();
-    transport(!playing);
-    syncControls();
-  });
 
   for (const which of ["top", "bottom"]) {
     canvases[which].addEventListener("pointerdown", (e) => onDown(which, e));

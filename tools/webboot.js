@@ -26,6 +26,7 @@ const listeners = {};
 function element(id) {
   const kids = [];
   return {
+    tag: id,
     id: id,
     value: '',
     textContent: '',
@@ -36,9 +37,16 @@ function element(id) {
     height: 192,
     children: kids,
     classList: {add() {}, remove() {}, toggle() {}},
-    setAttribute() {},
+    setAttribute(k, v) { if (k === "value") this.value = v; },
     appendChild(c) { kids.push(c); return c; },
-    addEventListener(ev, fn) { (listeners[id] = listeners[id] || {})[ev] = fn; },
+    _on: {},
+    dispatch(ev, e) {
+      for (const fn of (this._on[ev] || [])) fn(e || {target: this});
+    },
+    addEventListener(ev, fn) {
+      (listeners[id] = listeners[id] || {})[ev] = fn;
+      (this._on[ev] = this._on[ev] || []).push(fn);
+    },
     getContext() {
       return {putImageData() {}, createImageData() { return {}; }};
     },
@@ -176,10 +184,50 @@ const boot = () => {
    * runs. Count what it built, or a stub DOM that silently swallows the
    * whole thing would pass. */
   const panel = els.panel ? els.panel.children.length : 0;
-  if (panel < 6) {
-    console.error('FAIL: the panel built ' + panel + ' sections, expected 8');
+  if (panel < 10) {
+    console.error('FAIL: the panel built ' + panel + ' sections, expected 10');
     process.exit(1);
   }
+
+  /* Exercise the controls the panel generates. A section that builds but does
+   * nothing looks the same as one that works. */
+  const all = [];
+  (function walk(e) {
+    all.push(e);
+    for (const c of e.children || []) walk(c);
+  })(els.panel);
+  const byText = (t) => all.find((e) => e.textContent === t && e._on.click);
+  const fails2 = [];
+  const cw = (n, r, a) => M.cwrap(n, r, a);
+  const mixerGet = cw('ds10_web_mixer_get', 'number', ['number']);
+  const laneKnob = cw('ds10_web_lane_knob', 'number', ['number']);
+
+  for (const [label, id, want] of [['SYN 1', 0, 0], ['DRUMS', 0, 3],
+                                   ['OFF', 0, 5], ['FLANGER', 1, 1],
+                                   ['CHORUS', 1, 2], ['DELAY', 1, 0]]) {
+    const b = byText(label);
+    if (!b) { fails2.push('no button "' + label + '"'); continue; }
+    b.dispatch('click');
+    if (mixerGet(id) !== want)
+      fails2.push(label + ' set mixer ' + id + ' to ' + mixerGet(id)
+                  + ', wanted ' + want);
+  }
+  /* The two KAOSS lane pickers. */
+  const sels = all.filter((e) => e.tag === '<select>' && e._on.change);
+  const lane = sels.filter((e) => e.children.length === 31);
+  if (lane.length < 2) fails2.push('the kaoss lane pickers are missing');
+  else {
+    lane[0].dispatch('change', {target: {value: '11'}});
+    lane[1].dispatch('change', {target: {value: '12'}});
+    if (laneKnob(0) !== 11 || laneKnob(1) !== 12)
+      fails2.push('the lane knobs did not take: ' + laneKnob(0) + '/'
+                  + laneKnob(1));
+  }
+  if (fails2.length) {
+    for (const f of fails2) console.error('FAIL: ' + f);
+    process.exit(1);
+  }
+  console.log('  panel: ' + panel + ' sections, route/type/lanes all respond');
   console.log('PASS: the page starts up, no TextDecoder, status '
               + JSON.stringify(status));
   /* The page's audio timer would otherwise keep node alive for ever. */

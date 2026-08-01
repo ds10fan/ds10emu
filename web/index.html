@@ -64,6 +64,13 @@
   .keys button { padding: .35rem 0; font-size: .62rem; min-height: 2rem; }
   .keys button.black { background: #101216; color: #8b94a2; }
   .hint { color: #6b7480; font-size: .72rem; }
+  .pad { width: 100%; aspect-ratio: 2 / 1; border-radius: 4px;
+         border: 1px solid #343a42; touch-action: none; cursor: crosshair;
+         background-color: #0f1216;
+         background-image: radial-gradient(circle at 50% 50%,
+                           #3d8a63 0, #3d8a6300 22%);
+         background-repeat: no-repeat; background-size: 60% 60%; }
+  .row select { min-height: 2rem; }
   button.cursor { outline: 2px solid #d0a020; }
 
   /* Big enough to hit with a thumb. */
@@ -92,26 +99,6 @@ move around. <kbd>space</kbd> starts and stops.</p>
 <div id="panel"></div>
 
 <div class="row">
-  <button id="play">play</button>
-  <label>pattern <select id="pick-pattern"></select></label>
-  <label>track <select id="pick-track"></select></label>
-  <label>steps <select id="pick-steps"></select></label>
-  <button id="mode">pattern</button>
-  <label>bpm <input id="bpm" type="number" min="20" max="300" size="4"
-                   style="width:4.5rem"></label>
-  <label>swing <input id="swing" type="number" min="50" max="75"
-                      style="width:4rem"></label>
-</div>
-
-<div class="row">
-  <label>song <select id="pick-song"></select></label>
-  <label>name <input id="name" maxlength="6" style="width:5rem"></label>
-  <button id="save">save .dat</button>
-  <label>open <input id="load" type="file" accept=".dat"
-                    style="width:9rem"></label>
-  <button id="clear">clear pattern</button>
-  <button id="oct-down">oct &minus;</button>
-  <button id="oct-up">oct +</button>
   <label>bottom <select id="pick-bottom"></select></label>
   <label>top <select id="pick-top"></select></label>
 </div>

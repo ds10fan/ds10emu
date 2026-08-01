@@ -11,8 +11,23 @@
  */
 "use strict";
 
+/* The mixer's twenty-five knobs. 0 is which channels are routed through the
+ * effect and 1..8 are the effect's own parameters - the mixer forwards those
+ * straight to it. 9..14 are the pans and 17..22 the volumes. */
+const MIX_ROUTE = 0, MIX_TYPE = 1, MIX_TIME = 2, MIX_RATIO = 3;
+const MIX_LFO = 4, MIX_DEPTH = 5, MIX_SYNC = 6, MIX_FB = 7, MIX_DRYWET = 8;
+const ROUTE_NAME = ["SYN 1", "SYN 2", "SYN 1+2", "DRUMS", "ALL", "OFF"];
+const FX_TYPE_NAME = ["DELAY", "FLANGER", "CHORUS"];
+/* Which three parameters each type shows, from 52_FX's own table: the page
+ * puts them at the same four positions and swaps which are live. */
+const FX_PARAMS = [
+  [[MIX_TIME, "DELAY TIME"], [MIX_RATIO, "L/R RATIO"], [MIX_FB, "FEEDBACK"]],
+  [[MIX_LFO, "LFO FREQ"], [MIX_DEPTH, "DEPTH"]],
+  [[MIX_LFO, "LFO FREQ"], [MIX_DEPTH, "DEPTH"], [MIX_FB, "FEEDBACK"]],
+];
 const MIXER_NAME = [
-  "FX TYPE", "FX 1", "FX 2", "FX 3", "FX 4", "FX 5", "FX 6", "FX 7", "FX 8",
+  "FX ROUTE", "FX TYPE", "DELAY TIME", "L/R RATIO", "LFO FREQ", "DEPTH",
+  "SYNC", "FEEDBACK", "DRY/WET",
   "PAN SYN1", "PAN SYN2", "PAN DRUM1", "PAN DRUM2", "PAN DRUM3", "PAN DRUM4",
   "MIX 15", "MIX 16",
   "VOL SYN1", "VOL SYN2", "VOL DRUM1", "VOL DRUM2", "VOL DRUM3", "VOL DRUM4",
@@ -138,12 +153,26 @@ function buildPanel() {
       sendSong();
       panelSync();
     }),
-    button("copy to next", () => {
-      const to = (api.pattern() + 1) % 16;
-      api.patternCopy(api.pattern(), to);
-      sendSong();
-      panelSync();
-    }),
+    el("div", {cls: "row"}, [
+      button("copy to next", () => {
+        api.patternCopy(api.pattern(), (api.pattern() + 1) % 16);
+        sendSong();
+        panelSync();
+      }),
+      button("clear this track", () => {
+        api.trackClear(api.track());
+        sendSong();
+        panelSync();
+      }),
+      button("oct -", () => { api.transpose(api.track(), -12); sendSong();
+                              panelSync(); }),
+      button("oct +", () => { api.transpose(api.track(), 12); sendSong();
+                              panelSync(); }),
+      button("semi -", () => { api.transpose(api.track(), -1); sendSong();
+                               panelSync(); }),
+      button("semi +", () => { api.transpose(api.track(), 1); sendSong();
+                               panelSync(); }),
+    ]),
   ]));
 
   /* --- the sixteen steps of the selected track ------------------------ */
@@ -225,16 +254,115 @@ function buildPanel() {
                text: "the selected track's patch; both synths have their own"}),
   ].concat(knobs)));
 
-  /* --- mixer and effect ------------------------------------------------ */
+  /* --- mixer ----------------------------------------------------------- */
+  const mixCtl = (m) => slider(MIXER_NAME[m], 0, 127, () => api.mixerGet(m),
+                               (v) => {
+                                 api.mixerSet(m, v);
+                                 send({type: "mixer", id: m, value: v});
+                               },
+                               sendSong);
   const mix = [];
-  for (let m = 0; m < 25; m++)
-    mix.push(slider(MIXER_NAME[m], 0, 127, () => api.mixerGet(m),
-                    (v) => {
-                      api.mixerSet(m, v);
-                      send({type: "mixer", id: m, value: v});
-                    },
-                    sendSong));
-  host.appendChild(group("mixer and effect", mix));
+  for (let m = 17; m <= 22; m++) mix.push(mixCtl(m));
+  for (let m = 9; m <= 14; m++) mix.push(mixCtl(m));
+  host.appendChild(group("mixer", mix));
+
+  /* --- the effect ------------------------------------------------------- */
+  const routeBtns = [], typeBtns = [];
+  const setMix = (id, v) => {
+    api.mixerSet(id, v);
+    send({type: "mixer", id: id, value: v});
+    sendSong();
+  };
+  for (let r = 0; r < 6; r++)
+    routeBtns.push(button(ROUTE_NAME[r], () => { setMix(MIX_ROUTE, r);
+                                                 panelSync(); }));
+  for (let t = 0; t < 3; t++)
+    typeBtns.push(button(FX_TYPE_NAME[t], () => { setMix(MIX_TYPE, t);
+                                                  panelSync(); }));
+  /* Rebuilt on a type change, because which three are live depends on it. */
+  const fxParams = el("div", {cls: "panel-body"});
+  const rebuildFx = () => {
+    fxParams.textContent = "";
+    const t = Math.max(0, Math.min(2, api.mixerGet(MIX_TYPE)));
+    for (const [id, name] of FX_PARAMS[t])
+      fxParams.appendChild(slider(name, 0, 127, () => api.mixerGet(id),
+                                  (v) => { api.mixerSet(id, v);
+                                           send({type: "mixer", id: id,
+                                                 value: v}); },
+                                  sendSong));
+    fxParams.appendChild(mixCtl(MIX_SYNC));
+    fxParams.appendChild(mixCtl(MIX_DRYWET));
+  };
+  syncers.push(() => {
+    const r = api.mixerGet(MIX_ROUTE), t = api.mixerGet(MIX_TYPE);
+    routeBtns.forEach((b, i) => b.classList.toggle("on", i === r));
+    typeBtns.forEach((b, i) => b.classList.toggle("on", i === t));
+    rebuildFx();
+  });
+  host.appendChild(group("effect", [
+    el("div", {cls: "hint", text: "which channels go through it"}),
+    el("div", {cls: "row"}, routeBtns),
+    el("div", {cls: "hint", text: "type"}),
+    el("div", {cls: "row"}, typeBtns),
+    fxParams,
+  ]));
+
+  /* --- the KAOSS pad ---------------------------------------------------- */
+  const laneSel = [];
+  for (let lane = 0; lane < 2; lane++) {
+    const sel = el("select", {onchange: (e) => {
+      api.setLaneKnob(lane, +e.target.value);
+      sendSong();
+      panelSync();
+    }});
+    for (let k = 0; k < 31; k++)
+      sel.appendChild(el("option", {value: String(k),
+                                    text: api.knobName(k) || ("knob " + k)}));
+    laneSel.push(sel);
+  }
+  const padRead = el("span", {cls: "val", text: ""});
+  const pad = el("div", {cls: "pad"});
+  const padSet = (ev) => {
+    const r = pad.getBoundingClientRect();
+    const fx = Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width));
+    const fy = Math.max(0, Math.min(1, (ev.clientY - r.top) / r.height));
+    const vx = Math.round(fx * 127), vy = Math.round((1 - fy) * 127);
+    const kx = api.laneKnob(0), ky = api.laneKnob(1);
+    /* Clamp into each knob's own range, as the knob setter would. */
+    const put = (k, v) => {
+      const lo = api.knobMin(k), n = api.knobRange(k);
+      const val = Math.max(lo, Math.min(lo + n - 1,
+                                        lo + Math.round(v * n / 127)));
+      api.knobSet(k, val);
+      send({type: "knob", track: track(), id: k, value: val});
+      return val;
+    };
+    padRead.textContent = api.knobName(kx) + " " + put(kx, vx) + "   "
+                        + api.knobName(ky) + " " + put(ky, vy);
+    pad.style.backgroundPosition = (fx * 100) + "% " + (fy * 100) + "%";
+  };
+  let padDown = false;
+  pad.addEventListener("pointerdown", (e) => {
+    padDown = true;
+    startAudio();
+    pad.setPointerCapture(e.pointerId);
+    padSet(e);
+  });
+  pad.addEventListener("pointermove", (e) => { if (padDown) padSet(e); });
+  for (const ev of ["pointerup", "pointercancel"])
+    pad.addEventListener(ev, () => { if (padDown) { padDown = false;
+                                                    sendSong(); } });
+  syncers.push(() => {
+    laneSel[0].value = String(api.laneKnob(0));
+    laneSel[1].value = String(api.laneKnob(1));
+  });
+  host.appendChild(group("kaoss pad", [
+    el("div", {cls: "hint", text: "the two knobs the pattern's automation "
+                                  + "lanes drive"}),
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "x"}), laneSel[0]]),
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "y"}), laneSel[1]]),
+    pad, padRead,
+  ]));
 
   /* --- drums ------------------------------------------------------------ */
   const drums = [];
@@ -262,7 +390,54 @@ function buildPanel() {
     });
     keys.push(b);
   }
-  host.appendChild(group("keyboard", [el("div", {cls: "keys"}, keys)]));
+  const octLabel = el("span", {cls: "val", text: "0"});
+  syncers.push(() => { octLabel.textContent = (octave > 0 ? "+" : "")
+                                              + octave; });
+  host.appendChild(group("keyboard", [
+    el("div", {cls: "row"}, [
+      button("oct -", () => { setOctave(octave - 1); panelSync(); }),
+      button("oct +", () => { setOctave(octave + 1); panelSync(); }),
+      octLabel,
+      el("span", {cls: "hint", text: "shifts the DS keyboard page"}),
+    ]),
+    el("div", {cls: "keys"}, keys),
+  ]));
+
+  /* --- the song --------------------------------------------------------- */
+  const nameIn = el("input", {maxlength: "6", onchange: (e) => {
+    api.setName(e.target.value);
+    sendSong();
+    panelSync();
+  }});
+  const songSel = el("select", {onchange: (e) => {
+    trace("panel: load " + e.target.value);
+    loadSong(e.target.value);
+    panelSync();
+  }});
+  for (const n of SONGS)
+    songSel.appendChild(el("option", {value: n, text: n}));
+  const patchSel = el("select", {onchange: (e) => {
+    const n = +e.target.value;
+    if (n < 0) return;
+    trace("panel: factory patch " + n);
+    if (api.factoryPatch(n) === 0) { sendSong(); panelSync(); }
+    e.target.value = "-1";
+  }});
+  patchSel.appendChild(el("option", {value: "-1", text: "factory patch…"}));
+  for (let n = 0; n < 24; n++)
+    patchSel.appendChild(el("option", {value: String(n),
+                                       text: "synth " + (n + 1)}));
+  const fileIn = el("input", {type: "file", accept: ".dat",
+                              onchange: (e) => openFile(e)});
+  syncers.push(() => { nameIn.value = api.getName(); });
+  host.appendChild(group("song", [
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "name"}), nameIn]),
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "load"}), songSel]),
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "patch"}),
+                               patchSel]),
+    el("label", {cls: "ctl"}, [el("span", {cls: "nm", text: "open"}), fileIn]),
+    button("save .dat", () => save()),
+  ]));
 
   /* --- the arrangement -------------------------------------------------- */
   const chain = el("div", {cls: "row"});

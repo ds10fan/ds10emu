@@ -1219,6 +1219,15 @@ int ds10_web_mapbutton_hit(int x, int y) { return ds10_ui_mapbutton_hit(x, y); }
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_clear_hit(int x, int y) { return ds10_ui_clear_hit(x, y); }
 
+/* Which knob an automation lane drives - the KAOSS pad's two axes. */
+EMSCRIPTEN_KEEPALIVE
+void ds10_web_set_lane_knob(int lane, int knob)
+{
+    int track = ed.track < NSYN ? ed.track : 0;
+
+    ds10_editor_lane_knob(&ed, track, lane, knob);
+}
+
 /* Which of 32_PATTERN's sixteen buttons is under a touch, or -1. */
 EMSCRIPTEN_KEEPALIVE
 int ds10_web_pattern_hit(int x, int y) { return ds10_ui_pattern_hit(x, y); }
