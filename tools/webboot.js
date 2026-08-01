@@ -48,6 +48,19 @@ function element(id) {
 const els = {};
 for (const id of IDS) els[id] = element(id);
 
+/* index.html hides TextDecoder over the module's load, because Chrome refuses
+ * to decode from the resizable ArrayBuffer WebAssembly.Memory hands back. Do
+ * the same here, or this harness is not loading the module the way the page
+ * does - and the difference is exactly what hid a build that could not run in
+ * a browser at all. */
+const RealTextDecoder = global.TextDecoder;
+if (!/delete self\.TextDecoder/.test(
+        fs.readFileSync(repo + '/web/index.html', 'utf8'))) {
+  console.error('FAIL: index.html no longer hides TextDecoder over ds10.js');
+  process.exit(1);
+}
+delete global.TextDecoder;
+
 /* The module decides web-versus-node from globalThis.window when it loads, so
  * nothing may define window until after it is required. */
 process.chdir(dir);
@@ -61,7 +74,12 @@ global.document = {
   createElement(tag) { return element('<' + tag + '>'); },
   addEventListener(ev, fn) { (listeners.document = listeners.document || {})[ev] = fn; },
 };
-global.window = {confirm: () => true};
+global.window = {
+  confirm: () => true,
+  addEventListener(ev, fn) { (listeners.window = listeners.window || {})[ev] = fn; },
+};
+global.navigator = {userAgent: 'webboot'};
+global.fetch = () => Promise.resolve({ok: true});
 global.ImageData = class { constructor(d, w, h) { this.data = d; this.width = w; this.height = h; } };
 global.AudioContext = class {
   constructor() { this.currentTime = 0; this.state = 'running'; this.destination = {}; }
@@ -73,9 +91,11 @@ global.AudioContext = class {
   resume() {}
 };
 global.requestAnimationFrame = () => 0;   /* one frame is enough */
+
 global.URL = {createObjectURL: () => 'blob:', revokeObjectURL() {}};
 global.Blob = class {};
 
+global.TextDecoder = RealTextDecoder;
 global.Module = M;
 
 let ran = false;
@@ -115,6 +135,8 @@ const boot = () => {
     process.exit(1);
   }
   console.log('PASS: the page starts up, status ' + JSON.stringify(status));
+  /* The page's audio timer would otherwise keep node alive for ever. */
+  process.exit(0);
 };
 M.onRuntimeInitialized = boot;
 

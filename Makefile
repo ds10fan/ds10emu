@@ -326,7 +326,7 @@ WEB_FLAGS = -O2 -std=c99 -Wall -lm \
             --preload-file data/pages.bin@/data/pages.bin \
             --preload-file data/tables.bin@/data/tables.bin \
             -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","FS"]' \
-            -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
+            -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
 
 web: web/build/ds10.js
 web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \

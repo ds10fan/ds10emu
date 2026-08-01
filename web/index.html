@@ -79,5 +79,21 @@ move around. <kbd>space</kbd> starts and stops.</p>
 
 <div id="status">loading&hellip;</div>
 
+<script>
+/* Chrome refuses TextDecoder.decode() on a resizable ArrayBuffer, and that is
+ * what WebAssembly.Memory hands back. Every string crossing the boundary threw
+ * there - the page came up with two black screens and "loading" - while every
+ * test passed, because node's TextDecoder has no such restriction.
+ *
+ * Emscripten only reaches for TextDecoder if it exists when the module loads,
+ * and falls back to decoding UTF-8 itself, so hiding it over that one line
+ * settles the question without depending on which buffers a given browser
+ * considers resizable. The strings here are page and knob names; the manual
+ * path costs nothing worth measuring.
+ */
+var __TextDecoder = self.TextDecoder;
+delete self.TextDecoder;
+</script>
 <script src="ds10.js"></script>
+<script>self.TextDecoder = __TextDecoder;</script>
 <script src="app.js"></script>
