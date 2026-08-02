@@ -1652,18 +1652,31 @@ void ds10_ui_plane_clear(ds10_ui *u)
  */
 #define SCROLL_X0 3
 #define SCROLL_X1 20
-#define SCROLL_Y0 SEQ_Y0
+#define SCROLL_Y0 31              /* 0x02050108's +0x41C, in 20.12 */
 #define SCROLL_H 11
-#define SCROLL_BOTTOM 186
-#define SCROLL_TRAVEL (SCROLL_BOTTOM - SCROLL_Y0 - SCROLL_H)
+#define SCROLL_SPAN 144           /* the 0x90 it passes the slider setter */
+#define SCROLL_MAX 84             /* and the 0x54; the value counts upward */
 #define SCROLL_POSITIONS (SEQ_RANGE - SEQ_ROWS)
+#define SCROLL_TRAVEL SCROLL_SPAN   /* the handle's top travels the span */
+#define SCROLL_BOTTOM (SCROLL_Y0 + SCROLL_SPAN + SCROLL_H)
 
 /* Where the window sits in the range, and back.
  *
- * The page draws the handle at y 97, which is five twelfths of the way down -
- * so the top note that frame shows, A4, is scroll position five, and the
- * twenty-four-row range runs from D5 down to D#3. Only that one handle
- * position is evidence; the two ends are what it implies.
+ * The value the original keeps is 0 to 84 and counts *upward* - 84 is the top
+ * of the range, 0 the bottom - so the handle is at
+ *
+ *     y = 31 + (84 - value) * 144 / 84
+ *
+ * tools/probe_ram.py settles both the direction and the scale: tapping the bar
+ * near its bottom takes the value from 46 to 6, and 6 puts the handle's top at
+ * 164 with the finger six pixels into it, which is a twelve-pixel handle hit in
+ * the middle. 46 puts it at 96, and the captured page draws it at 97.
+ *
+ * 84 is 7 x (24 - 12), so a row of the scroll range is seven of these units.
+ * The default 46 is not a multiple of seven, so the roll does not sit on a row
+ * boundary - the value tracks the finger, not the grid. This reimplementation
+ * still quantises to the twelve row positions, which is why the handle it
+ * draws at rest is at 91 rather than 97.
  */
 #define SCROLL_DEFAULT 5
 

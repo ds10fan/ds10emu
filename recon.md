@@ -1984,17 +1984,28 @@ are the two lane knob ids. So **byte 0 of each track's 12-byte per-pattern
 record is the piano roll's scroll position**, and it is per pattern and per
 track, and it is saved.
 
-What the 0..84 range means in rows is still not established, and the obvious
-reading is now **ruled out**. 84 is 7 x (24 - 12), so seven units a row looked
-likely. But the geometry is confirmed from two constructors - origin (5,31),
-span 144 - and the captured page draws the handle at y 97, which is
+The 0..84 value is settled, by `tools/probe_ram.py` tapping the bar and
+diffing main RAM. **It counts upward: 84 is the top of the range, 0 the
+bottom.**
 
-    v = (97 - 31) * 84 / 144 = 38.5
+    handle top y = 31 + (84 - value) * 144 / 84
 
-and 38 or 39 is not a multiple of seven. Whatever the unit is, a scroll
-position does not step by seven. The reimplementation keeps its own thirteen
-positions until this is settled, which means watching the byte at
-`pattern*676 + track*12 + 0x25C` while the bar is dragged.
+The default in the ROM's own session is 46, which puts the handle at 96 and
+the captured page draws it at 97. A tap at y 170 takes it to 6, which puts the
+top at 164 with the finger six pixels in - a twelve-pixel handle hit in the
+middle. Both agree.
+
+84 is 7 x (24 - 12), so a row of the scroll range is seven of these units. The
+default 46 is not a multiple of seven, so the roll does not rest on a row
+boundary: the value tracks the finger rather than the grid, and a second tap
+at the same place moved it by one.
+
+**Correction.** An earlier pass here recorded the seven-per-row reading as
+ruled out, on the grounds that (97-31)*84/144 = 38.5 is not a multiple of
+seven. That arithmetic assumed the value counted downward. It counts upward,
+the default is 46 rather than 38, and seven units a row is what 84 = 7 x 12
+says it is. What is ruled out is only that the default happens to be
+row-aligned.
 
 Two runs of sixteen sprites are built at the end, at y 3 with x from 22 and
 from 74, which is the top bar's two text fields.
