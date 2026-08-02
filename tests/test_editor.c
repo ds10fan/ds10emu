@@ -119,6 +119,19 @@ int main(void)
           ds10_editor_get_drum_knob(&e, 0, 11) == 77,
           "the drums have separate patches");
 
+    /* The piano roll's scroll, which the original keeps per pattern and per
+     * track in the byte the 12-byte record starts with. It is in the part of
+     * a pattern this parser round-trips without naming, so an edit there is
+     * the other one most likely to be quietly dropped. */
+    ds10_editor_scroll(&e, 0, 46);
+    ds10_editor_scroll(&e, 3, DS10_EDIT_SCROLL_MAX + 10);   /* clamps */
+    check(ds10_editor_get_scroll(&e, 0) == 46, "scroll reads back");
+    check(ds10_editor_get_scroll(&e, 3) == DS10_EDIT_SCROLL_MAX,
+          "scroll clamps to the range the original uses");
+    check(ds10_editor_get_scroll(&e, 1) != 46 ||
+          ds10_editor_get_scroll(&e, 0) == 46,
+          "each track has its own");
+
     /* Round trip: what we wrote has to parse, hash and all, and come back
      * with every edit intact. */
     wrote = ds10_editor_export(&e, out);
@@ -144,6 +157,9 @@ int main(void)
     check(back.pattern[0].step[0][4].pan == 20, "pan survives");
     check(ds10_song_drum_knobs(&back, 0)[11] == 77, "a drum knob survives");
     check(ds10_song_drum_knobs(&back, 3)[23] == 44, "and the fourth drum's");
+    check(back.pattern[0].params[1] == 46, "the scroll survives a round trip");
+    check(back.pattern[0].params[1 + 3 * 12] == DS10_EDIT_SCROLL_MAX,
+          "and the fourth track's");
 
     /* Writing the same song twice gives the same bytes - no uninitialised
      * padding leaking into the hash. */

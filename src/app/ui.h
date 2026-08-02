@@ -173,6 +173,12 @@ void ds10_ui_plane_clear(ds10_ui *u);
 int ds10_ui_seq_scroll_hit(int x, int y);
 void ds10_ui_seq_scroll_draw(ds10_ui *u, int pos);
 
+/* The original's stored 0..84 to and from a row position, and the note on the
+ * top row for one. The stored value counts upward; the position counts down
+ * from the top of the range, seven units to a row. */
+int ds10_ui_seq_scroll_value(int pos);
+int ds10_ui_seq_scroll_from_value(int value);
+
 /* The note on the top row for a scroll position, and back. */
 int ds10_ui_seq_scroll_top(int pos);
 int ds10_ui_seq_scroll_pos(int top);

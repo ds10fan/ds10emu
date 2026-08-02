@@ -1680,6 +1680,25 @@ void ds10_ui_plane_clear(ds10_ui *u)
  */
 #define SCROLL_DEFAULT 5
 
+/* The original's 0..84, which counts upward, to and from the row position
+ * this uses, which counts down from the top. Seven units a row. */
+int ds10_ui_seq_scroll_value(int pos)
+{
+    if (pos < 0) pos = 0;
+    if (pos > SCROLL_POSITIONS) pos = SCROLL_POSITIONS;
+    return SCROLL_MAX - pos * (SCROLL_MAX / SCROLL_POSITIONS);
+}
+
+int ds10_ui_seq_scroll_from_value(int value)
+{
+    int pos;
+
+    if (value < 0) value = 0;
+    if (value > SCROLL_MAX) value = SCROLL_MAX;
+    pos = (SCROLL_MAX - value) / (SCROLL_MAX / SCROLL_POSITIONS);
+    return pos > SCROLL_POSITIONS ? SCROLL_POSITIONS : pos;
+}
+
 int ds10_ui_seq_scroll_top(int pos)
 {
     if (pos < 0) pos = 0;

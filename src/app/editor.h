@@ -68,6 +68,19 @@ void ds10_editor_lane(ds10_editor *e, int track, int lane, int step, int v);
 int ds10_editor_get_drum_knob(const ds10_editor *e, int drum, int knob);
 void ds10_editor_drum_knob(ds10_editor *e, int drum, int knob, int value);
 
+/* How far the piano roll is scrolled, as the original stores it: byte 0 of
+ * each track's 12-byte per-pattern record, counting upward from 0 at the
+ * bottom of the range to DS10_EDIT_SCROLL_MAX at the top. So it is per
+ * pattern and per track, and it is saved. Seven of these units is one row of
+ * the twelve-row scroll range; see ds10_ui_seq_scroll_top.
+ *
+ * Every value in the ROM's own songs falls inside the range. */
+#define DS10_EDIT_SCROLL_MAX 84
+#define DS10_EDIT_SCROLL_OFF 0x25C   /* within the pattern, from its base */
+
+int ds10_editor_get_scroll(const ds10_editor *e, int track);
+void ds10_editor_scroll(ds10_editor *e, int track, int value);
+
 /* Which knob a lane drives. */
 int ds10_editor_get_lane_knob(const ds10_editor *e, int track, int lane);
 void ds10_editor_lane_knob(ds10_editor *e, int track, int lane, int knob);

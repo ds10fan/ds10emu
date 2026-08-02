@@ -282,8 +282,15 @@ sixteen and checks our C reproduces every angle.
   whose bytes 2 and 3 are already known to be the lane knob ids. So the scroll
   position is per pattern, per track, and saved - the reimplementation keeps it
   in one global rather than per pattern and per track. The 0..84 value itself
-  is settled - it counts upward, seven units a row, and the handle geometry is
-  the original's now. What is left is storing it where the original does.
+  is settled - it counts upward, seven units a row - and the handle geometry
+  and the format field are the original's now (`ds10_editor_get_scroll`,
+  round-tripped by test-editor). What blocks wiring it to the roll is a
+  question the value does not answer: **where the 24-row range sits**. Twelve
+  positions of seven units is 24 rows, but the ROM's own songs use notes 34 to
+  80, which is 46 semitones - so either the range's base moves with something
+  not yet found, or the roll only ever shows part of a song and each pattern's
+  own scroll is what makes that workable. Until that is settled the roll keeps
+  its wider note-based scroll, which can at least show every note in the ROM.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` and `0x02049150` are done - it is 32_PATTERN's, not the shared helper recon had

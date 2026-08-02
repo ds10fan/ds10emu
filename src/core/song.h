@@ -82,7 +82,11 @@ typedef struct {
     /* +0x242  the mixer's 25 knobs, pushed in on a pattern change by 0x0206EC10.
      * Signed, because that pusher reads them with ldrsb. */
     int8_t mixer[DS10_SONG_MIX_KNOBS];
-    uint8_t params[0x62 - DS10_SONG_MIX_KNOBS];   /* +0x25B, not yet named */
+    /* +0x25B. Mostly unnamed, but the 12-byte per-track records start one
+     * byte in, at +0x25C: byte 0 of each is how far that track's piano roll
+     * is scrolled (0..84, counting upward - see ds10_editor_get_scroll) and
+     * bytes 2 and 3 are its two automation lanes' knob ids. */
+    uint8_t params[0x62 - DS10_SONG_MIX_KNOBS];
 } ds10_song_pattern;
 
 typedef struct {

@@ -137,6 +137,38 @@ int ds10_editor_get_lane_knob(const ds10_editor *e, int track, int lane)
         .knob[lane];
 }
 
+/* The scroll position lives in the per-track record the pattern keeps at
+ * +0x25C, which `params` covers: it starts at +0x25B, so the record for track
+ * t begins at params[1 + t*12] and byte 0 of it is this. Read out of the
+ * original at 0x0206b100, which the sequencer's constructor reaches through
+ * 0x02034500 to set its scrollbar up. */
+static int scroll_index(int track)
+{
+    return 1 + track * 12;
+}
+
+int ds10_editor_get_scroll(const ds10_editor *e, int track)
+{
+    int i = scroll_index(track);
+
+    if (track < 0 || track >= DS10_SONG_TRACKS) return 0;
+    if (i < 0 || (size_t)i >= sizeof e->song.pattern[0].params) return 0;
+    return e->song.pattern[clamp(e->pattern, 0, DS10_SONG_PATTERNS - 1)]
+        .params[i];
+}
+
+void ds10_editor_scroll(ds10_editor *e, int track, int value)
+{
+    int i = scroll_index(track);
+
+    if (track < 0 || track >= DS10_SONG_TRACKS) return;
+    if (i < 0 || (size_t)i >= sizeof e->song.pattern[0].params) return;
+    if (value < 0) value = 0;
+    if (value > DS10_EDIT_SCROLL_MAX) value = DS10_EDIT_SCROLL_MAX;
+    ds10_editor_pattern(e)->params[i] = (uint8_t)value;
+    e->changed++;
+}
+
 void ds10_editor_lane_knob(ds10_editor *e, int track, int lane, int knob)
 {
     int s;
