@@ -1446,11 +1446,11 @@ int ds10_ui_clear_hit(int x, int y)
 static const struct { const char *page; int x, w, id; } BAR_BUTTON[] = {
     /* the sequencer, both variants of it */
     {"60_SYN_SEQ_",  42, 13, DS10_BAR_MODE},
-    {"60_SYN_SEQ_", 131, 26, DS10_BAR_CLR},
-    {"60_SYN_SEQ_", 162, 26, DS10_BAR_SOLO},
+    {"60_SYN_SEQ_", 131, 28, DS10_BAR_CLR},
+    {"60_SYN_SEQ_", 162, 28, DS10_BAR_SOLO},
     {"62_DRUM_SEQ",  42, 13, DS10_BAR_MODE},
-    {"62_DRUM_SEQ", 131, 26, DS10_BAR_CLR},
-    {"62_DRUM_SEQ", 162, 26, DS10_BAR_SOLO},
+    {"62_DRUM_SEQ", 131, 28, DS10_BAR_CLR},
+    {"62_DRUM_SEQ", 162, 28, DS10_BAR_SOLO},
     /* the pad. Its constructor, 0x02049150, places six of these and names
      * them, so these are read rather than guessed from the icon: three
      * captioned %d at x = 4 + 21*n, 18 by 14, then `setting` at 67 captioned
@@ -1474,19 +1474,26 @@ static const struct { const char *page; int x, w, id; } BAR_BUTTON[] = {
     {"81_KEY",       66, 70, DS10_BAR_SYNTH},
     {"81_KEY",      131, 28, DS10_BAR_SOLO},
     {"81_KEY",      162, 32, DS10_BAR_REC},
-    /* the two synth editors */
-    {"61_SYN_EDIT", 162, 26, DS10_BAR_SOLO},
-    {"70_PATCH",    162, 26, DS10_BAR_SOLO},
+    /* The two synth editors. The wide button on the left of both was
+     * unidentified; the size scan finds a `synth` widget placed at 70 by 12
+     * on each (0x02047770 and 0x0204e568), the same name and size 81_KEY's
+     * selector has. Its x is computed rather than immediate, so the 4 is the
+     * drawn frame's origin - 81_KEY's draws 60 wide from a 70-wide box, and
+     * these draw 60 wide from x 4. */
+    {"61_SYN_EDIT",   4, 70, DS10_BAR_SYNTH},
+    {"61_SYN_EDIT", 162, 28, DS10_BAR_SOLO},
+    {"70_PATCH",      4, 70, DS10_BAR_SYNTH},
+    {"70_PATCH",    162, 28, DS10_BAR_SOLO},
     /* the drums */
-    {"51_ALL_DRUMS",    162, 26, DS10_BAR_CLR},
+    {"51_ALL_DRUMS",    162, 28, DS10_BAR_CLR},
     {"33_DRUM_SELECTER",  4, 27, DS10_BAR_EDIT},
-    {"33_DRUM_SELECTER", 162, 26, DS10_BAR_REC},
+    {"33_DRUM_SELECTER", 162, 28, DS10_BAR_REC},
     /* the pattern picker, and the song */
     /* COPY and LOCK are in 32_PATTERN's constructor table at 0x020845dc,
      * 28 by 14 each. */
     {"32_PATTERN",    4, 28, DS10_BAR_COPY},
     {"32_PATTERN",   35, 28, DS10_BAR_LOCK},
-    {"31_SONG",     162, 26, DS10_BAR_CLR},
+    {"31_SONG",     162, 28, DS10_BAR_CLR},
 };
 
 /* Which pages have the transport. The four drum edit pages have only the

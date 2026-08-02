@@ -2058,6 +2058,24 @@ measured off a render.
 the drawn box and not the hit box. 33_DRUM_SELECTER's `EDIT` and `rec` are at
 `0x020572f4` and `0x02057460`.
 
+Widening the scan to sizes rather than positions reaches the widgets placed in
+loops, and gives every statically-sized one in the ROM:
+
+```
+pat 1 1 / pat %d  55x27      tm%d              40x10   (mixer and pattern)
+ptdeck/fxdeck/mxdeck 28x14   setting           28x14
+octDown           28x14      rec               32x16 on 81_KEY, 28x14 elsewhere
+SOLO0             28x14      synth             70x12
+the pad's slots   18x14      the drum rows     19x13
+menu / MENU       46x16      TRS 36x16, chain 28x14, bright0 66x16
+```
+
+Two things fall out. The wide button on the left of 61_SYN_EDIT and 70_PATCH,
+which this document had as unidentified, is a `synth` selector - same name and
+size as 81_KEY's. And every bar button is 28 wide, not the 26 the drawn frames
+suggested; the drawn frame is consistently narrower than the hit box, which is
+the same mistake the two mute and solo strips had.
+
 ### The shared top bar
 
 Around `0x02053900` is the builder the pages share, and it registers every

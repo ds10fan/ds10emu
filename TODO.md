@@ -182,6 +182,8 @@ Remaining, roughly in order:
   on the keyboard. Wired from it: the transport, record, solo, CLR, the
   sub-mode cycle, the screen swap, the pad's three assignments and its rate,
   the keyboard's octave and synth selector, and COPY and LOCK on 32_PATTERN.
+  61_SYN_EDIT's and 70_PATCH's wide left button is a `synth` selector too, and
+  is wired now.
 
   The two that no probe could read are now settled as far as they can be:
 
