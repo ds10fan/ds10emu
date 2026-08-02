@@ -1440,14 +1440,20 @@ static const struct { const char *page; int x, w, id; } BAR_BUTTON[] = {
     {"62_DRUM_SEQ",  42, 13, DS10_BAR_MODE},
     {"62_DRUM_SEQ", 131, 26, DS10_BAR_CLR},
     {"62_DRUM_SEQ", 162, 26, DS10_BAR_SOLO},
-    /* the pad: three assignments, the key and scale, the rate, solo, record */
-    {"71_KAOSS",      4, 16, DS10_BAR_SLOT1},
-    {"71_KAOSS",     25, 16, DS10_BAR_SLOT2},
-    {"71_KAOSS",     46, 16, DS10_BAR_SLOT3},
-    {"71_KAOSS",     67, 26, DS10_BAR_SET},
-    {"71_KAOSS",     98, 26, DS10_BAR_RATE},
-    {"71_KAOSS",    131, 26, DS10_BAR_SOLO},
-    {"71_KAOSS",    162, 26, DS10_BAR_REC},
+    /* the pad. Its constructor, 0x02049150, places six of these and names
+     * them, so these are read rather than guessed from the icon: three
+     * captioned %d at x = 4 + 21*n, 18 by 14, then `setting` at 67 captioned
+     * SET, `playmode` at 98 whose caption the page rewrites - the ROM has
+     * OFF/TRIG/SMOOTH and OFF/HLD/SMT as two spellings of it - and `rec` at
+     * 162, all 28 by 14. The one at 131 is not in this constructor; the
+     * editor screens share a prologue and it comes from there. */
+    {"71_KAOSS",      4, 18, DS10_BAR_SLOT1},
+    {"71_KAOSS",     25, 18, DS10_BAR_SLOT2},
+    {"71_KAOSS",     46, 18, DS10_BAR_SLOT3},
+    {"71_KAOSS",     67, 28, DS10_BAR_SET},
+    {"71_KAOSS",     98, 28, DS10_BAR_RATE},
+    {"71_KAOSS",    131, 28, DS10_BAR_SOLO},
+    {"71_KAOSS",    162, 28, DS10_BAR_REC},
     /* the keyboard */
     {"81_KEY",        4, 27, DS10_BAR_OCT_DOWN},
     {"81_KEY",       35, 27, DS10_BAR_OCT_UP},

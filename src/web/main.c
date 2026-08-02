@@ -1258,7 +1258,7 @@ const char *ds10_web_map_hit(int x, int y)
  * can paint it out. */
 #define FX_DEFAULT_TYPE 0     /* DELAY */
 #define FX_DEFAULT_ROUTE 2    /* SYN 1 + 2 */
-#define PAD_SLOT_W 16         /* the pad's 1, 2 and 3, as the page frames them */
+#define PAD_SLOT_W 18         /* the pad's 1, 2 and 3, from 0x02049150 */
 
 /* Light the button on the bar for `id` if the page has one. */
 static void bar_led(int id, int on)

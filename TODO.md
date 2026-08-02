@@ -271,9 +271,13 @@ sixteen and checks our C reproduces every angle.
   in one global. What 0..84 means in rows is the one piece left; 84 is
   7 x (24 - 12) but that is a guess. Checking it means watching the byte while
   dragging the bar on the hardware, which tools/probe_ram.py can do.
+- the editor screens' shared prologue, which is where the button at x 131 on
+  71_KAOSS and 81_KEY comes from, along with the transport and the screen
+  swap. Its widget name would settle what the "S" is, which is currently an
+  inference from which pages carry one.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
-  `0x0202e01c` is done - it is 32_PATTERN's, not the shared helper recon had
+  `0x0202e01c` and `0x02049150` are done - it is 32_PATTERN's, not the shared helper recon had
   it down as, and reading it corrected three sets of coordinates that had been
   tapped or measured. The other ten are in the table in section 6.
 - the per-frame screen updates. Stateful and allocating; this is where I

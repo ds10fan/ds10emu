@@ -1997,6 +1997,26 @@ Its build state also sets up the step grid:
 region at (45,35), 208 by 156, of 16 by 12 cells of 13 square. Measuring that
 off the rendered page had put the origin three pixels out in both axes.
 
+`0x02049150` is 71_KAOSS's constructor, and it names its top bar rather than
+leaving the icons to be guessed at:
+
+```
+%d        x = 4 + 21*n, y 2, 18 x 14, three of them        the pad's 1 2 3
+setting   x = 67,  28 x 14, captioned SET
+playmode  x = 98,  28 x 14, caption rewritten by the page
+rec       x = 162, 28 x 14, caption '}' - the record glyph
+FUN_02060330(pad, 0, 0x14, 0x100, 0xac)                    the pad itself
+```
+
+`playmode` is the SMT/HLD button, which ties it to the two spellings in the
+string pool - `OFF`/`TRIG`/`SMOOTH` at 0x02084b1c and `OFF`/`HLD`/`SMT` at
+0x02084b34 - and to the `PLAY MODE` line in the SET dialog. The button at
+x 131 is *not* here: the four editor screens share a prologue and it comes
+from there, which is also where the transport and the screen swap come from.
+
+The pad's own placement, `(0, 0x14, 0x100, 0xac)`, is the one this document
+already had.
+
 `0x02057f74` is 33_DRUM_SELECTER's, and it is a commit rather than a redraw:
 when the document's `+0x2ec` reaches 2 a drum has been picked, so it sets the
 current drum, reloads the patches, re-renders each drum's buffer
