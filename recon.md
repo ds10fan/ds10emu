@@ -2017,6 +2017,19 @@ from there, which is also where the transport and the screen swap come from.
 The pad's own placement, `(0, 0x14, 0x100, 0xac)`, is the one this document
 already had.
 
+`0x0204bff8` is 81_KEY's constructor, and its bar agrees with the pad's where
+they overlap:
+
+```
+octDown  (4,2)    28 x 14        octUp  (0x23,2)  28 x 14
+synth    (0x42,4) 70 x 12        rec    (0xa2,2)  32 x 16
+```
+
+The three-entry table this document already had for OCT- , OCT+ and the synth
+selector is exactly right. What was measured and is now read: those buttons'
+widths on the shared bar, and that x 162 is `rec` here too. x 131 is again
+absent, which is the third page to say the shared prologue places it.
+
 `0x02057f74` is 33_DRUM_SELECTER's, and it is a commit rather than a redraw:
 when the document's `+0x2ec` reaches 2 a drum has been picked, so it sets the
 current drum, reloads the patches, re-renders each drum's buffer

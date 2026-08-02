@@ -1454,12 +1454,15 @@ static const struct { const char *page; int x, w, id; } BAR_BUTTON[] = {
     {"71_KAOSS",     98, 28, DS10_BAR_RATE},
     {"71_KAOSS",    131, 28, DS10_BAR_SOLO},
     {"71_KAOSS",    162, 28, DS10_BAR_REC},
-    /* the keyboard */
-    {"81_KEY",        4, 27, DS10_BAR_OCT_DOWN},
-    {"81_KEY",       35, 27, DS10_BAR_OCT_UP},
-    {"81_KEY",       66, 60, DS10_BAR_SYNTH},
-    {"81_KEY",      131, 26, DS10_BAR_SOLO},
-    {"81_KEY",      162, 26, DS10_BAR_REC},
+    /* the keyboard, from its constructor 0x0204bff8: octDown and octUp 28 by
+     * 14, `synth` 70 by 12 at y 4, and `rec` 32 by 16 - the same name the pad
+     * gives the button in that slot. As on the pad, the one at 131 is not in
+     * the constructor and comes from the shared editor prologue. */
+    {"81_KEY",        4, 28, DS10_BAR_OCT_DOWN},
+    {"81_KEY",       35, 28, DS10_BAR_OCT_UP},
+    {"81_KEY",       66, 70, DS10_BAR_SYNTH},
+    {"81_KEY",      131, 28, DS10_BAR_SOLO},
+    {"81_KEY",      162, 32, DS10_BAR_REC},
     /* the two synth editors */
     {"61_SYN_EDIT", 162, 26, DS10_BAR_SOLO},
     {"70_PATCH",    162, 26, DS10_BAR_SOLO},
