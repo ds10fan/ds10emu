@@ -2017,6 +2017,27 @@ from there, which is also where the transport and the screen swap come from.
 The pad's own placement, `(0, 0x14, 0x100, 0xac)`, is the one this document
 already had.
 
+### The shared top bar
+
+Around `0x02053900` is the builder the pages share, and it registers every
+button on the bar by name - which settles the two that had been found by
+tapping and the several that had been read off their icons:
+
+```
+SOLO0 SOLO1 SOLO2   captioned "S"     x 131, three widgets, one per context
+AC0 AC1             captioned "CLR"
+PLAY                captioned "$"     the triangle
+PAGE                captioned "{"     the up and down arrows
+DECK
+```
+
+That is why `x 131` is in none of the screens' own constructors. It also
+confirms, independently, both of the hardware probes: `tools/probe_play.py`
+identified the triangle as the transport by watching the screen move, and
+`tools/probe_ram.py` plus the argument from which pages carry one identified
+the S as a solo. Three SOLO widgets rather than three states - the toggle the
+RAM probe saw was two-valued.
+
 `0x0204bff8` is 81_KEY's constructor, and its bar agrees with the pad's where
 they overlap:
 

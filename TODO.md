@@ -246,6 +246,11 @@ sixteen and checks our C reproduces every angle.
 - `0x02055b98`, the knob's value-to-angle map. Two things it settled that no
   rendered frame would have: the value is not clamped when the angle is
   computed, and the divide truncates toward zero.
+- the shared top bar, around `0x02053900`. Every button on it is registered by
+  name - SOLO0/1/2 captioned S, AC0/AC1 captioned CLR, PLAY, PAGE, DECK - which
+  is why x 131 is in no screen's own constructor, and which confirms both
+  hardware probes: the transport found by watching the screen move, and the
+  solo inferred from which pages carry one.
 - `0x0202e01c`, 32_PATTERN's constructor. Its widget table gives the sixteen
   pattern buttons, COPY and LOCK, and the mute and solo strip exactly; the
   probed pitch was one out in both axes.
@@ -271,18 +276,6 @@ sixteen and checks our C reproduces every angle.
   in one global. What 0..84 means in rows is the one piece left; 84 is
   7 x (24 - 12) but that is a guess. Checking it means watching the byte while
   dragging the bar on the hardware, which tools/probe_ram.py can do.
-- the editor screens' shared prologue, which is where the button at x 131 on
-  71_KAOSS and 81_KEY comes from, along with the transport and the screen
-  swap. Its widget name would settle what the "S" is, which is still only an
-  inference from which pages carry one.
-
-  A lead that is **not** an answer: there is a widget name `solo` at
-  0x02086d64, in a group with `multi`, `sync` and `option`, and captions
-  `SOLO0`/`SOLO1`/`SOLO2` at 0x02085cb4. But `multi` is multiplayer and
-  `option` is a settings word, so that group is most likely the settings
-  screen's, not the editor bar's. Three captions would also mean three states,
-  and tools/probe_ram.py saw the bar's S toggle between exactly two values
-  over four taps. Treat as unrelated until the prologue is read.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` and `0x02049150` are done - it is 32_PATTERN's, not the shared helper recon had

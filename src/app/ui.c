@@ -1411,22 +1411,27 @@ int ds10_ui_clear_hit(int x, int y)
  * the real thing answered a tap at both y 8 and y 15 (tools/probe_buttons.py)
  * and the drawn frame is only part of what it accepts.
  *
- * Two of these were unknown until they were tapped on the hardware:
+ * The bar the pages share is built around 0x02053900, and every button in it
+ * is registered by name, so what follows is read rather than inferred:
  *
- *   the triangle at x 193 is the transport. tools/probe_play.py taps it and
- *   watches for the screen to *move* rather than to differ - a running
- *   sequencer moves its cursor, and a single frame taken later can look
- *   identical to the baseline. It moves after the first tap and stops after
- *   the second.
+ *   SOLO0, SOLO1, SOLO2   captioned "S"     three of them, one per context
+ *   AC0, AC1              captioned "CLR"
+ *   PLAY                  captioned "$"     the triangle glyph
+ *   PAGE                  captioned "{"     the up and down arrows
+ *   DECK
  *
- *   the "S" changes nothing on screen at all, and tools/probe_ram.py - which
- *   diffs main RAM across a tap, masking whatever churns on its own - finds
- *   it toggling bit 1 of one global byte at 0x0208cf70 and nothing else, back
- *   and forth over four taps. What that byte means is not proven. It is taken
- *   here as SOLO for the track the page is editing, because it is on exactly
- *   those pages that edit one track and absent from every page that carries
- *   its own mute and solo strip: 51_ALL_DRUMS has one per drum row, 30_MIXER
- *   and 32_PATTERN have one per channel, and none of the three has an S.
+ * Two of those had been settled the hard way first, and the names agree with
+ * both. The triangle at x 193 is the transport: tools/probe_play.py taps it
+ * and watches for the screen to *move* rather than to differ, because a
+ * running sequencer moves its cursor and a single later frame can match the
+ * baseline exactly. And the "S" changes nothing on screen at all -
+ * tools/probe_ram.py found it toggling bit 1 of one byte at 0x0208cf70 and
+ * nothing else - so it was wired as solo on the argument that it is on
+ * exactly those pages that edit one track and absent from every page with a
+ * mute and solo strip of its own. SOLO0/1/2 says that was right.
+ *
+ * Three widgets rather than three states: the toggle the RAM probe saw was
+ * two-valued, and each page finds its own by name.
  */
 #define BAR_Y0 2
 #define BAR_Y1 18
