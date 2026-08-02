@@ -273,8 +273,16 @@ sixteen and checks our C reproduces every angle.
   dragging the bar on the hardware, which tools/probe_ram.py can do.
 - the editor screens' shared prologue, which is where the button at x 131 on
   71_KAOSS and 81_KEY comes from, along with the transport and the screen
-  swap. Its widget name would settle what the "S" is, which is currently an
+  swap. Its widget name would settle what the "S" is, which is still only an
   inference from which pages carry one.
+
+  A lead that is **not** an answer: there is a widget name `solo` at
+  0x02086d64, in a group with `multi`, `sync` and `option`, and captions
+  `SOLO0`/`SOLO1`/`SOLO2` at 0x02085cb4. But `multi` is multiplayer and
+  `option` is a settings word, so that group is most likely the settings
+  screen's, not the editor bar's. Three captions would also mean three states,
+  and tools/probe_ram.py saw the bar's S toggle between exactly two values
+  over four taps. Treat as unrelated until the prologue is read.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` and `0x02049150` are done - it is 32_PATTERN's, not the shared helper recon had
