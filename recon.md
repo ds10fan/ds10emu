@@ -1984,10 +1984,17 @@ are the two lane knob ids. So **byte 0 of each track's 12-byte per-pattern
 record is the piano roll's scroll position**, and it is per pattern and per
 track, and it is saved.
 
-What the 0..84 range means in rows is still not established: 84 is 7 x (24 -
-12), so seven units a row is the obvious reading, but that is a guess and the
-reimplementation keeps its own thirteen positions in a global until it is
-checked.
+What the 0..84 range means in rows is still not established, and the obvious
+reading is now **ruled out**. 84 is 7 x (24 - 12), so seven units a row looked
+likely. But the geometry is confirmed from two constructors - origin (5,31),
+span 144 - and the captured page draws the handle at y 97, which is
+
+    v = (97 - 31) * 84 / 144 = 38.5
+
+and 38 or 39 is not a multiple of seven. Whatever the unit is, a scroll
+position does not step by seven. The reimplementation keeps its own thirteen
+positions until this is settled, which means watching the byte at
+`pattern*676 + track*12 + 0x25C` while the bar is dragged.
 
 Two runs of sixteen sprites are built at the end, at y 3 with x from 22 and
 from 74, which is the top bar's two text fields.

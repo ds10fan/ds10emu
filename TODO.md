@@ -276,9 +276,12 @@ sixteen and checks our C reproduces every angle.
   **byte 0 of each track's 12-byte per-pattern record**, the block at `+0x25C`
   whose bytes 2 and 3 are already known to be the lane knob ids. So the scroll
   position is per pattern, per track, and saved - the reimplementation keeps it
-  in one global. What 0..84 means in rows is the one piece left; 84 is
-  7 x (24 - 12) but that is a guess. Checking it means watching the byte while
-  dragging the bar on the hardware, which tools/probe_ram.py can do.
+  in one global. What 0..84 means in rows is the one piece left, and the
+  obvious answer is now ruled out: the geometry is confirmed from two
+  constructors, and the handle the captured page draws at y 97 works out to
+  value 38 or 39, which is not a multiple of the seven that 84 = 7 x (24 - 12)
+  suggested. Settle it by watching the byte while dragging the bar -
+  tools/probe_ram.py already does that kind of thing.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` and `0x02049150` are done - it is 32_PATTERN's, not the shared helper recon had
