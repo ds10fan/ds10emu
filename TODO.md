@@ -298,8 +298,14 @@ read off thirteen pointers in a captured frame rather than decompiled, and it
 is still done in floating point.
 
 90_MAP's bottom bar has real widgets - `subSwing` at (76,176), `subTempo` at
-(135,176), `subStep`/`subSave` at (200,176) - and `ds10_ui_map_labels` draws
-text at positions taken from a capture instead. Cheap to correct next.
+(135,176), `subStep`/`subSave` at (200,176), with their captions at x 85, 147
+and 219, all y 177. Checked against `ds10_ui_map_labels`, which draws at x 27,
+117 and 176, y 177, and they are **not** the same thing: the ROM's are where
+the labels go, and the captured positions this reimplementation uses are where
+the *values* are drawn, by the screen's update rather than its constructor.
+Only the y agrees, and it agrees exactly. So there is nothing to correct here
+until the update is read - which is the third obvious-looking correction in
+this session that turned out to be wrong.
 
 Two holes that are engine rather than UI and are on the bit-exactness path:
 the document-to-runtime-pattern conversion (`build_rt` is mine, not
