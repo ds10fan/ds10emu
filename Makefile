@@ -9,10 +9,10 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: fonttest test-tables test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: fonttest test-uiknob test-tables test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-obj test-cell test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-obj test-cell test-uiknob test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -164,6 +164,18 @@ out/test_song: tests/test_song.c src/core/song.c src/core/md5.c \
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_song.c src/core/song.c src/core/md5.c \
 	    $(TBL_SRC)
+
+# The knob widget's angle map, against the original's own setter. The first
+# UI function verified against the ARM rather than against a screenshot.
+test-uiknob: out/test_uiknob tests/vectors/uiknob.bin
+	@./out/test_uiknob
+
+out/test_uiknob: tests/test_uiknob.c src/app/widget.c src/app/widget.h
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_uiknob.c src/app/widget.c
+
+tests/vectors/uiknob.bin: extract tools/oracle.py tools/emu.py
+	@$(PY) tools/oracle.py ui-vectors
 
 test-tables: out/test_tables
 	@./out/test_tables
@@ -346,6 +358,7 @@ out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 # Needs the Emscripten SDK; source its emsdk_env.sh, or point EMCC at emcc.
 EMCC ?= emcc
 WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
+          src/app/widget.c \
           src/app/editor.c \
           src/gfx/nds2d.c src/gfx/nitro.c \
           src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
@@ -404,9 +417,11 @@ PORT ?= 8537
 # out. ds10view writes PPMs; the wasm build produces the same pixels.
 ds10view: out/ds10view
 out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c src/app/cell.c \
+              src/app/widget.c src/app/widget.h \
               src/gfx/nds2d.c src/gfx/nitro.c
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/app/obj.c \
+	    src/app/widget.c \
 	    src/app/cell.c src/gfx/nds2d.c src/gfx/nitro.c -lm
 
 # The browser build against songplay, sample for sample. Needs node and the

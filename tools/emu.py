@@ -10,6 +10,7 @@ achievable rather than approximate.
 Usage:
     python3 tools/emu.py smoke              # prove the memory image is sane
     python3 tools/emu.py call <addr> [args...]
+    python3 tools/emu.py seeded <snap> <addr> [args...]   # against real RAM
 """
 import os
 import struct
@@ -184,6 +185,38 @@ def build(cpu="arm7", trace_io=False):
     return uc, loaded, io
 
 
+def seed(uc, snap, cpu="arm9"):
+    """Overwrite the image with a real machine's memory, from a snapshot.
+
+    The static images this harness loads are the ROM as it was linked: no
+    heap, no objects, no registry. A function that only reads its arguments
+    runs fine against that, which is why the DSP work never needed more. A
+    screen's does not - it walks a widget registry and dereferences objects
+    that only exist once the game has run.
+
+    So this takes a snapshot from `ndsref -m`, which dumps all 4 MB of main
+    RAM alongside OAM, and writes it over the top. What the function then
+    sees is the machine as melonDS had it at that frame, and any object it is
+    handed is the game's own.
+
+    VRAM is deliberately not seeded. The nine banks are mapped by VRAMCNT into
+    overlapping regions, so writing them somewhere flat would be a guess; no
+    function verified this way reads VRAM, and one that did would need the
+    bank mapper from src/gfx/nds2d.c rather than a memcpy.
+
+    `snap` is a tools/snap.Snapshot. Returns what it wrote.
+    """
+    if not snap.ram:
+        raise SystemExit("the snapshot carries no main RAM - pass -m to ndsref")
+    ram = snap.ram[:0x00400000]
+    uc.mem_write(0x02000000, ram)
+    wrote = [("main ram", 0x02000000, len(ram))]
+    if cpu == "arm9":
+        uc.mem_write(0x07000000, snap.oam)
+        wrote.append(("oam", 0x07000000, len(snap.oam)))
+    return wrote
+
+
 def call(uc, addr, args=(), max_insns=2_000_000):
     """Call addr(args...) with an AAPCS-ish setup; return r0.
 
@@ -236,6 +269,18 @@ def cmd_call(cpu, addr, *args):
     print(f"r0 = {r0:#x} ({r0})")
 
 
+def cmd_seeded(path, addr, *args):
+    """Call an ARM9 function against a real machine's memory."""
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import snap as snapmod
+
+    uc, _loaded, _io = build("arm9")
+    for what, at, n in seed(uc, snapmod.load(path)):
+        print(f"  seeded {what:9} @ {at:#010x}  {n} bytes")
+    r0 = call(uc, int(addr, 0), [int(a, 0) for a in args])
+    print(f"r0 = {r0:#x} ({r0})")
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
@@ -244,6 +289,8 @@ def main():
         cmd_smoke()
     elif sys.argv[1] == "call":
         cmd_call(*sys.argv[2:])
+    elif sys.argv[1] == "seeded":
+        cmd_seeded(*sys.argv[2:])
     else:
         print(__doc__)
         return 1

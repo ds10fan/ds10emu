@@ -1418,6 +1418,61 @@ def cmd_obj_vectors(path="tests/vectors/obj.bin"):
     print(f"{path}: {len(OBJ_CASES)} widgets")
 
 
+# --- the knob widget's angle map ---------------------------------------------
+#
+# 0x02055b98 is what every screen with a knob calls to give one a value. It is
+# the first UI function taken function-by-function rather than by matching a
+# screenshot, and it is a good first one because it is stateful - it writes
+# nine fields into the widget object - while touching nothing else, so it runs
+# with an empty object and nothing else set up.
+#
+#   +0x1C min          +0x20 max          +0x28 value, clamped into [min,max]
+#   +0x94 start angle  +0x98 half sweep   +0x9C full sweep   +0xA0 max - min
+#   +0x82 the angle, which is what the sprite's affine matrix is built from
+#   +0xA4 reverse flag, read not written: set, the sweep runs the other way
+#
+# The angle is 16-bit units of a turn:
+#
+#   half  = (sweep / 2) * 0x10000 / 360        (a magic-multiply by 0xB60B60B7)
+#   angle = (0x10000 - half) + 2*half * (value - min) / (max - min)
+#
+# which for the 270 every screen passes is 0xA000 + 0xC000 * frac - 225 degrees
+# at the minimum sweeping 270 clockwise. The divide is the compiler's signed
+# helper at 0x0200c158, so it truncates toward zero.
+WIDGET_KNOB_SET = 0x02055B98
+WIDGET_OBJ = 0x0F00F800
+
+# min, max, value, sweep, reverse. The ranges are the real ones from the knob
+# descriptors - 0..127, 0..1 for a switch, 0..4 for a selector - plus values
+# outside them, because the clamp is part of what is being checked.
+WIDGET_KNOB_CASES = []
+for _sweep in (270, 360, 180, 90):
+    for _lo, _hi in ((0, 127), (0, 1), (0, 4), (-64, 63), (1, 6), (0, 150)):
+        for _rev in (0, 1):
+            for _v in (_lo - 5, _lo, _lo + 1, (_lo + _hi) // 2, _hi - 1, _hi,
+                       _hi + 5):
+                WIDGET_KNOB_CASES.append((_lo, _hi, _v, _sweep, _rev))
+
+
+def cmd_ui_vectors(path="tests/vectors/uiknob.bin"):
+    """Every case through the original's own knob setter."""
+    uc, _loaded, _io = emu.build("arm9")
+    with open(path, "wb") as f:
+        f.write(b"KNB1")
+        f.write(struct.pack("<I", len(WIDGET_KNOB_CASES)))
+        for lo, hi, v, sweep, rev in WIDGET_KNOB_CASES:
+            uc.mem_write(WIDGET_OBJ, b"\0" * 0x100)
+            Oracle._w32(uc, WIDGET_OBJ + 0xA4, rev)
+            emu.call(uc, WIDGET_KNOB_SET, (WIDGET_OBJ, lo, hi, v, sweep))
+            angle = struct.unpack("<h", uc.mem_read(WIDGET_OBJ + 0x82, 2))[0]
+            got = struct.unpack("<5i", uc.mem_read(WIDGET_OBJ + 0x94, 20))
+            clamp = struct.unpack("<i", uc.mem_read(WIDGET_OBJ + 0x28, 4))[0]
+            f.write(struct.pack("<5i", lo, hi, v, sweep, rev))
+            f.write(struct.pack("<ihh", clamp, angle, 0))
+            f.write(struct.pack("<5i", *got))
+    print(f"{path}: {len(WIDGET_KNOB_CASES)} knob settings")
+
+
 # --- the cell expander -------------------------------------------------------
 #
 # 0x02069564 turns an NCER cell into OAM entries, optionally through a 2x2
@@ -2626,6 +2681,7 @@ def main():
             "replay-vectors": cmd_replay_vectors,
             "tables": cmd_tables,
             "obj-vectors": cmd_obj_vectors,
+            "ui-vectors": cmd_ui_vectors,
             "cell-vectors": cmd_cell_vectors,
             "songrender-vectors": cmd_songrender_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:

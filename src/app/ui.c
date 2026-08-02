@@ -20,6 +20,7 @@
 #include <math.h>
 
 #include "ui.h"
+#include "widget.h"
 #include "cell.h"
 #include "obj.h"
 #include "../gfx/nitro.h"
@@ -278,13 +279,12 @@ static const char *const KNOB_NAME[31] = {
  * that sweep, several sit exactly on its end stops, and OCTAVE - whose 0 is
  * the midpoint of its -2..2 range - has the identity matrix.
  */
-#define PTR_SWEEP_START 225.0
 #define PTR_TILE 0x21A
 #define PTR_PAL 3
 #define PTR_PRIO 2
 #define PTR_W 8
 #define PTR_H 16
-#define PTR_SWEEP 270.0
+#define PTR_SWEEP 270   /* the sweep every screen passes 0x02055b98 */
 /* The pointer sprite does not spin in place: its centre orbits the knob's,
  * because the game rotates about the knob centre and the sprite's own centre
  * is offset from that. The offset is this vector turned by the same angle.
@@ -329,15 +329,15 @@ void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
 {
     uint8_t *oam = u->gpu.oam;
     size_t i;
-    double frac, deg;
+    double deg;
 
     if (range < 2) range = 2;
-    /* The original divides by max - min, which is one less than the range the
-     * knob descriptors carry. */
-    frac = (double)(value - lo) / (double)(range - 1);
-    if (frac < 0.0) frac = 0.0;
-    if (frac > 1.0) frac = 1.0;
-    deg = PTR_SWEEP_START + frac * PTR_SWEEP;
+    /* The angle is the original's own, decompiled from 0x02055b98: 16-bit
+     * units of a turn, signed, and the value deliberately not clamped. The
+     * knob descriptors carry a count, so the maximum is lo + range - 1. See
+     * src/app/widget.c; degrees are only what the matrix below wants. */
+    deg = ds10_widget_knob_angle(lo, lo + range - 1, value, (int)PTR_SWEEP, 0)
+          * 360.0 / 65536.0;
 
     for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
         ds10_obj o;
