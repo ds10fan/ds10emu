@@ -2084,6 +2084,22 @@ when the document's `+0x2ec` reaches 2 a drum has been picked, so it sets the
 current drum, reloads the patches, re-renders each drum's buffer
 (`0x0206dfcc` per drum, then `0x0206ec10`) and rebuilds the screen.
 
+`0x020594d4` is 62_DRUM_SEQ's constructor. It places the four row pairs in a
+loop - `0x0202ee0c` at x 3 and `0x0202e750` at x 22, both y = 33 + 13*row and
+19 by 13, the 13 being the grid's own row pitch - which is what 51_ALL_DRUMS
+shows down the left of its grid and what had been measured off a render at
+17 by 11.
+
+It also places the scrollbar, and agrees with the synth sequencer's exactly:
+
+```
+FUN_0203a530(bar, 5, 0x1f, 0x18, 0x9c, 5, ...)   x 5, y 31, 24 rows, 156 tall
+FUN_02039188(bar, 0, 0x54, FUN_02034500(doc, 0), 0x90)
+```
+
+Same origin, same 0..84 over a 144-pixel span, and the same document field 0 -
+so the scroll position is one field serving both sequencer pages.
+
 `0x0205a384` is 62_DRUM_SEQ's, and it is the sequencer's shape again: a
 sub-mode dispatch in the running state, and a grid placed by
 `FUN_0205fdc4(scroller, 0x2d, 0x23, 0xd0, 0x34, 0x10, 4)` - the same origin

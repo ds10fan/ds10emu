@@ -1836,7 +1836,11 @@ static const struct {
      * also why the mute and solo pass at 0x0206724c splits on bit 4 of the
      * widget index - the two rows are numbered n and n + 16. */
     {"32_PATTERN",     3, 160, 40, 10, 43, 6, 0, 11},
-    {"51_ALL_DRUMS",   3,  34, 17, 11, 0, 4, 19, 0},
+    /* From the drum sequencer's constructor 0x020594d4, which places the four
+     * pairs in a loop: x 3 and x 22, y = 33 + 13*row, each 19 by 13. The
+     * 13 is the grid's own row pitch, and the rows sit two pixels above the
+     * grid cells they belong to. */
+    {"51_ALL_DRUMS",   3,  33, 19, 13, 0, 4, 19, 0},
 };
 
 int ds10_ui_ms_hit(const char *page, int x, int y, int *track)

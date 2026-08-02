@@ -251,6 +251,9 @@ sixteen and checks our C reproduces every angle.
   is why x 131 is in no screen's own constructor, and which confirms both
   hardware probes: the transport found by watching the screen move, and the
   solo inferred from which pages carry one.
+- `0x020594d4`, 62_DRUM_SEQ's constructor: the four row pairs that 51_ALL_DRUMS
+  shows down the left of its grid, and the scrollbar again - same origin, same
+  0..84, same document field 0 as the synth sequencer's.
 - `0x0202e01c`, 32_PATTERN's constructor. Its widget table gives the sixteen
   pattern buttons, COPY and LOCK, and the mute and solo strip exactly; the
   probed pitch was one out in both axes.
@@ -276,10 +279,6 @@ sixteen and checks our C reproduces every angle.
   in one global. What 0..84 means in rows is the one piece left; 84 is
   7 x (24 - 12) but that is a guess. Checking it means watching the byte while
   dragging the bar on the hardware, which tools/probe_ram.py can do.
-- 51_ALL_DRUMS' four row buttons, still measured. Its constructor has not been
-  located and the buttons are placed in a loop, so the immediate-x scan that
-  found the shared bar does not reach them; 62_DRUM_SEQ's `0x020594d4` is the
-  place to start, since the two are the same screen family.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` and `0x02049150` are done - it is 32_PATTERN's, not the shared helper recon had
