@@ -1968,10 +1968,26 @@ FUN_02039188(screen+0x390, 0, 0x54, <from the document>, 0x90)
   gives;
 - `+0x44C` = 12 and `+0x448` = `+0x39C` = 24 are those row counts directly.
 
-What the 0..84 value *means* is not established. 84 is exactly 7 x (24 - 12),
-so a scroll position times seven is the obvious reading, but the getter has not
-been traced and this is not implemented on that guess - the reimplementation
-still maps its own 13 positions onto the handle it measured.
+Where the value comes from *is* now established, and it is in the song:
+
+```
+FUN_02034500(store, 0)                       r1 = 0 at the call site
+  -> (*0x0206b0c0)(store + 0x20 + deck * 0x43040, 0)     deck flag at +0x8cd9c
+  -> ldrb [base + 0x40000 + 0x310 + pattern*676 + track*12]
+     pattern at base + 0x40050, track at base + 0x40054
+```
+
+676 is the pattern stride and 12 the per-track record. The live model's header
+is 0xB4 where the file's is 0xEC, and 0x310 - 0xB4 = **0x25C** - exactly the
+per-track records this document already had at `+0x25C`, whose bytes 2 and 3
+are the two lane knob ids. So **byte 0 of each track's 12-byte per-pattern
+record is the piano roll's scroll position**, and it is per pattern and per
+track, and it is saved.
+
+What the 0..84 range means in rows is still not established: 84 is 7 x (24 -
+12), so seven units a row is the obvious reading, but that is a guess and the
+reimplementation keeps its own thirteen positions in a global until it is
+checked.
 
 Two runs of sixteen sprites are built at the end, at y 3 with x from 22 and
 from 74, which is the top bar's two text fields.

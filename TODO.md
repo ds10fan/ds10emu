@@ -264,10 +264,13 @@ sixteen and checks our C reproduces every angle.
 - the registry - `0x02029db4` insert, `0x0202b198` remove, the lookup and the
   per-class maps.
 - 60_SYN_SEQ's scrollbar. `0x02050108` gives its origin (5,31), its 144-pixel
-  span and its 0..84 value range, and `ds10_ui_seq_scroll_*` still uses the
-  geometry measured off a render. What the 0..84 means is the missing piece -
-  84 is 7 x (24 - 12), but the document getter at `0x02034500` has not been
-  traced and guessing it would be the same mistake as measuring.
+  span and its 0..84 range, and the getter chain is traced to the byte: it is
+  **byte 0 of each track's 12-byte per-pattern record**, the block at `+0x25C`
+  whose bytes 2 and 3 are already known to be the lane knob ids. So the scroll
+  position is per pattern, per track, and saved - the reimplementation keeps it
+  in one global. What 0..84 means in rows is the one piece left; 84 is
+  7 x (24 - 12) but that is a guess. Checking it means watching the byte while
+  dragging the bar on the hardware, which tools/probe_ram.py can do.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` is done - it is 32_PATTERN's, not the shared helper recon had
