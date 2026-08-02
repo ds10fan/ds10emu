@@ -1314,18 +1314,23 @@ int ds10_ui_drumseq_hit(int x, int y, int *step, int *row)
 
 /* 32_PATTERN's sixteen buttons, four by four.
  *
- * This page does not use the shared widget helper either, so the grid comes
- * from tapping the real thing rather than from a table: tools/probe_buttons.py
- * sweeps a row and a column and reports where the selection moves. The
- * columns break between x 64 and 69, 129 and 134, 194 and 199 - a pitch of 65
- * - and the rows between y 56 and 60, 88 and 92, 120 and 124, a pitch of 32.
- * The origins below are the boundaries those bracket; the probe stepped by
- * four and five, so they are good to about that.
+ * Read out of the page's own constructor, 0x0202e01c, which recon had filed
+ * as a shared widget helper rather than a screen. It places sixteen widgets
+ * named PAT%02d at x = 6 + 63*(n%4), y = 24 + 33*(n/4), each 55 by 27.
+ *
+ * These were tapped before they were read - tools/probe_buttons.py found the
+ * columns breaking between x 64 and 69, 129 and 134, 194 and 199, and the rows
+ * between y 56 and 60, 88 and 92, 120 and 124. Those brackets agree with the
+ * gaps the real rectangles leave (61..69, 124..132, 187..195), so the probe
+ * was right about where the boundaries are; the pitch it implied, 65 and 32,
+ * was one out.
  */
-#define PAT_X0 2
-#define PAT_Y0 26
-#define PAT_XSTEP 65
-#define PAT_YSTEP 32
+#define PAT_X0 6
+#define PAT_Y0 24
+#define PAT_W 55
+#define PAT_H 27
+#define PAT_XSTEP 63
+#define PAT_YSTEP 33
 #define PAT_COLS 4
 #define PAT_ROWS 4
 
@@ -1337,6 +1342,9 @@ int ds10_ui_pattern_hit(int x, int y)
     c = (x - PAT_X0) / PAT_XSTEP;
     r = (y - PAT_Y0) / PAT_YSTEP;
     if (c >= PAT_COLS || r >= PAT_ROWS) return -1;
+    /* The gaps between the buttons are not part of any of them. */
+    if (x - PAT_X0 - c * PAT_XSTEP >= PAT_W) return -1;
+    if (y - PAT_Y0 - r * PAT_YSTEP >= PAT_H) return -1;
     return r * PAT_COLS + c;
 }
 
@@ -1349,11 +1357,13 @@ void ds10_ui_pattern_box(int n, int *x, int *y)
 }
 
 /* The marker on the selected pattern. The captured page has CHARACTER_c cell
- * 20 at (6,24), which is the first box's origin plus (4,-2) - so that offset
- * is what puts it on any of them. */
+ * 20 at (6,24), which is exactly the first button's origin now that the origin
+ * is the constructor's rather than the probe's - so the marker sits on the
+ * button, with no offset. The (4,-2) that used to be here was the difference
+ * between the two origins. */
 #define PAT_MARK_CELL 20
-#define PAT_MARK_DX 4
-#define PAT_MARK_DY -2
+#define PAT_MARK_DX 0
+#define PAT_MARK_DY 0
 #define PAT_MARK_BASE 0x200   /* CHARACTER_c's tile base, as everywhere */
 
 void ds10_ui_pattern_mark(ds10_ui *u, int n)
@@ -1452,8 +1462,10 @@ static const struct { const char *page; int x, w, id; } BAR_BUTTON[] = {
     {"33_DRUM_SELECTER",  4, 27, DS10_BAR_EDIT},
     {"33_DRUM_SELECTER", 162, 26, DS10_BAR_REC},
     /* the pattern picker, and the song */
-    {"32_PATTERN",    4, 27, DS10_BAR_COPY},
-    {"32_PATTERN",   34, 32, DS10_BAR_LOCK},
+    /* COPY and LOCK are in 32_PATTERN's constructor table at 0x020845dc,
+     * 28 by 14 each. */
+    {"32_PATTERN",    4, 28, DS10_BAR_COPY},
+    {"32_PATTERN",   35, 28, DS10_BAR_LOCK},
     {"31_SONG",     162, 26, DS10_BAR_CLR},
 };
 
@@ -1804,7 +1816,12 @@ static const struct {
     int x, y, w, h, step, rows, solo_dx, solo_dy;
 } MS_STRIP[] = {
     {"30_MIXER",       3,  62, 34, 9, 43, 6, 0, 11},
-    {"32_PATTERN",     3, 160, 34, 9, 43, 6, 0, 11},
+    /* 32_PATTERN's is its constructor's, not a measurement: twelve widgets
+     * per row named tm%d and ts%d at x = 3 + 43*n, y 160 and 171, 40 by 10.
+     * Twelve because the PLUS has a second deck; six are on screen. Which is
+     * also why the mute and solo pass at 0x0206724c splits on bit 4 of the
+     * widget index - the two rows are numbered n and n + 16. */
+    {"32_PATTERN",     3, 160, 40, 10, 43, 6, 0, 11},
     {"51_ALL_DRUMS",   3,  34, 17, 11, 0, 4, 19, 0},
 };
 

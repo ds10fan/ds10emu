@@ -246,6 +246,9 @@ sixteen and checks our C reproduces every angle.
 - `0x02055b98`, the knob's value-to-angle map. Two things it settled that no
   rendered frame would have: the value is not clamped when the angle is
   computed, and the divide truncates toward zero.
+- `0x0202e01c`, 32_PATTERN's constructor. Its widget table gives the sixteen
+  pattern buttons, COPY and LOCK, and the mute and solo strip exactly; the
+  probed pitch was one out in both axes.
 - `0x02022ba4` with `0x02011fc4` and `0x02011fd0`, the affine matrix every
   rot/scale sprite is drawn with, and the ROM's sine table at `0x0207A3D8`
   that feeds it. This one makes the case for the whole exercise: the `cos()`
@@ -262,6 +265,9 @@ sixteen and checks our C reproduces every angle.
   per-class maps.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
+  `0x0202e01c` is done - it is 32_PATTERN's, not the shared helper recon had
+  it down as, and reading it corrected three sets of coordinates that had been
+  tapped or measured. The other ten are in the table in section 6.
 - the per-frame screen updates. Stateful and allocating; this is where I
   expect to stall, and stalling should be said rather than papered over with
   another screenshot comparison.

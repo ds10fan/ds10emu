@@ -1883,7 +1883,23 @@ behaviour lives. All twelve are located:
 | 33_DRUM_SELECTER | `0x020572b0` | `0x02057f74` | 388 | `0x02057a74` `0x0205830c` |
 | settings | `0x02039e68` | `0x0203ac3c` | 280 | `0x0203ac30` `0x0203ad54` `0x0203ad5c` `0x0203ad68` `0x0203ad70` |
 
-`0x0202e01c` is a shared widget helper, not a screen.
+`0x0202e01c` is **32_PATTERN's constructor**, not the shared widget helper it
+was filed as here. Its table is at `0x020845dc`, 28 bytes an entry - x, y, w,
+h, the caption's offset, then the name - and it places:
+
+- COPY at (4,2) and LOCK at (35,2), both 28 by 14;
+- sixteen `PAT%02d` at x = 6 + 63*(n%4), y = 24 + 33*(n/4), 55 by 27,
+  captioned `pat %d`;
+- two rows of twelve, `tm%d` and `ts%d`, at x = 3 + 43*n, y 160 and 171, 40 by
+  10, captioned M and S. Twelve because the PLUS has a second deck; the widget
+  index is n and n + 16, which is why the mute and solo pass at `0x0206724c`
+  splits on bit 4 of it;
+- a `ptdeck` button at (0xa2,2), 28 by 14, only when `0x020338ec` says the
+  document has the second deck.
+
+Three of those had been measured or tapped instead. The button grid's pitch was
+one out in both axes, and the marker offset that compensated for it went to
+zero when the origin was corrected.
 
 The eleven fall into three kinds:
 
