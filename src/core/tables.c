@@ -9,12 +9,12 @@ enum {
     T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,
     T_MOD_A, T_MOD_B, T_COEF,
     T_FX_PHASE, T_FX_FLANGER_FB, T_FX_DEPTH, T_FX_DELAY_DIV, T_FX_LFO_RATE,
-    T_DRUM_PITCH,
+    T_DRUM_PITCH, T_SINCOS,
     T_COUNT
 };
 
 static const int WIDE[T_COUNT] = {
-    4, 4, 4, 4, 4, 4, 4, 2, 2, 4, 4, 2, 2, 4, 4, 4
+    4, 4, 4, 4, 4, 4, 4, 2, 2, 4, 4, 2, 2, 4, 4, 4, 2
 };
 
 /* Parse a table image already in memory. The views point into a copy this
@@ -121,6 +121,7 @@ int ds10_tables_parse(ds10_table_set *s, const unsigned char *data, size_t len)
     s->fx.delay_div = ptr[T_FX_DELAY_DIV];
     s->fx.lfo_rate = ptr[T_FX_LFO_RATE];
     s->drum_pitch = ptr[T_DRUM_PITCH];
+    s->sincos = ptr[T_SINCOS];
     return 0;
 }
 

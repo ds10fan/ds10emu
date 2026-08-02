@@ -1,6 +1,8 @@
 /* Decompiled widget functions. See widget.h for what belongs here. */
 #include "widget.h"
 
+#include "../core/tables_data.h"
+
 /* 0x02055b98's clamp, which is the order the original writes it in: above the
  * maximum first, then below the minimum, so a min above the max yields the
  * min. */
@@ -42,4 +44,18 @@ int16_t ds10_widget_knob_angle(int min, int max, int value, int sweep,
      * faulting, which is what a knob whose minimum equals its maximum gets. */
     term = range ? span * d / range : 0;
     return (int16_t)(start + term);
+}
+
+void ds10_widget_affine(int16_t angle, int32_t sx, int32_t sy, int32_t *m)
+{
+    int idx = ((uint16_t)angle >> 4) & 0xFFF;
+    int32_t sn = ds10_tbl_sincos[idx * 2];
+    int32_t cs = ds10_tbl_sincos[idx * 2 + 1];
+
+    /* 0x02011fc4 lays the rotation out in this order, and 0x02011fd0 scales
+     * the first pair by sx and the second by sy. */
+    m[0] = (int32_t)(((int64_t)sx * cs) >> 12);
+    m[1] = (int32_t)(((int64_t)sx * sn) >> 12);
+    m[2] = (int32_t)(((int64_t)sy * -sn) >> 12);
+    m[3] = (int32_t)(((int64_t)sy * cs) >> 12);
 }

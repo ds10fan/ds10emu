@@ -313,15 +313,14 @@ static void write_affine_mtx(uint8_t *oam, int slot, const int32_t *mtx)
     }
 }
 
-static void write_affine(uint8_t *oam, int slot, double deg)
+/* The matrix is the original's own now - the ROM's sine table indexed by the
+ * angle, at unit scale - so the pointer is exact rather than approximately
+ * right. See ds10_widget_affine. */
+static void write_affine(uint8_t *oam, int slot, int16_t angle)
 {
-    double c = cos(deg * PTR_PI / 180.0), s = sin(deg * PTR_PI / 180.0);
-    /* The DS stores the inverse transform. */
-    int32_t m[4] = {
-        (int32_t)lrint(c * 4096.0), (int32_t)lrint(s * 4096.0),
-        (int32_t)lrint(-s * 4096.0), (int32_t)lrint(c * 4096.0),
-    };
+    int32_t m[4];
 
+    ds10_widget_affine(angle, 0x1000, 0x1000, m);
     write_affine_mtx(oam, slot, m);
 }
 
@@ -329,15 +328,16 @@ void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
 {
     uint8_t *oam = u->gpu.oam;
     size_t i;
+    int16_t angle;
     double deg;
 
     if (range < 2) range = 2;
-    /* The angle is the original's own, decompiled from 0x02055b98: 16-bit
-     * units of a turn, signed, and the value deliberately not clamped. The
-     * knob descriptors carry a count, so the maximum is lo + range - 1. See
-     * src/app/widget.c; degrees are only what the matrix below wants. */
-    deg = ds10_widget_knob_angle(lo, lo + range - 1, value, (int)PTR_SWEEP, 0)
-          * 360.0 / 65536.0;
+    /* Both of these are the original's own now, decompiled: the angle from
+     * 0x02055b98 in 16-bit units of a turn, and the matrix from the ROM's
+     * sine table. The knob descriptors carry a count, so the maximum is
+     * lo + range - 1. Degrees are only for the orbit below. */
+    angle = ds10_widget_knob_angle(lo, lo + range - 1, value, PTR_SWEEP, 0);
+    deg = angle * 360.0 / 65536.0;
 
     for (i = 0; i < sizeof SYN_KNOB / sizeof SYN_KNOB[0]; i++) {
         ds10_obj o;
@@ -366,7 +366,7 @@ void ds10_ui_knob_value(ds10_ui *u, int id, int value, int lo, int range)
         o.big = 0;
         ds10_obj_build(&o);
         memcpy(oam + slot * 8, o.oam, 6);
-        write_affine(oam, u->knob_affine[i], deg);
+        write_affine(oam, u->knob_affine[i], angle);
     }
 }
 

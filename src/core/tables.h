@@ -24,6 +24,8 @@ typedef struct {
     ds10_fx_tables fx;
     /* Drum playback rates, indexed by note - root + 64. Entry 64 is unity. */
     const uint32_t *drum_pitch;
+    /* The sine/cosine table every rot/scale sprite's matrix comes out of. */
+    const int16_t *sincos;
     /* The state the original's constructors leave a voice, a mixer and an
      * effect in. None of them is zero, and starting from a memset does not
      * reproduce the original. */

@@ -1340,6 +1340,11 @@ TABLES = [
     ("fx_delay_div", 0x0207F144, 12, "i"),
     ("fx_lfo_rate", 0x0207FFC4, 128, "i"),
     ("drum_pitch", 0x0207ED38, 128, "i"),
+    # The NitroSDK sine/cosine table, interleaved s16 in 4.12, 0x1000 entries
+    # of each. Every rot/scale sprite's matrix comes out of it: the widget's
+    # angle indexes it at angle >> 4. Not audio, but it is a ROM table the
+    # engine indexes and this is where those live.
+    ("sincos", 0x0207A3D8, 0x2000, "h"),
 ]
 
 
@@ -1513,6 +1518,47 @@ def cmd_ui_live(snapshot, path="tests/vectors/uilive.bin"):
             f.write(struct.pack("<ihh", clamp, angle, 0))
             f.write(struct.pack("<5i", *got))
     print(f"{path}: {len(found)} live widgets, {len(cases)} settings")
+
+
+# The affine matrix every rot/scale sprite is drawn with. 0x02022ba4 reads the
+# sine table at angle >> 4, 0x02011fc4 lays the pair out as {cos, sin, -sin,
+# cos} and 0x02011fd0 scales the first row by sx and the second by sy. It
+# builds two matrices from the one angle - the forward one and the same with
+# the scales inverted - and OAM takes the inverse.
+WIDGET_AFFINE = 0x02022BA4
+AFF_FWD = 0x0F00FA00
+AFF_INV = 0x0F00FA40
+AFF_W = 0x0F00FA80
+
+
+def cmd_ui_affine(path="tests/vectors/uiaffine.bin"):
+    """Every angle in the table, at a few scales, through the original."""
+    uc, _loaded, _io = emu.build("arm9")
+    cases = []
+    for sx, sy in ((0x1000, 0x1000), (0x800, 0x1000), (0x1000, 0x2000),
+                   (0x1800, 0x0C00)):
+        # Every sixteenth angle plus the ones around each quadrant, which is
+        # where a sign or an index is most likely to be off by one.
+        angles = list(range(0, 0x10000, 16))
+        for q in (0, 0x4000, 0x8000, 0xC000):
+            angles += [(q - 2) & 0xFFFF, (q - 1) & 0xFFFF, q, q + 1, q + 2]
+        for a in sorted(set(angles)):
+            cases.append((a, sx, sy))
+    with open(path, "wb") as f:
+        f.write(b"AFF1")
+        f.write(struct.pack("<I", len(cases)))
+        for a, sx, sy in cases:
+            uc.mem_write(AFF_W, b"\0" * 0x20)
+            uc.mem_write(AFF_W + 2, struct.pack("<H", a))
+            Oracle._w32(uc, AFF_W + 4, sx)
+            Oracle._w32(uc, AFF_W + 8, sy)
+            emu.call(uc, WIDGET_AFFINE, (0, AFF_FWD, AFF_INV, AFF_W))
+            fwd = struct.unpack("<4i", uc.mem_read(AFF_FWD, 16))
+            inv = struct.unpack("<4i", uc.mem_read(AFF_INV, 16))
+            f.write(struct.pack("<3i", a, sx, sy))
+            f.write(struct.pack("<4i", *fwd))
+            f.write(struct.pack("<4i", *inv))
+    print(f"{path}: {len(cases)} matrices")
 
 
 def cmd_ui_vectors(path="tests/vectors/uiknob.bin"):
@@ -2744,6 +2790,7 @@ def main():
             "obj-vectors": cmd_obj_vectors,
             "ui-vectors": cmd_ui_vectors,
             "ui-live": cmd_ui_live,
+            "ui-affine": cmd_ui_affine,
             "cell-vectors": cmd_cell_vectors,
             "songrender-vectors": cmd_songrender_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:

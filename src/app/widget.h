@@ -38,6 +38,24 @@
 int16_t ds10_widget_knob_angle(int min, int max, int value, int sweep,
                                int reverse);
 
+/* The affine matrix for a sprite turned by that angle, in 20.12.
+ *
+ * From 0x02022ba4, which is what every rot/scale sprite goes through:
+ *
+ *   idx = angle >> 4                    the table has 0x1000 entries a turn
+ *   m   = {cos, sin, -sin, cos}         0x02011fc4
+ *   m   = {sx*m0, sx*m1, sy*m2, sy*m3}  0x02011fd0, each >> 12
+ *
+ * `sx` and `sy` are 20.12 scales; 0x1000 is unity. The original builds two
+ * matrices from one angle - the forward one and the same with the scales
+ * inverted (0x1000000/s) - and OAM takes the inverse. At unit scale they are
+ * identical, which is every knob in this ROM.
+ *
+ * The sine table is the ROM's own, ds10_tbl_sincos, so this is exact rather
+ * than a call to cos() that lands on the same pixel most of the time.
+ */
+void ds10_widget_affine(int16_t angle, int32_t sx, int32_t sy, int32_t *m);
+
 /* The pieces of that the original also writes into the widget, exposed
  * because they are what a test compares and what a caller drawing a scale
  * would want: the half sweep, and the value clamped into [min, max]. */

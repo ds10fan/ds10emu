@@ -101,6 +101,18 @@ A drum is not synthesised per note: its patch is rendered once into a
 one-second buffer at note 60 and the voice resamples that buffer at this
 rate. Entry 64 is exactly 1024, unity, so the root note plays back
 untouched."""),
+    ("sincos", "int16_t", 2, "sincos", "0x0207A3D8", """\
+The NitroSDK sine and cosine table, interleaved, 0x1000 of each.
+
+Entries are 4.12, so 4096 is one. A widget's angle is 16-bit units of a turn
+and this has 0x1000 entries, so the index is angle >> 4: sine at [idx*2] and
+cosine at [idx*2+1]. Every rot/scale sprite's affine matrix is built from a
+pair out of here - 0x02022ba4 reads them, 0x02011fc4 lays them out as
+{cos, sin, -sin, cos} and 0x02011fd0 applies the scale.
+
+It is exactly round(sin(2*pi*i/0x1000) * 4096) with no rounding quirks, and
+cos is sin a quarter turn along, both checked against the ROM. It is stored
+whole anyway, so the indexing here reads the way the ARM does."""),
 ]
 
 # What follows the tables in the file, all of it 32-bit.

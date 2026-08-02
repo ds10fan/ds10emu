@@ -241,15 +241,21 @@ game's own sixteen knob widgets in it, call `0x02055b98` on one at its real
 address, and the object updates in place - `make test-uilive` does that for all
 sixteen and checks our C reproduces every angle.
 
-**Done:** `0x02055b98`, the knob's value-to-angle map. Two things it settled
-that no rendered frame would have: the value is not clamped when the angle is
-computed, and the divide truncates toward zero.
+**Done:**
+
+- `0x02055b98`, the knob's value-to-angle map. Two things it settled that no
+  rendered frame would have: the value is not clamped when the angle is
+  computed, and the divide truncates toward zero.
+- `0x02022ba4` with `0x02011fc4` and `0x02011fd0`, the affine matrix every
+  rot/scale sprite is drawn with, and the ROM's sine table at `0x0207A3D8`
+  that feeds it. This one makes the case for the whole exercise: the `cos()`
+  and `sin()` it replaces disagreed with the ROM's table on **16777 of the
+  65536 angles**, by one unit of 8.8 - and every captured frame happened to
+  land on an angle where they agreed, so `test-page` was and stayed green
+  either way.
 
 **Next, in this order:**
 
-- the sine table the affine matrix is built from. `ds10_ui_knob_value` still
-  calls `cos()`/`sin()`, so the pointer's matrix is approximate even though its
-  angle is now exact.
 - the rest of the widget object: its constructor, its update, and the path
   from it to OAM. `src/app/obj.c` is the layer below and is already verified.
 - the registry - `0x02029db4` insert, `0x0202b198` remove, the lookup and the
@@ -259,6 +265,11 @@ computed, and the divide truncates toward zero.
 - the per-frame screen updates. Stateful and allocating; this is where I
   expect to stall, and stalling should be said rather than papered over with
   another screenshot comparison.
+
+Still approximate in `ds10_ui_knob_value`: the pointer sprite's *position*.
+Its centre orbits the knob's by (3,-7) turned through the angle, which was
+read off thirteen pointers in a captured frame rather than decompiled, and it
+is still done in floating point.
 
 Two holes that are engine rather than UI and are on the bit-exactness path:
 the document-to-runtime-pattern conversion (`build_rt` is mine, not

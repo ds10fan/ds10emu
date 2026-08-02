@@ -76,6 +76,7 @@ int main(void)
     C32(fx.delay_div, fx_delay_div, 12);
     C32(fx.lfo_rate, fx_lfo_rate, 128);
     C32(drum_pitch, drum_pitch, 128);
+    C16(sincos, sincos, 0x2000);
     C32(voice_init, voice_init, DS10_VOICE_STATE_FIELDS);
     C32(mixer_init, mixer_init, 21);
     C32(fx_init, fx_init, 40);
@@ -89,7 +90,7 @@ int main(void)
                         "tools/mktables.py\n", fails);
         return 1;
     }
-    printf("PASS: %d entries over 21 tables, built in matches the file\n",
+    printf("PASS: %d entries over 22 tables, built in matches the file\n",
            checked);
     return 0;
 }
