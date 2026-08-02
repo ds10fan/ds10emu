@@ -1951,6 +1951,31 @@ per page variant, which is what the constructor's six-name table was for:
 2 -> 0x02051630   5 -> 0x02051774(screen, 1)
 ```
 
+Its constructor `0x02050108` is read now, and it settles the scrollbar, which
+had been measured off a rendered page:
+
+```
+FUN_02039188(screen+0x390, 0, 0x54, <from the document>, 0x90)
+```
+
+- the slider is the one `ds10_ui_slider_pos` is decompiled from, so this is
+  min 0, max 84, a value the document holds (`0x02034500` fetches it) and a
+  span of 144 pixels;
+- its origin is `+0x41C`/`+0x420` = 0x5000, 0x1f000 in 20.12, i.e. **(5, 31)**,
+  which agrees with the handle measured at x 5..15;
+- `+0x3A0` = 156 is the visible height and `+0x3A8` = 312 the scrollable one,
+  twelve and twenty-four rows of 13 - the same numbers the grid constructor
+  gives;
+- `+0x44C` = 12 and `+0x448` = `+0x39C` = 24 are those row counts directly.
+
+What the 0..84 value *means* is not established. 84 is exactly 7 x (24 - 12),
+so a scroll position times seven is the obvious reading, but the getter has not
+been traced and this is not implemented on that guess - the reimplementation
+still maps its own 13 positions onto the handle it measured.
+
+Two runs of sixteen sprites are built at the end, at y 3 with x from 22 and
+from 74, which is the top bar's two text fields.
+
 Its build state also sets up the step grid:
 `FUN_0205fdc4(scroller, 0x2d, 0x23, 0xd0, 0x9c, 0x10, 0xc)` - a scrollable
 region at (45,35), 208 by 156, of 16 by 12 cells of 13 square. Measuring that

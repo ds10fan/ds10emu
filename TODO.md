@@ -263,6 +263,11 @@ sixteen and checks our C reproduces every angle.
   from it to OAM. `src/app/obj.c` is the layer below and is already verified.
 - the registry - `0x02029db4` insert, `0x0202b198` remove, the lookup and the
   per-class maps.
+- 60_SYN_SEQ's scrollbar. `0x02050108` gives its origin (5,31), its 144-pixel
+  span and its 0..84 value range, and `ds10_ui_seq_scroll_*` still uses the
+  geometry measured off a render. What the 0..84 means is the missing piece -
+  84 is 7 x (24 - 12), but the document getter at `0x02034500` has not been
+  traced and guessing it would be the same mistake as measuring.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` is done - it is 32_PATTERN's, not the shared helper recon had
