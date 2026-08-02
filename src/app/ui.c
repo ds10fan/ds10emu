@@ -1414,11 +1414,17 @@ int ds10_ui_clear_hit(int x, int y)
  * The bar the pages share is built around 0x02053900, and every button in it
  * is registered by name, so what follows is read rather than inferred:
  *
- *   SOLO0, SOLO1, SOLO2   captioned "S"     three of them, one per context
- *   AC0, AC1              captioned "CLR"
+ *   SOLO0, SOLO1, SOLO2   captioned "S"     x 131
+ *   AC0, AC1              captioned "CLR"   x 131
+ *   DECK                                    x 131
+ *   PAGE                  captioned "{"     x 42, the sub-mode cycle
  *   PLAY                  captioned "$"     the triangle glyph
- *   PAGE                  captioned "{"     the up and down arrows
- *   DECK
+ *   menu, swap0, swap1                      x 224, the up and down arrows
+ *
+ * So x 131 is one slot that different pages fill differently - solo on the
+ * editor screens, CLR on the sequencer, the deck button elsewhere - which is
+ * why the per-page table below has to exist at all. Which page gets which is
+ * read off the captions the rendered pages draw.
  *
  * Two of those had been settled the hard way first, and the names agree with
  * both. The triangle at x 193 is the transport: tools/probe_play.py taps it

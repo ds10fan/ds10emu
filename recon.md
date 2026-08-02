@@ -2059,12 +2059,26 @@ button on the bar by name - which settles the two that had been found by
 tapping and the several that had been read off their icons:
 
 ```
-SOLO0 SOLO1 SOLO2   captioned "S"     x 131, three widgets, one per context
-AC0 AC1             captioned "CLR"
+SOLO0 SOLO1 SOLO2   captioned "S"     x 131
+AC0 AC1             captioned "CLR"   x 131
+DECK                                  x 131
+PAGE                captioned "{"     x 42, the sub-mode cycle
 PLAY                captioned "$"     the triangle
-PAGE                captioned "{"     the up and down arrows
-DECK
+menu swap0 swap1                      x 224, the up and down arrows
 ```
+
+x 131 is one slot that different pages fill differently - solo on the editor
+screens, CLR on the sequencer, the deck button elsewhere. Which page gets
+which still comes from the captions the rendered pages draw; what the ROM
+gives is the set and the slots.
+
+Scanning every call to the three placers for an immediate x turns up twenty
+statically-placed widgets in all. Besides the bar: `ptdeck`, `fxdeck` and
+`mxdeck` at x 14 on their pages; `bright0`/`bright1`/`bright2` at 95 and 177
+on the settings screen; and 90_MAP's bottom row - `subSwing` captioned SWING
+at (76,176), `subTempo` at (135,176) and `subStep`/`subSave` at (200,176),
+which is the bar `ds10_ui_map_labels` currently draws text into at guessed
+positions.
 
 That is why `x 131` is in none of the screens' own constructors. It also
 confirms, independently, both of the hardware probes: `tools/probe_play.py`

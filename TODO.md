@@ -247,7 +247,8 @@ sixteen and checks our C reproduces every angle.
   rendered frame would have: the value is not clamped when the angle is
   computed, and the divide truncates toward zero.
 - the shared top bar, around `0x02053900`. Every button on it is registered by
-  name - SOLO0/1/2 captioned S, AC0/AC1 captioned CLR, PLAY, PAGE, DECK - which
+  name - SOLO0/1/2 and AC0/AC1 and DECK all at x 131, PAGE at 42, PLAY, and
+  menu/swap0/swap1 at 224 - which
   is why x 131 is in no screen's own constructor, and which confirms both
   hardware probes: the transport found by watching the screen move, and the
   solo inferred from which pages carry one.
@@ -295,6 +296,10 @@ Still approximate in `ds10_ui_knob_value`: the pointer sprite's *position*.
 Its centre orbits the knob's by (3,-7) turned through the angle, which was
 read off thirteen pointers in a captured frame rather than decompiled, and it
 is still done in floating point.
+
+90_MAP's bottom bar has real widgets - `subSwing` at (76,176), `subTempo` at
+(135,176), `subStep`/`subSave` at (200,176) - and `ds10_ui_map_labels` draws
+text at positions taken from a capture instead. Cheap to correct next.
 
 Two holes that are engine rather than UI and are on the bit-exactness path:
 the document-to-runtime-pattern conversion (`build_rt` is mine, not
