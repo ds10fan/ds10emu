@@ -224,6 +224,46 @@ Remaining, roughly in order:
 - **Which octave the keyboard starts on.** The layout says it starts on an F;
   F3 is an assumption, not a reading.
 
+## 6b. Decompiling the UI, function by function
+
+A different standard from the rest of section 6. The screens there were
+reimplemented from decompiled coordinate tables and from tapping the hardware,
+and checked by rendering a frame and diffing it against a capture - which
+proves the captured states and nothing else. `src/app/widget.c` is for
+functions read out of the ARM and run against the original under Unicorn, and
+a function without a passing differential test does not go in it.
+
+**The harness is proven.** `tools/emu.py seed` writes 4 MB of a melonDS RAM
+dump over the static image, so a function that dereferences objects the linker
+never created can be called at all; `tools/snapui.py` captures a page with its
+main RAM. Demonstrated end to end: seed from a 61_SYN_EDIT capture, find the
+game's own sixteen knob widgets in it, call `0x02055b98` on one at its real
+address, and the object updates in place - `make test-uilive` does that for all
+sixteen and checks our C reproduces every angle.
+
+**Done:** `0x02055b98`, the knob's value-to-angle map. Two things it settled
+that no rendered frame would have: the value is not clamped when the angle is
+computed, and the divide truncates toward zero.
+
+**Next, in this order:**
+
+- the sine table the affine matrix is built from. `ds10_ui_knob_value` still
+  calls `cos()`/`sin()`, so the pointer's matrix is approximate even though its
+  angle is now exact.
+- the rest of the widget object: its constructor, its update, and the path
+  from it to OAM. `src/app/obj.c` is the layer below and is already verified.
+- the registry - `0x02029db4` insert, `0x0202b198` remove, the lookup and the
+  per-class maps.
+- the screen constructors. They are table walks, which is the tractable part,
+  and success means `data/pages.bin` can be deleted rather than replayed.
+- the per-frame screen updates. Stateful and allocating; this is where I
+  expect to stall, and stalling should be said rather than papered over with
+  another screenshot comparison.
+
+Two holes that are engine rather than UI and are on the bit-exactness path:
+the document-to-runtime-pattern conversion (`build_rt` is mine, not
+decompiled), and where a pen edit reaches the document.
+
 ## 7. Longer term
 
 - **Fuzz the vector corpus.** Coverage is only what I sweep, and the inputs are

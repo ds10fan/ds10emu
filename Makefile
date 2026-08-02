@@ -9,7 +9,7 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: fonttest test-uiknob test-tables test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: fonttest test-uiknob test-uilive test-tables test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-obj test-cell test-uiknob test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -176,6 +176,18 @@ out/test_uiknob: tests/test_uiknob.c src/app/widget.c src/app/widget.h
 
 tests/vectors/uiknob.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py ui-vectors
+
+# The same function against a running machine's own widgets, at their real
+# addresses, with Unicorn seeded from a melonDS RAM dump. Needs the ROM.
+test-uilive: out/test_uiknob tests/vectors/uilive.bin
+	@./out/test_uiknob tests/vectors/uilive.bin
+
+out/snapui/synedit/script.txt: tools/snapui.py out/ndsref
+	@$(PY) tools/snapui.py synedit
+
+tests/vectors/uilive.bin: out/snapui/synedit/script.txt tools/oracle.py \
+                          tools/emu.py tools/snap.py
+	@$(PY) tools/oracle.py ui-live $$(ls out/snapui/synedit/*.snap | tail -1)
 
 test-tables: out/test_tables
 	@./out/test_tables

@@ -1454,6 +1454,67 @@ for _sweep in (270, 360, 180, 90):
                 WIDGET_KNOB_CASES.append((_lo, _hi, _v, _sweep, _rev))
 
 
+def _live_knobs(ram):
+    """Every knob widget in a RAM dump: the ones 0x02055b98 has been called on.
+
+    Identified by the two fields it derives from a 270 degree sweep - the
+    start angle 0xA000 at +0x94 and the full sweep 0xC000 at +0x9C - plus the
+    range at +0xA0 agreeing with the min and max at +0x1C. Three fields that
+    have to be consistent with each other is enough that a false positive
+    would have to be a widget.
+    """
+    out = []
+    for off in range(0, len(ram) - 0xB0, 4):
+        if ram[off + 0x94:off + 0x98] != b"\x00\xa0\x00\x00":
+            continue
+        if ram[off + 0x9C:off + 0xA0] != b"\x00\xc0\x00\x00":
+            continue
+        lo, hi = struct.unpack_from("<ii", ram, off + 0x1C)
+        rng = struct.unpack_from("<i", ram, off + 0xA0)[0]
+        if hi - lo == rng and 0 < rng < 400:
+            out.append((0x02000000 + off, lo, hi))
+    return out
+
+
+def cmd_ui_live(snapshot, path="tests/vectors/uilive.bin"):
+    """The same knob setter, but called on a running machine's own widgets.
+
+    tools/oracle.py ui-vectors runs the function against a zeroed object in an
+    otherwise empty image, which is enough for a function that only touches
+    what it is handed. This is the other half of the argument: seed Unicorn
+    with 4 MB of a real machine's RAM (tools/snapui.py captures it), find the
+    game's own knob widgets in it, and drive those at their real addresses.
+
+    The output is the same KNB1 format, so the same test binary reads it -
+    only where the cases came from differs.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import snap as snapmod
+
+    s = snapmod.load(snapshot)
+    uc, _loaded, _io = emu.build("arm9")
+    emu.seed(uc, s)
+    found = _live_knobs(s.ram)
+    if not found:
+        raise SystemExit(f"{snapshot}: no knob widgets - is it a page with any?")
+    cases = []
+    for addr, lo, hi in found:
+        for v in (lo, lo + 1, (lo + hi) // 2, hi - 1, hi, hi + 3):
+            cases.append((addr, lo, hi, v))
+    with open(path, "wb") as f:
+        f.write(b"KNB1")
+        f.write(struct.pack("<I", len(cases)))
+        for addr, lo, hi, v in cases:
+            emu.call(uc, WIDGET_KNOB_SET, (addr, lo, hi, v, 270))
+            angle = struct.unpack("<h", uc.mem_read(addr + 0x82, 2))[0]
+            got = struct.unpack("<5i", uc.mem_read(addr + 0x94, 20))
+            clamp = struct.unpack("<i", uc.mem_read(addr + 0x28, 4))[0]
+            f.write(struct.pack("<5i", lo, hi, v, 270, 0))
+            f.write(struct.pack("<ihh", clamp, angle, 0))
+            f.write(struct.pack("<5i", *got))
+    print(f"{path}: {len(found)} live widgets, {len(cases)} settings")
+
+
 def cmd_ui_vectors(path="tests/vectors/uiknob.bin"):
     """Every case through the original's own knob setter."""
     uc, _loaded, _io = emu.build("arm9")
@@ -2682,6 +2743,7 @@ def main():
             "tables": cmd_tables,
             "obj-vectors": cmd_obj_vectors,
             "ui-vectors": cmd_ui_vectors,
+            "ui-live": cmd_ui_live,
             "cell-vectors": cmd_cell_vectors,
             "songrender-vectors": cmd_songrender_vectors}
     if len(sys.argv) < 2 or sys.argv[1] not in cmds:
