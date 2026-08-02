@@ -2017,6 +2017,34 @@ from there, which is also where the transport and the screen swap come from.
 The pad's own placement, `(0, 0x14, 0x100, 0xac)`, is the one this document
 already had.
 
+### The widget placers
+
+Reading five constructors turns up the same handful of calls, which is the
+shared machinery the screens are built out of. Each takes the widget, then a
+rectangle, then the name and caption pointers:
+
+```
+0x0202e750(w, 0, x, y, cw, ch, name, cap)    place, one class
+0x0202ee0c(w, 0, x, y, cw, ch, name, cap)    place, another class
+0x020299bc(w, 0, x, y, cw, ch, name, cap, 0) place, a third
+0x0202e9d4 / 0x0202a33c / 0x02029c24         set the hit box
+0x0202ebd0 / 0x0202f07c / 0x02029c5c         set the caption and its position
+0x02029d7c / 0x02029d88                      enable, and set the lit state
+0x0202ee04 / 0x02029dac                      set the widget's index
+0x02029c54                                   set its class
+0x02029db4(registry, w, name)                register it
+```
+
+Which class a screen uses seems to follow the button's artwork rather than its
+behaviour: 32_PATTERN's sixteen buttons and 71_KAOSS's `rec` go through
+`0x0202e750`, its `setting` and `playmode` through `0x0202ee0c`, and the pad's
+three slot buttons through `0x020299bc`.
+
+Scanning every call to the three placers for an immediate x is how the shared
+bar below was found. It does not find widgets placed in a loop with computed
+coordinates - 51_ALL_DRUMS' four row buttons are one such case, and are still
+measured off a render.
+
 ### The shared top bar
 
 Around `0x02053900` is the builder the pages share, and it registers every

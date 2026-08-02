@@ -276,6 +276,10 @@ sixteen and checks our C reproduces every angle.
   in one global. What 0..84 means in rows is the one piece left; 84 is
   7 x (24 - 12) but that is a guess. Checking it means watching the byte while
   dragging the bar on the hardware, which tools/probe_ram.py can do.
+- 51_ALL_DRUMS' four row buttons, still measured. Its constructor has not been
+  located and the buttons are placed in a loop, so the immediate-x scan that
+  found the shared bar does not reach them; 62_DRUM_SEQ's `0x020594d4` is the
+  place to start, since the two are the same screen family.
 - the screen constructors. They are table walks, which is the tractable part,
   and success means `data/pages.bin` can be deleted rather than replayed.
   `0x0202e01c` and `0x02049150` are done - it is 32_PATTERN's, not the shared helper recon had
