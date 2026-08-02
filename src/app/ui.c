@@ -1835,7 +1835,11 @@ static const struct {
     const char *page;
     int x, y, w, h, step, rows, solo_dx, solo_dy;
 } MS_STRIP[] = {
-    {"30_MIXER",       3,  62, 34, 9, 43, 6, 0, 11},
+    /* The mixer's strip is placed in a loop at 0x02065ed8, x = n*43 + 3 with
+     * the size as immediates - 40 by 10, the same as 32_PATTERN's and the
+     * same widget name, tm%d. Measured off the frames it looked 34 by 9,
+     * which is the drawn box rather than the hit box. */
+    {"30_MIXER",       3,  62, 40, 10, 43, 6, 0, 11},
     /* 32_PATTERN's is its constructor's, not a measurement: twelve widgets
      * per row named tm%d and ts%d at x = 3 + 43*n, y 160 and 171, 40 by 10.
      * Twelve because the PLUS has a second deck; six are on screen. Which is

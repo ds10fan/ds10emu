@@ -2052,6 +2052,12 @@ bar below was found. It does not find widgets placed in a loop with computed
 coordinates - 51_ALL_DRUMS' four row buttons are one such case, and are still
 measured off a render.
 
+30_MIXER's mute and solo strip is placed in a loop at `0x02065ed8`, named
+`tm%d` as 32_PATTERN's is, with `x = n*43 + 3` and the size as immediates -
+40 by 10, the same. Both had been measured off a render at 34 by 9, which is
+the drawn box and not the hit box. 33_DRUM_SELECTER's `EDIT` and `rec` are at
+`0x020572f4` and `0x02057460`.
+
 ### The shared top bar
 
 Around `0x02053900` is the builder the pages share, and it registers every
