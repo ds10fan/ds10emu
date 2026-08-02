@@ -270,7 +270,9 @@ sixteen and checks our C reproduces every angle.
 
 **Next, in this order:**
 
-- the rest of the widget object: its constructor, its update, and the path
+- the rest of the widget object. Its constructor `0x0202e750` is read and the
+  field layout is in recon; what is left is the update and the OAM emit, the
+  layer above `src/app/obj.c`: its constructor, its update, and the path
   from it to OAM. `src/app/obj.c` is the layer below and is already verified.
 - the registry - `0x02029db4` insert, `0x0202b198` remove, the lookup and the
   per-class maps.

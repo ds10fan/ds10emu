@@ -53,6 +53,13 @@ int16_t ds10_widget_knob_angle(int min, int max, int value, int sweep,
  *
  * The sine table is the ROM's own, ds10_tbl_sincos, so this is exact rather
  * than a call to cos() that lands on the same pixel most of the time.
+ *
+ * The two functions in this file are one path in the original: the widget
+ * constructor at 0x0202e750 puts the angle at +0x82 and both scales at +0x84
+ * and +0x88, 0x02055b98 writes the angle there, and 0x02022ba4 is handed
+ * widget + 0x80 and reads all three. Unit scale is the constructor's default,
+ * which is why every knob in this ROM has the forward and inverse matrices
+ * coincide.
  */
 void ds10_widget_affine(int16_t angle, int32_t sx, int32_t sy, int32_t *m);
 

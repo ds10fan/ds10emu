@@ -2024,6 +2024,39 @@ from there, which is also where the transport and the screen swap come from.
 The pad's own placement, `(0, 0x14, 0x100, 0xac)`, is the one this document
 already had.
 
+### The widget object
+
+`0x0202e750(w, kind, x, y, cw, ch, name, cap)` is the constructor, and it maps
+the object out:
+
+```
++0x04 x        +0x08 y        +0x0C cw       +0x10 ch    +0x14/+0x18  cw*2, ch*2
++0x1C min = 0  +0x20 max = 1  +0x28 value    +0x38 name (sprintf'd from the fmt)
++0x7C kind     +0x80 0x44     +0x82 angle    +0x84/+0x88 scale x, y = 0x1000
++0x8C/+0x90    x, y in 20.12
++0xA4/+0xA8    x + 0x12, y + 2 - where its sprite run starts
++0xAC priority +0xB0 tile base +0xB4 palette
++0xC0..+0xD0   the OAM attribute pieces
++0xD4          a 0x100-byte OAM buffer, malloc'd    +0xD8 32 entries
++0xDC 1        the x step between them              +0xE4 caption
+```
+
+Two things this settles.
+
+**The registry's split.** `+0x7C` is the `kind` argument, so which of the four
+maps a widget lands in is chosen by the caller at construction, not derived.
+
+**The knob chain closes.** `FUN_02022ba4` reads its angle at `+2` and its
+scales at `+4` and `+8` of what it is handed - which is `widget + 0x80`, so
+those are `+0x82`, `+0x84` and `+0x88`. That is exactly the field
+`0x02055b98` writes the angle into. So knob value -> `0x02055b98` -> `+0x82`
+-> `0x02022ba4` -> the sine table -> the affine matrix -> OAM is one path, and
+both ends of it are now differentially verified against the ARM.
+
+The constructor initialises the angle to 0 and both scales to 0x1000, which is
+why every knob in this ROM is drawn at unit scale and why the forward and
+inverse matrices coincide.
+
 ### The widget placers
 
 Reading five constructors turns up the same handful of calls, which is the
