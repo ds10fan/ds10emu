@@ -41,6 +41,7 @@ syn1  note D5 D6 C3 -    | -    .  .  .  | .  .  .  .
 drum1 note x  .  x  .    | x    .  x  .  | x  .  x  .
 syn1  lane1 knob=cutoff 0=69 1=62
 mix route=drums vol=105,105,104,105,66,105
+view 46,3,11,12,1,0,2,0,0 31,3,11,12,1,0,2,0,0 36,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1,0,0 57,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1,0,0
 ```
 
 ## What it compiles to
@@ -59,6 +60,7 @@ mix route=drums vol=105,105,104,105,66,105
 | `syn1 name "XLEAD"` | payload `+0x2BFC` + pattern*48 | `58 4c 45 41 44 00` |
 | `syn1 lane1 knob=cutoff 0=69 1=62` | pattern `+0x1C2` | raw 69, 62, then -1 for the rest; knob 11 on every step |
 | `mix route=drums vol=…` | pattern `+0x242`, 25 knobs | knob 0=3 (drums), 17..22=105,105,104,105,66,105 |
+| `view 46,3,11,12,…` | pattern `+0x25C`, six 12-byte editor records | track 0: scroll 46, then the bytes the ROM reads |
 
 The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + step*4`:
 
@@ -109,9 +111,9 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `<track> patch …` / `mod …` | `+0x004`, 31 knobs per synth track |
 | `<track> name "…"` | payload `+0x2BFC + N*48 + track*8` |
 | `<track> note/gate/vel/pan …` | `+0x042 + track*64 + step*4` |
-| `<track> laneL knob=K S=V …` | `+0x1C2 + track*64 + step*4` |
+| `<track> laneL knob=K S=V …` | `+0x1C2 + track*64 + step*4`; `S=V` per step that has a value |
 | `mix …` / `fx …` | `+0x242`, 25 knobs |
-| `scroll A B C D E F` | `+0x25C + track*12`, each track's piano-roll position |
+| `view <t0> … <t5>` | `+0x25C + track*12`, nine bytes per track, comma-separated |
 
 Tracks are `syn1`, `syn2`, `drum1`..`drum4`. Lanes are `lane1`, `lane2`, on synth
 tracks only.
@@ -134,6 +136,25 @@ tracks only.
 not a tie keeps its note name: `x x x` under `retrig` is three hits, `x - -` would
 be one held sample.
 
+## `view` — the editor records
+
+One line per pattern, one comma-separated group per track, nine bytes each. They
+are editor state, not music, and they repeat from pattern to pattern, which is why
+they are one line rather than six.
+
+| position | byte in the record | what |
+|---|---|---|
+| 0 | 0 | piano-roll scroll, 0..84 counting upward |
+| 1 | 1 | read by the ROM, not named. 2..5 on a synth track, 0 on a drum one |
+| 2, 3 | 2, 3 | a copy of the two lanes' knob ids — agrees with the lane array in 94% of cases and is *not* what playback reads |
+| 4..7 | 4..7 | read, not named |
+| 8 | 9 | read, not named. 0 or 0xFF |
+
+Bytes 8, 10 and 11 of the record are not in the line: the accessor family at
+`0x0206B100` has a variant for displacements `0x310`..`0x317` and `0x319` and none
+for those three, and they are zero in all 1744 patterns here. Naming this line
+took the `raw` lines of a clean dump from 54 per song to 2.
+
 ## Gates
 
 Sub-tick counts are for a straight step of 12 (24 per step pair, split by swing).
@@ -145,7 +166,14 @@ Sub-tick counts are for a straight step of 12 (24 per step pair, split by swing)
 | `100%` | 4 | 11 | a tick short, so the next note articulates |
 | `tie` | 5 | 13 | outlives the step; an identical next step is held, not restarted |
 | `retrig` | 6 | — | restrikes, never auto-releases: the sample plays out |
-| `hold` | 0xFF | — | sounds until an empty step releases it; no button, in no file |
+| `hold` | 0xFF | — | sounds until an empty step releases it |
+
+`retrig` is the drum tracks': 12691 drum steps and no synth step in the ROM or in
+the 108 saved songs use it. `hold` is in no file at all and the interface has no
+button for it - the one way it could reach a pattern is record mode, where
+`0x0206E5AC` writes the live keyboard's gate into the step it is passing
+(`rec[1] = live_gate`), so a note still held down has no gate to record yet. Both
+are readable and writable here, and neither is exercised by any real data.
 
 ## Synth knobs
 
@@ -210,9 +238,18 @@ The 25 at pattern `+0x242`, from the dispatch at `0x020736C0`.
 | 7 | `fx fb=` | feedback |
 | 8 | `fx wet=` | dry/wet; forced to 0 when the route is `off` |
 | 9..14 | `mix pan=` | pan for syn1, syn2, drum1..4 - `value*258`, linear |
-| 15, 16 | `fx k15= k16=` | forwarded to the effect, which has no parameter there; 127 or 0 in every song |
+| 15, 16 | `fx k15= k16=` | nonexistent parameters: the mixer forwards them to the effect, whose setter has nothing at 15 or 16, so they are stored and never act. 127 or 0 in every song, and kept only because they are in the file |
 | 17..22 | `mix vol=` | volume, same channel order - `value^2 * 0x10404 >> 15`, quadratic |
 | 23, 24 | - | the setter returns early above 22; zero in all 1744 patterns |
+## Lanes never retarget
+
+A lane's knob id is stored on all 16 steps, but the machine is only ever set up
+from step 0 (`0x0206DEE4`), so the target cannot change inside a pattern and the
+format writes it once, as `knob=`. 31 of the 6912 lane slots in `data/saves` do
+hold a second id on their later steps - what the editor left behind when the
+target was changed - and those come back as `raw` lines rather than as syntax for
+something the engine cannot do.
+
 ## Defaults
 
 Written only when a field differs. Percentages are over `data/saves` and the ROM's
@@ -232,18 +269,23 @@ demos: 109 songs, 1744 patterns, 165888 steps.
 | name | absent | most of the six per-pattern name fields are empty |
 
 A name is six raw bytes, not a C string: padding is `0x08` as often as NUL, and one
-factory patch is `CPU\0 1`. `\b` in a quoted name is the game's blank glyph and is
-kept — dropping it changes the file.
+factory patch is `CPU\0 1`. `\b` is that `0x08`, and it is kept because dropping it
+changes the file. It is not a space: the interface's own font has no glyph mapped
+at `0x08`, so it advances nothing at all — `out/fonttest fonts.NFTR $'A\bA'`
+renders exactly what `AA` does, while `A A` leaves a gap.
 
 ## The instrument bank
 
 Save-level, not song-level: 24 slots at `0x38000`, stride `0x100`, shared by all 18
-songs and referenced by none of them. `sav.py unpack` writes it to `bank.ds10patch.txt`, one
-line per written slot, absent slots omitted.
+songs and referenced by none of them. `sav.py unpack` writes it to
+`bank.ds10patch.txt` in the same shape a pattern has — a section and its lines —
+with the slots nobody has used simply absent.
 
 ```
-instrument 3 "TANK\01" vco2pitch=30 balance=51 sync=on cutoff=55 peak=71 drive=48
-instrument 3 mod vco2p=saw:+16 cutoff=sine:+8
+[instrument 3]
+name "TANK\01"
+patch vco2pitch=30 balance=51 sync=on cutoff=55 peak=71 drive=48
+mod vco2p=saw:+16 cutoff=sine:+8
 ```
 
 ## Exactness

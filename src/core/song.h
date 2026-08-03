@@ -82,10 +82,13 @@ typedef struct {
     /* +0x242  the mixer's 25 knobs, pushed in on a pattern change by 0x0206EC10.
      * Signed, because that pusher reads them with ldrsb. */
     int8_t mixer[DS10_SONG_MIX_KNOBS];
-    /* +0x25B. Mostly unnamed, but the 12-byte per-track records start one
-     * byte in, at +0x25C: byte 0 of each is how far that track's piano roll
-     * is scrolled (0..84, counting upward - see ds10_editor_get_scroll) and
-     * bytes 2 and 3 are its two automation lanes' knob ids. */
+    /* +0x25B: a zero byte, then six 12-byte per-track editor records at
+     * +0x25C. The accessor family at 0x0206B100 reads bytes 0..7 and 9 of a
+     * record, one variant per displacement: byte 0 is how far that track's
+     * piano roll is scrolled (0..84, counting upward - see
+     * ds10_editor_get_scroll), bytes 2 and 3 are a copy of its two automation
+     * lanes' knob ids, and the rest are read but not named. Bytes 8, 10 and 11
+     * have no accessor and are zero in every pattern in data/saves. */
     uint8_t params[0x62 - DS10_SONG_MIX_KNOBS];
 } ds10_song_pattern;
 
@@ -100,8 +103,11 @@ typedef struct {
     uint16_t chain[DS10_SONG_CHAIN];                          /* +0x24 */
     ds10_song_pattern pattern[DS10_SONG_PATTERNS];            /* +0xEC */
 
-    /* 0x2B2C to the end of the payload: three more blocks the serializer copies
-     * (160, 48 and 768 bytes) plus the PLUS-only 224. Round-tripped verbatim. */
+    /* 0x2B2C to the end of the payload. The 160 is the four drum patches and
+     * their nine extra bytes each (both read by 0x0206B9DC); the 48 and the 768
+     * are name fields, six per row at an 8-byte stride, one row for the running
+     * machines and then one row per pattern. The PLUS-only 224 is unnamed.
+     * Round-tripped verbatim either way. */
     uint8_t tail[DS10_SONG_TAIL_MAX];
     uint32_t payload_len;   /* file length minus the 16-byte hash */
 } ds10_song;

@@ -537,7 +537,12 @@ static void parse_grid(int kind, char **tok, int n, uint8_t *pat, int track)
 /* ------------------------------------------------------------------- lanes */
 
 /* One automation lane: its knob, then only the steps that have a value. -1 is
- * "no automation here", which is three quarters of them. */
+ * "no automation here", which is three quarters of them.
+ *
+ * The knob id sits on every step, but the machine is only set up from step 0
+ * (0x0206DEE4), so a lane cannot retarget mid-pattern. The 31 slots in the saves
+ * that hold a second id on their later steps are what the editor left behind when
+ * the target changed, and they come back as `raw` lines. */
 static int lane_text(const uint8_t *pat, int track, int lane, char *out)
 {
     const uint8_t *base = pat + P_LANE + track * 64;
@@ -552,19 +557,11 @@ static int lane_text(const uint8_t *pat, int track, int lane, char *out)
                 KNOB_NAME[knob]);
     else
         sprintf(out, "%s lane%d knob=%d", TRACK_NAME[track], lane + 1, knob);
-    for (s = 0; s < NSTEPS; s++) {
+    for (s = 0; s < NSTEPS; s++)
         if (base[s * 4 + lane] != NO_NOTE) {
             sprintf(tok, " %d=%d", s, base[s * 4 + lane]);
             strcat(out, tok);
         }
-        if (base[s * 4 + 2 + lane] != knob) {
-            int k = base[s * 4 + 2 + lane];
-
-            if (k < NKNOBS) sprintf(tok, " %d/%s", s, KNOB_NAME[k]);
-            else sprintf(tok, " %d/%d", s, k);
-            strcat(out, tok);
-        }
-    }
     return 1;
 }
 
@@ -572,7 +569,7 @@ static void parse_lane(char **tok, int n, uint8_t *pat, int track, int lane)
 {
     uint8_t *base = pat + P_LANE + track * 64;
     int i, s, knob = 11 + lane;
-    char *eq, *slash;
+    char *eq;
 
     for (i = 0; i < n; i++)
         if (!strncmp(tok[i], "knob=", 5)) {
@@ -582,17 +579,7 @@ static void parse_lane(char **tok, int n, uint8_t *pat, int track, int lane)
         }
     for (s = 0; s < NSTEPS; s++) base[s * 4 + 2 + lane] = (uint8_t)knob;
     for (i = 0; i < n; i++) {
-        if ((slash = strchr(tok[i], '/')) != NULL && isdigit_(tok[i][0])) {
-            int k;
-
-            *slash = 0;
-            s = atoi(tok[i]);
-            k = knob_by_name(slash + 1);
-            if (s >= 0 && s < NSTEPS)
-                base[s * 4 + 2 + lane] = (uint8_t)(k >= 0 ? k
-                                                   : atoi(slash + 1));
-            *slash = '/';
-        } else if ((eq = strchr(tok[i], '=')) != NULL && isdigit_(tok[i][0])) {
+        if ((eq = strchr(tok[i], '=')) != NULL && isdigit_(tok[i][0])) {
             *eq = 0;
             s = atoi(tok[i]);
             if (s >= 0 && s < NSTEPS)
@@ -915,11 +902,20 @@ int ds10_songtext_read(const char *text, uint8_t *out, size_t cap, size_t *len,
                 for (i = 0; i < 4; i++) p[P_STEPS + i] = (uint8_t)(v >> (8 * i));
                 continue;
             }
-            if (!strcmp(tok[0], "scroll")) {
-                int i;
+            if (!strcmp(tok[0], "view")) {
+                static const int VIEW_BYTES[9] = {0, 1, 2, 3, 4, 5, 6, 7, 9};
+                int i, j;
 
-                for (i = 1; i < n && i <= NTRACKS; i++)
-                    p[P_PARAMS + 1 + (i - 1) * 12] = (uint8_t)(atoi(tok[i]) & 0xFF);
+                for (i = 1; i < n && i <= NTRACKS; i++) {
+                    const char *q = tok[i];
+
+                    for (j = 0; j < 9 && q; j++) {
+                        p[P_PARAMS + 1 + (i - 1) * 12 + VIEW_BYTES[j]] =
+                            (uint8_t)(atoi(q) & 0xFF);
+                        q = strchr(q, ',');
+                        if (q) q++;
+                    }
+                }
                 continue;
             }
             if (!strcmp(tok[0], "mix")) { parse_mix(tok + 1, n - 1, p + P_MIX);
@@ -1121,15 +1117,30 @@ static void write_named(struct sink *k, const uint8_t *p, size_t len,
             if (*fxline) emit(&sub, "fx %s\n", fxline);
         }
         {
-            int scroll[NTRACKS], sany = 0;
+            /* The 12-byte per-track editor record at +0x25C. The nine bytes the
+             * ROM reads are 0..7 and 9 - its accessor family at 0x0206B100 has
+             * one variant per displacement 0x310..0x317 and 0x319 - and the three
+             * with no accessor are zero in all 1744 patterns here. Byte 0 is the
+             * piano-roll scroll, 2 and 3 copy the lanes' knob ids, the rest are
+             * read and unnamed. One line, because it is editor state and it
+             * repeats from pattern to pattern. */
+            static const int VIEW_BYTES[9] = {0, 1, 2, 3, 4, 5, 6, 7, 9};
+            char groups[NTRACKS][64];
+            int any = 0, j;
 
             for (t = 0; t < NTRACKS; t++) {
-                scroll[t] = pat[P_PARAMS + 1 + t * 12];
-                sany |= scroll[t];
+                char *q = groups[t];
+
+                for (j = 0; j < 9; j++) {
+                    int v = pat[P_PARAMS + 1 + t * 12 + VIEW_BYTES[j]];
+
+                    q += sprintf(q, j ? ",%d" : "%d", v);
+                    any |= v;
+                }
             }
-            if (sany) {
-                emit(&sub, "scroll");
-                for (t = 0; t < NTRACKS; t++) emit(&sub, " %d", scroll[t]);
+            if (any) {
+                emit(&sub, "view");
+                for (t = 0; t < NTRACKS; t++) emit(&sub, " %s", groups[t]);
                 emit(&sub, "\n");
             }
         }

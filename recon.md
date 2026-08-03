@@ -1501,11 +1501,20 @@ correctly, and that is how the layout below was verified rather than guessed.
 
 ```
 +0x000  u32   steps in this pattern      6, 8, 10, 12 and 16 all occur
-+0x004  0x3E  per-pattern parameters, not yet named
++0x004  0x3E  two 31-knob synth patches, one per synth track
 +0x042  0x180 6 tracks x 16 steps x 4 bytes    (2 synth + 4 drum)
 +0x1C2  0x080 2 lanes x 16 steps x 4 bytes     automation, synth tracks only
-+0x242  0x062 synth, drum and mixer settings, not yet named
++0x242  0x019 the mixer's 25 knobs
++0x25B  0x049 a zero byte, then six 12-byte per-track editor records
 ```
+
+The editor records are read by an accessor family at `0x0206B100`, one variant per
+displacement, and the displacements it uses are `0x310`..`0x317` and `0x319` -
+bytes 0..7 and 9 of the record. Byte 0 is the piano-roll scroll (0..84, and
+`0x02034500` reaches it to set the scrollbar up), bytes 2 and 3 are a copy of the
+two automation lanes' knob ids that agrees with the lane array in 94% of cases and
+is not what playback reads, and the rest are read but not named. Bytes 8, 10 and
+11 have no accessor and are zero in all 1744 patterns here.
 
 Accessors, all leaf functions taking `(doc, pattern, track, step, out)` and
 copying signed bytes:
@@ -1554,9 +1563,37 @@ accessors, and a parse/serialise round trip that reproduces each file byte for
 byte - which is what makes the parse total, since a field I could not name still
 survives it.
 
-Not verified: the meaning of the unnamed regions (pattern header, pattern
-parameters, the three trailing blocks). They round-trip, but nothing here says
-what they are.
+### The trailing blocks, named
+
+Two of the three are name fields, six per row at an 8-byte stride - 6 characters
+then two pad bytes - in track order, 2 synth then 4 drums:
+
+```
++0x2BCC   48   one row: the names as the running machines have them. Byte for
+               byte the row for pattern 0 in all 104 songs long enough to hold
+               both, and read at `0x0206BDDC`
++0x2BFC  768   16 rows, one per pattern
+```
+
+So a name in `/data/demo/ds10synth*.dat` and a name in a song are the same
+6-byte field. Padding is `0x08` as often as NUL - and the interface's own font has
+no glyph mapped at `0x08`, so it advances nothing, which is why a 6-character
+field can end in it.
+
+`+0x2BA8`, the nine bytes per drum, is **read**: `0x0206B9DC` pushes a drum's 31
+knobs into its machine through `0x0206DF64`, then loops `j = 0..8` over
+`record + 0x42B70 + drum*9` and pushes each byte through a second setter,
+`0x0206E084`. So it is a second parameter set of a drum voice, not dead space -
+what the nine mean is still open.
+
+Not verified: `+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56). Only the last
+two bytes of the second are ever non-zero across the 100 PLUS songs here, and
+their values look like a counter rather than a setting - 0x0000, 0x0015, 0x0236,
+0xFFFF, 0x1782. A base near the first, `record + 0x42F5C`, is in the literal pool
+of `0x0206C3A0` along with the drum-knob and name-row bases, so the region is
+reached by the same code that loads a pattern; which bytes it touches is not
+traced. The first block's non-zero offsets fall in two halves of 84, each with
+data at 0..35 and 42..53.
 
 ---
 

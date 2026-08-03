@@ -387,9 +387,37 @@ def parse_grid(kind, tokens, pat, track):
             pat[o + 3] = int(t) & 0xFF
 
 
+# The 12-byte per-track record at pattern +0x25C. The nine bytes the ROM reads
+# are 0..7 and 9: its accessor family at 0x0206B100 has one variant per
+# displacement 0x310..0x317 and 0x319, and bytes 8, 10 and 11 - the three it has
+# no accessor for - are zero in all 1744 patterns here. Byte 0 is the piano-roll
+# scroll and 2 and 3 are a copy of the two lanes' knob ids; the rest are read by
+# the game and not named.
+VIEW_BYTES = (0, 1, 2, 3, 4, 5, 6, 7, 9)
+
+
+def view_text(pat):
+    """`view` - one comma-separated group of nine bytes per track, or None when
+    the whole thing is zero. One line rather than six: it is editor state, and it
+    repeats across patterns."""
+    groups = []
+    for track in range(TRACKS):
+        rec = [pat[P_PARAMS + 1 + track * 12 + i] for i in VIEW_BYTES]
+        groups.append(",".join(str(v) for v in rec))
+    if not any(any(int(v) for v in g.split(",")) for g in groups):
+        return None
+    return "view " + " ".join(groups)
+
+
 def lane_text(pat, track, lane):
     """One automation lane: its knob, then only the steps that have a value.
-    -1 means "no automation here", which is most of them."""
+    -1 means "no automation here", which is most of them.
+
+    The knob id is stored on every step, but the machine is only ever set up from
+    step 0 (0x0206DEE4, and songplay does the same), so a lane cannot retarget
+    mid-pattern. 31 of the 6912 lane slots in the saves do hold a second id on
+    their later steps - what the editor left when the target was changed - and
+    those come back as `raw` lines rather than as syntax nobody needs."""
     base = P_LANE + track * 64
     raw = [pat[base + s * 4 + lane] for s in range(STEPS)]
     knob = [pat[base + s * 4 + 2 + lane] for s in range(STEPS)]
@@ -400,9 +428,6 @@ def lane_text(pat, track, lane):
     for s in range(STEPS):
         if raw[s] != NO_NOTE:
             out.append("%d=%d" % (s, raw[s]))
-        if knob[s] != knob[0]:
-            out.append("%d/%s" % (s, KNOB[knob[s]][0]
-                                  if knob[s] < KNOBS else knob[s]))
     return " ".join(out)
 
 
@@ -417,11 +442,7 @@ def parse_lane(tokens, pat, track, lane):
     for s in range(STEPS):
         pat[base + s * 4 + 2 + lane] = knob
     for t in tokens:
-        if "/" in t:
-            s, _, kn = t.partition("/")
-            k = KNOB_BY_NAME.get(kn)
-            pat[base + int(s) * 4 + 2 + lane] = k if k is not None else int(kn)
-        elif "=" in t and t.split("=")[0].isdigit():
+        if "=" in t and t.split("=")[0].isdigit():
             s, _, v = t.partition("=")
             pat[base + int(s) * 4 + lane] = int(v) & 0xFF
 
@@ -592,9 +613,9 @@ def dumps(payload, clean=False, source=None):
         mix = pat[P_MIX:P_MIX + MIX_KNOBS]
         if bytes(mix) != INIT_MIX:
             body += mix_text(mix)
-        scroll = [pat[P_PARAMS + 1 + t * 12] for t in range(TRACKS)]
-        if any(scroll):
-            body.append("scroll " + " ".join(str(v) for v in scroll))
+        rec = view_text(pat)
+        if rec:
+            body.append(rec)
         if body:
             out.append("")
             out.append("[pattern %d]" % i)
@@ -707,9 +728,10 @@ def apply_pattern_line(p, i, key, rest, line, track):
     if key == "steps":
         struct.pack_into("<I", p, o + P_STEPS, int(rest[0]))
         return track
-    if key == "scroll":
-        for t, v in enumerate(rest):
-            p[o + P_PARAMS + 1 + t * 12] = int(v) & 0xFF
+    if key == "view":
+        for t, group in enumerate(rest[:TRACKS]):
+            for i, v in zip(VIEW_BYTES, group.split(",")):
+                p[o + P_PARAMS + 1 + t * 12 + i] = int(v) & 0xFF
         return track
     if key == "mix":
         mix = bytearray(p[o + P_MIX:o + P_MIX + MIX_KNOBS])
@@ -764,17 +786,18 @@ INSTR_SIZE, INSTR_NAME, INSTR_KNOBS = 63, 0x10, 0x20
 
 
 def instr_text(slot, rec):
-    """One bank slot as `instrument <n> "NAME" <knobs>`."""
-    out = []
+    """One bank slot, in the same shape a pattern has: a section and its lines."""
+    out = ["[instrument %d]" % slot]
     knobs = rec[INSTR_KNOBS:INSTR_KNOBS + KNOBS]
     body, mods = patch_text(knobs)
-    name = quote(strip_name(rec[INSTR_NAME:INSTR_NAME + 6]))
-    out.append("instrument %d %s %s" % (slot, name, body))
+    out.append("name %s" % quote(strip_name(rec[INSTR_NAME:INSTR_NAME + 6])))
+    if body:
+        out.append("patch %s" % body)
     if mods:
-        out.append("instrument %d mod %s" % (slot, mods))
+        out.append("mod %s" % mods)
     pad = rec[INSTR_NAME + 6:INSTR_KNOBS]
     if any(pad):
-        out.append("instrument %d pad %s" % (slot, pad.hex(" ")))
+        out.append("pad %s" % pad.hex(" "))
     return out
 
 
@@ -793,29 +816,29 @@ def instr_seal(rec):
 def bank_loads(text):
     """Text to {slot: 63-byte record}. Slots that are not mentioned stay
     empty - the bank is sparse, and 13 of EMPTY10's 24 slots are."""
-    bank = {}
+    bank, rec = {}, None
     for raw in text.splitlines():
         line = strip_comment(raw).strip()
         if not line:
             continue
-        tok = line.split()
-        if tok[0] != "instrument":
+        if line.startswith("["):
+            head = line.strip("[]").split()
+            rec = None
+            if head[0] == "instrument":
+                rec = bank.setdefault(int(head[1]), instr_blank())
             continue
-        slot = int(tok[1])
-        rec = bank.setdefault(slot, instr_blank())
-        if tok[2] == "mod":
-            knobs = bytearray(rec[INSTR_KNOBS:INSTR_KNOBS + KNOBS])
-            parse_mods(tok[3:], knobs)
-            rec[INSTR_KNOBS:INSTR_KNOBS + KNOBS] = knobs
-        elif tok[2] == "pad":
-            blob = bytes.fromhex("".join(tok[3:]))
-            rec[INSTR_NAME + 6:INSTR_NAME + 6 + len(blob)] = blob
-        else:
-            quoted = line.split('"')[1]
-            nm = unquote('"%s"' % quoted)
+        if rec is None:
+            continue
+        tok = line.split()
+        if tok[0] == "name":
+            nm = unquote(line.split(None, 1)[1])
             rec[INSTR_NAME:INSTR_NAME + 6] = nm.ljust(6, b"\0")[:6]
+        elif tok[0] == "pad":
+            blob = bytes.fromhex("".join(tok[1:]))
+            rec[INSTR_NAME + 6:INSTR_NAME + 6 + len(blob)] = blob
+        elif tok[0] in ("patch", "mod"):
             knobs = bytearray(rec[INSTR_KNOBS:INSTR_KNOBS + KNOBS])
-            parse_patch(line.split('"')[2].split(), knobs)
+            (parse_patch if tok[0] == "patch" else parse_mods)(tok[1:], knobs)
             rec[INSTR_KNOBS:INSTR_KNOBS + KNOBS] = knobs
     return {s: instr_seal(r) for s, r in bank.items()}
 
