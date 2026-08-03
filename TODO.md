@@ -89,15 +89,27 @@ songs in `data/saves`.
 
 `make test-songrender` cannot see it. It compares our buffer against the oracle's,
 and `tools/oracle.py render_drum_buffers` pushes only the 31 knobs - so both sides
-render dry and agree. Fixing this is two steps, in order:
+render dry and agree.
 
-1. make the oracle's drum setup go through the game's own path, `0x0206B9DC` and
-   whatever `0x0206CE04` does around it, so there is a reference at all;
-2. then apply the nine to an effect in our own render, against that reference.
+**Half of it now has a reference.** `make test-drumfx` captures, for every drum in
+the ROM's demos whose dry/wet is not zero, the dry buffer the original's voice
+makes and the stereo its own mixer and effect make of it, with the nine bytes
+pushed as knobs 0..8 and channel 0 at full volume, centre pan - the setup
+`0x0206CCC8` uses. Our mixer and effect reproduce that sample for sample, 73728 of
+them. So the effect stage is settled: the nine bytes are those knobs, and we can
+apply them.
 
-Doing 2 without 1 would be guessing at the details - whether the effect is reset
-per drum, whether the route knob participates, whether the buffer is processed as
-it is written or afterwards.
+**What is left is the stereo-to-mono step**, and it is not a formality: the
+recorder hands the drum voice a mono buffer, but L and R differ even for a dry
+drum, because centre pan is 64 of 127. Whether the buffer is L, R, a sum, or a tap
+taken before the pan stage lives in the object at `+0x10` of `0x0206CCC8`'s
+`this`, which is not decompiled.
+
+Until that is known, implementing this is not an improvement in verification, only
+a change of inference: our render and the oracle's would both have to adopt the
+same guess to keep `test-songrender` passing, which is the same blind spot in a
+different place. The two ways out are the recorder itself, or `make ndsref` and a
+RAM dump of the real thing, where the rendered buffers can simply be read out.
 
 ## 5b. Unnamed bytes
 

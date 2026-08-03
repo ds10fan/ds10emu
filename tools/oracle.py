@@ -2007,6 +2007,127 @@ def capture_mixer(setup, frames=8, seed=1):
     return mstate, fstate, steps
 
 
+# --- the drums' own effect settings, at render time --------------------------
+#
+# 0x0206CCC8 renders each drum patch into its one-second buffer, and before it
+# does - at 0x0206CE10, through 0x020347EC into 0x0206B9DC - it pushes that
+# drum's nine bytes at payload +0x2BA8 into the mixer as knobs 0..8: route,
+# effect type, time, L/R ratio, LFO rate, depth, sync, feedback and dry/wet.
+# It has already set channel 0 to full volume and centre pan with every other
+# channel silent (0x0206CD34 onwards, with r7 = 0). So a drum's sample goes
+# through the effect as it is written, which is why the settings are per drum
+# and why one effect processor is enough for four of them.
+#
+# What this captures is that stage: the dry buffer the voice produces, then the
+# original mixer and effect over it, knob for knob. What it does NOT capture is
+# how the offline recorder turns the mixer's stereo output back into the mono
+# buffer a drum voice resamples - that lives in the object at +0x10 of
+# 0x0206CCC8's `this`, which is not decompiled - so both sides are kept here.
+
+DRUMFX_FRAMES = 96             # 6144 samples, well past a drum's attack
+
+
+def capture_drum_fx(payload, drum, frames=DRUMFX_FRAMES):
+    """One drum: its 31 knobs, its nine effect bytes, the dry buffer and the
+    wet stereo the original's own mixer makes of it."""
+    o = Oracle()
+    knobs = [_sb(payload[0x2B2C + drum * 31 + k]) for k in range(31)]
+    extra = [_sb(payload[0x2BA8 + drum * 9 + j]) for j in range(9)]
+
+    v = _new_synth(o, SONGR_OUT[0], SONGR_SLOT[0])
+    for k, val in enumerate(knobs):
+        o.call(KNOB_SET, v, k, val)
+    o.call(EVENT_DISPATCH, v)
+    _post_note(o, v, NOTEON, DRUM_ROOT)
+    dry = []
+    for _ in range(frames):
+        o.call(RENDER, v)
+        dry.append(list(struct.unpack(f"<{FRAME}h",
+                                      o.uc.mem_read(SONGR_OUT[0], FRAME * 2))))
+
+    mx = o.call(MIXER_NEW)
+    knob = o.u32(o.u32(mx) + 0x18)          # the machine's own knob setter,
+    bufs = [o.call(NEW_THUNK, FRAME * 2) for _ in range(6)]
+    arr = o.call(NEW_THUNK, 6 * 8)
+    for i, b in enumerate(bufs):
+        o.w32(arr + 8 * i, b)
+    outl = o.call(NEW_THUNK, FRAME * 2)
+    outr = o.call(NEW_THUNK, FRAME * 2)
+    pair = o.call(NEW_THUNK, 8)
+    o.w32(pair, outl)
+    o.w32(pair + 4, outr)
+    o.w32(mx + 0x10, FRAME)
+    o.w32(mx + 0x18, arr)
+    o.w32(mx + 0x1C, pair)
+    o.uc.mem_write(mx + 0x08, b"\0")
+
+    def snap(base, fields, size):
+        raw = bytes(o.uc.mem_read(base, size))
+        return [_rdf(raw, off, sz) for off, sz in fields]
+
+    # The state the constructors leave, before a knob is pushed: what the C side
+    # has to start from for the comparison to be about the knobs and the DSP.
+    fxp = o.u32(mx + FX_PTR)
+    mstate = snap(mx, MX_FIELDS, 0x8C)
+    fstate = snap(fxp, FXS_FIELDS, 0xA8)
+
+    o.call(knob, mx, 17, 127)               # which is what the fallback path in
+    o.call(knob, mx, 9, 64)                 # 0x0206E084 reaches for ids 0..8
+    for ch in range(1, 6):
+        o.call(knob, mx, 17 + ch, 0)
+        o.call(knob, mx, 9 + ch, 0)
+    for j, val in enumerate(extra):
+        o.call(knob, mx, j, val)
+
+    wet = []
+    for f in range(frames):
+        o.uc.mem_write(bufs[0], struct.pack(f"<{FRAME}h", *dry[f]))
+        for b in bufs[1:]:
+            o.uc.mem_write(b, bytes(FRAME * 2))
+        o.call(MIXER_RENDER, mx)
+        wet.append((list(struct.unpack(f"<{FRAME}h",
+                                       o.uc.mem_read(outl, FRAME * 2))),
+                    list(struct.unpack(f"<{FRAME}h",
+                                       o.uc.mem_read(outr, FRAME * 2)))))
+    return knobs, extra, mstate, fstate, dry, wet
+
+
+def cmd_drumfx_vectors(path="tests/vectors/drumfx.bin"):
+    """Every drum in the ROM's demos whose dry/wet is not zero, plus a dry one
+    as a control."""
+    cases = []
+    for name, blob in song_files():
+        payload = blob[16:]
+        if len(payload) < 0x2BA8 + 36:
+            continue
+        for drum in range(4):
+            wet = payload[0x2BA8 + drum * 9 + 8]
+            if wet or (not cases and drum == 0):
+                cases.append((name, drum, capture_drum_fx(payload, drum)))
+            if len(cases) >= 6:
+                break
+        if len(cases) >= 6:
+            break
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as fh:
+        fh.write(b"DFX1" + struct.pack("<I", len(cases)))
+        for _, drum, (knobs, extra, mstate, fstate, dry, wet) in cases:
+            fh.write(struct.pack("<ii", drum, len(dry)))
+            fh.write(struct.pack("<31b", *knobs))
+            fh.write(struct.pack("<9b", *extra))
+            fh.write(struct.pack(f"<{len(mstate)}i", *mstate))
+            fh.write(struct.pack(f"<{len(fstate)}i", *fstate))
+            for d, (l, r) in zip(dry, wet):     # one frame at a time, the way
+                fh.write(struct.pack(f"<{FRAME}h", *d))   # the test reads it
+                fh.write(struct.pack(f"<{FRAME}h", *l))
+                fh.write(struct.pack(f"<{FRAME}h", *r))
+    for name, drum, (_, extra, _, _, _, wet) in cases:
+        same = all(l == r for l, r in wet)
+        print("  %-20s drum %d  wet=%3d ratio=%3d  L==R: %s"
+              % (name, drum, extra[8] & 0xFF, extra[3] & 0xFF, same))
+    print(f"{path}: {len(cases)} cases, {DRUMFX_FRAMES * FRAME} samples each")
+
+
 def cmd_mixer_vectors(path="tests/vectors/mixer.bin"):
     """Sweep effect type, routing, pan/vol, mute and tempo sync."""
     cases = []
@@ -2782,6 +2903,7 @@ def main():
             "fx-vectors": cmd_fx_vectors,
             "mixer-vectors": cmd_mixer_vectors,
             "drum-vectors": cmd_drum_vectors,
+            "drumfx-vectors": cmd_drumfx_vectors,
             "event-vectors": cmd_event_vectors,
             "seq-vectors": cmd_seq_vectors,
             "song-vectors": cmd_song_vectors,

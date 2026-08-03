@@ -9,10 +9,10 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: songtext test-songtext test-songtext-py fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: songtext test-songtext test-songtext-py test-drumfx fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-songtext test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-songtext test-drumfx test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -89,6 +89,23 @@ out/test_fx: tests/test_fx.c src/core/fx.c src/core/fx.h $(CORE_HDRS) $(TBL_SRC)
 
 test-mixer: out/test_mixer tests/vectors/mixer.bin
 	@./out/test_mixer
+
+# A drum's own effect settings: the nine bytes at payload +0x2BA8 are a route and
+# the eight effect parameters, pushed as mixer knobs 0..8 before that drum's
+# one-second buffer is rendered. This is that stage against the original.
+test-drumfx: out/test_drumfx tests/vectors/drumfx.bin
+	@./out/test_drumfx
+
+out/test_drumfx: tests/test_drumfx.c src/core/mixer.c src/core/fx.c \
+                 src/core/mixer_state.c src/core/mixer.h src/core/fx.h \
+                 $(CORE_HDRS) $(TBL_SRC)
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_drumfx.c src/core/mixer.c src/core/fx.c \
+	    src/core/mixer_state.c \
+	    $(TBL_SRC)
+
+tests/vectors/drumfx.bin: extract tools/oracle.py tools/emu.py
+	@$(PY) tools/oracle.py drumfx-vectors
 
 out/test_mixer: tests/test_mixer.c src/core/mixer.c src/core/fx.c \
                 src/core/mixer_state.c src/core/mixer.h src/core/fx.h $(CORE_HDRS) $(TBL_SRC)
