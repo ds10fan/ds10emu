@@ -72,15 +72,44 @@ Record from the device, compare against the same file rendered here.
   same code path.
 - **Multiplayer.** Out of scope by request.
 
-## 5. Unnamed bytes
+## 5. The drums' own effect settings are ignored
+
+The nine bytes per drum at payload `+0x2BA8` are a route and the eight effect
+parameters - `setKnob(0..8)` on the mixer machine, traced in recon.md §14 - and
+`0x0206B9DC` pushes them from *inside* `0x0206CE04`, the routine that renders the
+four one-second drum buffers. So they are render-time settings: a drum sample goes
+through the effect as it is rendered, which happens at load and again whenever the
+drum patch is edited, and the buffer the voice then resamples already has the
+effect baked in.
+
+Nothing here does that. `out/songplay` renders each drum buffer dry, and the
+divergence is not hypothetical: **10 of the 48 drums in the ROM demos, across 4 of
+the 12 songs, have a non-zero dry/wet**, and so do 75 of 388 drums in 59 of the 97
+songs in `data/saves`.
+
+`make test-songrender` cannot see it. It compares our buffer against the oracle's,
+and `tools/oracle.py render_drum_buffers` pushes only the 31 knobs - so both sides
+render dry and agree. Fixing this is two steps, in order:
+
+1. make the oracle's drum setup go through the game's own path, `0x0206B9DC` and
+   whatever `0x0206CE04` does around it, so there is a reference at all;
+2. then apply the nine to an effect in our own render, against that reference.
+
+Doing 2 without 1 would be guessing at the details - whether the effect is reset
+per drum, whether the route knob participates, whether the buffer is processed as
+it is written or afterwards.
+
+## 5b. Unnamed bytes
 
 Everything round-trips, so nothing is lost - these are just not understood:
 
-- nine bytes per drum at payload `+0x2BA8`, pushed into a second parameter space
-  by `0x0206B9DC`;
-- the 12-byte per-track records at payload `+0x25C`, apart from bytes 2 and 3
-  which are that track's two automation lane knob ids;
-- a pattern's `+0x004..0x041` beyond the two 31-knob synth patches.
+- the 12-byte per-track records at payload `+0x25C`: byte 0 is the piano-roll
+  scroll and bytes 2 and 3 copy that track's two lane knob ids, but bytes 1, 4, 5,
+  6, 7 and 9 are read by the accessor family at `0x0206B100` and unnamed;
+- payload `+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56, only its last two
+  bytes ever non-zero);
+- the second 25-knob mixer space the ROM's own id table implies - volume
+  `42 + channel`, pan `34 + channel` - which nothing here models.
 
 ## 6. GUI
 

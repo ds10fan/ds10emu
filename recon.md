@@ -1608,6 +1608,14 @@ knob through the pointer at `seq+0x60`, combine it with the track's latch at
 for pan) and post opcode 6 with knob id 7 or 10 - `DS10_MIX_EV_KNOB` with
 `EVK_VOL` and `EVK_PAN`.
 
+And the push happens *inside the drum-buffer render*: the call site is
+`0x0206CE10`, in `0x0206CE04`, which is what renders each drum patch into its
+one-second buffer. So these are render-time settings - the sample is put through
+the effect as it is written, at load and again whenever the drum patch is edited,
+and the voice then resamples a buffer that already has the effect in it. That is
+also why there is no contradiction in one effect processor and four stored sets:
+each drum's set is pushed just before that drum is rendered.
+
 Ids 1..8 have no entry in that table, so a drum's nine bytes take the fallback and
 land as `setKnob(0..8)` on the machine at `router+4`. Knobs 0..8 of the mixer are
 route, effect type, time, L/R ratio, LFO rate, depth, sync, feedback and dry/wet -
@@ -1630,9 +1638,12 @@ separate per-drum setting looks like rather than a mirror. There is still one
 effect processor, so four stored sets do not mean four effects running: whichever
 drum's set was pushed last is what the shared effect holds.
 
-Not measured: that pushing them changes the audio. Nothing renders them - our
-engine ignores them (`songplay.c` says so) and so does the oracle, which pushes
-only the 31 knobs, so `make test-songrender` is blind to them on both sides.
+Not measured: what the rendered difference sounds like. Nothing renders them - our
+engine renders drum buffers dry and so does the oracle, which pushes only the 31
+knobs, so `make test-songrender` compares two effect-free buffers and agrees. It is
+not a small gap: 10 of the 48 drums in the ROM's demos, across 4 of its 12 songs,
+have a non-zero dry/wet, and so do 75 of 388 drums in 59 of the 97 songs in
+`data/saves`. TODO.md §5.
 
 **A second knob space.** The same ROM table continues past the mixer's 25 knobs
 with `(42, 34)`, `(43, 35)`, `(44, 36)` … - `volume = 42 + channel` and

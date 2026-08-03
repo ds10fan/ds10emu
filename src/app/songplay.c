@@ -21,9 +21,12 @@
  *     the drum patch from a fresh voice at note 60. The buffer CONTENT is checked
  *     against the original by make test-songrender; the driving conditions are
  *     not.
- *   - The nine extra bytes per drum at payload +0x2BA8. 0x0206B9DC pushes them
- *     into a second parameter space whose meaning is not established, so they are
- *     ignored.
+ *   - The drums' own effect settings: the nine bytes per drum at payload +0x2BA8
+ *     are a route and the eight effect parameters, and 0x0206B9DC pushes them
+ *     from inside 0x0206CE04 - the routine that renders the drum buffers - so a
+ *     drum sample goes through the effect as it is rendered. The buffers here are
+ *     rendered dry, which is wrong for the 10 of 48 drums in the ROM's demos that
+ *     ask for wet. See TODO.md section 5; recon.md section 14 has the trace.
  *   - Automation paths other than the per-step latch. A track whose pattern asks
  *     for one of the others is left un-automated; none of the ROM's demos does.
  *   - The 73 bytes of a pattern after its 25 mixer knobs, at payload +0x25B.
