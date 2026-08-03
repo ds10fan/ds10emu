@@ -1112,15 +1112,23 @@ The step trigger and the per-sub-tick countdown, both verified bit-exact.
 Track state is the first six bytes of the block: sounding flag, pending event,
 gate countdown, gate mode, note.
 
-Gate values are special-cased rather than being a plain length:
+Gate values are special-cased rather than being a plain length, and the six a
+song file uses are exactly the six the interface offers. Sub-tick counts are for
+a straight step of 12:
 
-| gate | meaning |
-|---|---|
-| `0xFF` | tie - sounds until the next note, never auto-released |
-| `6` | retrigger |
-| `5` | one sub-tick longer than a full step (bleeds into the next) |
-| `4` | one sub-tick shorter than a full step |
-| other | `gate * subticks / 4` |
+| gate | interface | count | behaviour |
+|---|---|---|---|
+| `0` | 0% | 0 | released on the sub-tick it started |
+| `1`..`3` | 25%, 50%, 75% | 3, 6, 9 | `gate * subticks / 4` |
+| `4` | 100% | 11 | a sub-tick short, so the next note articulates |
+| `5` | TIE | 13 | outlives the step, so an identical next step is held rather than restarted |
+| `6` | (drums) | 0 | retriggers, and never auto-releases: the sample plays out even if the following steps are empty |
+| `0xFF` | none | 0 | sounds until an empty step releases it |
+
+Measured: gate `6` is on 12691 drum steps and no synth step in the ROM or in the
+108 saved songs; `0xFF` occurs in none of them, and the interface has no button
+for it. So the tie a song actually contains is gate `5` plus a repeat of the same
+step, not `0xFF` - see `docs/songtext.md`.
 
 Because the count is in sub-ticks and the sub-tick count per step comes from
 swing, **gate length is swing-dependent** - the same gate value is a different

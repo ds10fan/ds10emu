@@ -111,10 +111,15 @@ INIT_MIX = bytes([0, 0, 62, 0, 0, 0, 1, 0, 0, 65, 62, 61, 63, 65, 73, 0, 0,
 
 # ---------------------------------------------------------------- steps
 
-GATE_NAME = {0xFF: "tie", 6: "retrig", 5: "over", 4: "full",
-             3: "3/4", 2: "2/4", 1: "1/4", 0: "0"}
+# The six gates the interface offers, plus the 0xFF mode it has no button for.
+# The percentages are the interface's own; the sub-tick counts a straight step of
+# 12 turns them into are 0, 3, 6, 9, 11 and 13 - so 100% stops a sub-tick short
+# of the step and a tie runs a sub-tick past it, which is what lets an identical
+# next step hold the note instead of restarting it.
+GATE_NAME = {0xFF: "hold", 6: "retrig", 5: "tie", 4: "100%",
+             3: "75%", 2: "50%", 1: "25%", 0: "off"}
 GATE_VAL = {v: k for k, v in GATE_NAME.items()}
-GATE_DEFAULT = (5, 6)        # synth, drum: 79% and 68% of sounding steps
+GATE_DEFAULT = (5, 6)        # synth tie, drum retrig: 79% and 68% of steps
 VEL_DEFAULT, PAN_DEFAULT = 127, 63
 REST_FILLER = (3, 127, 64)   # what ds10init.dat leaves on a step with no note
 

@@ -50,12 +50,27 @@ typedef struct {
 } ds10_seq;
 
 /* Per-track note/gate state, the first six bytes of the 36-byte track block.
- * Gate values are special-cased: 0xFF is a tie (sounds until the next note,
- * never auto-released), 6 retriggers, 5 and 4 are one sub-tick over and under a
- * full step, and anything else is gate*subticks/4. */
-#define DS10_GATE_TIE 0xFF
+ *
+ * The gate codes a song file carries are the six the interface offers, and the
+ * sub-tick counts below are for a straight step of 12:
+ *
+ *   0     0%     count 0, so it is released on the sub-tick it started
+ *   1..3  25..75% count gate*subticks/4, i.e. 3, 6 and 9
+ *   4     100%   count subticks-1 = 11, a sub-tick short so the next note of a
+ *                different pitch can articulate
+ *   5     TIE    count subticks+1 = 13, so it is still inside its gate when the
+ *                next step arrives: an identical next step then emits nothing
+ *                and the note is held, which is how a tie is written
+ *   6            the drum mode - retriggers, and never auto-releases, so the
+ *                sample plays out even if the following steps are empty. Only
+ *                the drum tracks use it; no synth step in the ROM or in the 108
+ *                saved songs does
+ *
+ * 0xFF is a seventh mode the interface has no button for and no song file uses:
+ * it sounds until an empty step releases it. */
+#define DS10_GATE_HOLD 0xFF
 #define DS10_GATE_RETRIG 6
-#define DS10_GATE_OVER 5
+#define DS10_GATE_TIE 5
 #define DS10_GATE_FULL 4
 
 /* What the gate countdown wants emitted this sub-tick. */

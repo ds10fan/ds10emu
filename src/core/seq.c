@@ -66,10 +66,11 @@ void ds10_seq_step_track(ds10_seq_track *t, int note, int gate, int subticks)
     int8_t count = 0;
 
     if (note < 0) {
-        /* No note on this step. A tie that was running has to be released now;
-         * anything else has already been released by its own gate. */
+        /* No note on this step. The 0xFF hold mode is the only one that has
+         * to be released here; everything else has already been released by its
+         * own gate, and gate 6 is meant to play out. */
         t->gate_left = 0;
-        if (t->gate_mode == (int8_t)DS10_GATE_TIE) {
+        if (t->gate_mode == (int8_t)DS10_GATE_HOLD) {
             t->pending = DS10_NOTE_OFF;
             t->sounding = 0;
         } else {
@@ -81,10 +82,10 @@ void ds10_seq_step_track(ds10_seq_track *t, int note, int gate, int subticks)
 
     if (gate == DS10_GATE_RETRIG) {
         t->pending = DS10_NOTE_RETRIG;
-    } else if (gate == DS10_GATE_TIE) {
+    } else if (gate == DS10_GATE_HOLD) {
         t->pending = DS10_NOTE_ON;
     } else {
-        if (gate == DS10_GATE_OVER)
+        if (gate == DS10_GATE_TIE)
             count = (int8_t)(subticks + 1);
         else if (gate == DS10_GATE_FULL)
             count = (int8_t)(subticks - 1);
@@ -113,9 +114,9 @@ int ds10_seq_gate(ds10_seq_track *t)
 {
     int ev = t->pending;
 
-    /* Retrigger and tie modes never auto-release. */
+    /* Gate 6 and the 0xFF hold never auto-release. */
     if (t->gate_mode == (int8_t)DS10_GATE_RETRIG ||
-        t->gate_mode == (int8_t)DS10_GATE_TIE)
+        t->gate_mode == (int8_t)DS10_GATE_HOLD)
         return ev;
 
     if (t->sounding == 1) {
@@ -286,7 +287,7 @@ static void run_step(ds10_seq_ctx *c)
             t->pan = rec[3];
         }
         /* The note is read signed and the gate UNSIGNED, which is what makes
-         * gate 0xFF a tie rather than a negative countdown. */
+         * gate 0xFF the hold mode rather than a negative countdown. */
         switch (t->play_mode) {
         case DS10_PLAY_PATTERN:
             ds10_seq_step_track(t, rec[0], (uint8_t)rec[1], s->sub_cur);
