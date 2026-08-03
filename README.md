@@ -115,7 +115,8 @@ make sweep                  # walk the whole interface, snapshotting each screen
 | `tools/ndsref/` | headless melonDS: dumps the whole 2D state and the framebuffers it produced |
 | `tools/snap.py` | reads those dumps; `tools/sweep.py` drives the interface to produce them |
 | `tools/nitro.py` | the NITRO asset containers, and a background composed the way the hardware would |
-| `tools/sav.py` | the save file's 18 song slots: list them, extract them, pack one back in |
+| `tools/sav.py` | the save file: list, extract or pack a song slot, unpack the whole thing to text and back |
+| `tools/songtext.py` | a song as editable text and back, byte for byte — [`docs/songtext.md`](docs/songtext.md) |
 | `tools/widgets.py` | recovers sprite widgets from a captured frame by rebuilding their OAM |
 | `tools/probe.py` | branch-target validation, lookup-table detection, xrefs, multiply density |
 
