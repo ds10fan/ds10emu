@@ -1408,6 +1408,34 @@ The hash routine is `0x02015404`, checked by `0x0205D038` (hash the payload into
 a stack buffer, compare 16 bytes). It is plain RFC 1321 MD5: a reference
 implementation reproduces the header of all 17 song and patch files in the ROM.
 
+### The save file around those slots
+
+The 512 KiB save is the same idea three times over - hash first, and a valid hash
+is what tells a written record from untouched flash. Measured across the six
+saves in `songs/`:
+
+```
+0x00000   16  "DS10PSAVEDATA000"
+0x00010   12  00 ff ff ff, then eight zero bytes
+0x0001C   16  MD5 of the 28 bytes above. Identical in all six saves, so it
+              covers nothing that a slot write changes
+0x00100       18 song slots, stride 0x3000, 16 + 12252 each; on disk the run
+              starts at 0x100, in RAM at 0x200
+0x38000       96 patch slots, stride 0x40: the 63-byte record of §4 with one
+              pad byte after it. 24 written in DS10PLUS.SAV, 0 in FRESH10.SAV
+elsewhere     0xff
+```
+
+Nothing outside a slot refers to one - no count, no directory, no free list -
+which is what makes writing a single slot a local edit. `tools/sav.py` does that:
+every one of the 97 written slots across the six saves extracts and packs back to
+a byte-identical save, and a cross-pack into another save's empty slot changes
+exactly the slot's 12268 bytes.
+
+A slot's payload is a fixed 12252 bytes with the hash over all of it, so only a
+PLUS record fits one; the shorter DS-10 and pre-release lengths exist as files
+but cannot be a slot.
+
 Four payload lengths exist. The format only ever grew by appending, so an older
 file is a prefix of a newer one - which is why the loader dispatches on size:
 

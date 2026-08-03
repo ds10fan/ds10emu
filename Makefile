@@ -371,8 +371,9 @@ out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 # ---------------------------------------------------------------------------
 
 # The songs in songs/*.SAV, extracted so they can be loaded by name.
-data/saves: tools/savex.py $(wildcard songs/*.SAV)
-	@rm -rf data/saves && $(PY) tools/savex.py data/saves songs/*.SAV \
+# tools/sav.py pack puts one back into a slot.
+data/saves: tools/sav.py $(wildcard songs/*.SAV)
+	@rm -rf data/saves && $(PY) tools/sav.py extract data/saves songs/*.SAV \
 	    | tail -1
 
 # Both files come out of one run; the header is what the engine includes.
