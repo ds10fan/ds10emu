@@ -101,7 +101,7 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `chain A B C …` | `+0x24`, one u16 per bar |
 | `drumN patch …` | `+0x2B2C + (N-1)*31`, knobs 0..30 |
 | `drumN mod …` | the same knobs, modulation slots only |
-| `drumN extra …` | `+0x2BA8 + (N-1)*9`, unnamed |
+| `drumN extra …` | `+0x2BA8 + (N-1)*9`, nine bytes read by `0x0206B9DC`, meaning open |
 
 ## `[pattern N]` lines
 
@@ -312,4 +312,6 @@ mod vco2p=saw:+16 cutoff=sine:+8
   what playback reads), bytes 1, 4, 5, 6 and 9 unknown.
 - payload `+0x2EFC` (168 bytes, PLUS) and `+0x2FA4` (56, only its last two bytes
   ever non-zero).
-- `drumN extra`, nine bytes per drum.
+- `drumN extra`, nine bytes per drum. Read by the game - `0x0206B9DC` pushes them
+  through `0x0206E084` - but not the `54_DRUM_FX` page: there is one effect in the
+  engine and its eight parameters are mixer knobs 1..8. recon.md §14 has the trace.

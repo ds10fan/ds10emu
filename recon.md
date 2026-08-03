@@ -1586,6 +1586,26 @@ knobs into its machine through `0x0206DF64`, then loops `j = 0..8` over
 `0x0206E084`. So it is a second parameter set of a drum voice, not dead space -
 what the nine mean is still open.
 
+They are **not** the `54_DRUM_FX` page. There is one effect processor in the whole
+engine - the mixer owns it at `+0x80` and knob 0 selects what feeds it, `drums`
+being one of the six choices - so a drum FX page can only be editing that same
+shared effect, whose eight parameters are mixer knobs 1..8. And the nine bytes
+never reach it: every one of the 16 calls to the effect's parameter setter
+`0x020726D4` is inside the mixer/effect module (`0x2072630`..`0x2077520`), while
+this path goes to `0x0206E084`, which dispatches through a table built at run time
+in BSS at `0x02160828`, one 2-byte entry per index, into `0x0206EB44` or
+`0x0206EBB0`. Both index 36-byte per-track records, add a byte fetched through a
+pointer at `+0x60`, clamp around 64 (`subs r2, r2, #0x40; movmi r2, #0`) and offset
+the parameter id by 64 - the shape of the per-step volume and pan the sequencer
+posts, not of an effect parameter.
+
+What the values look like, over 432 drum records: bytes 0, 1 and 6 are small flags
+(0..2, 0..2, 0..1), bytes 2, 4 and 5 cluster at 60..65 like something centred in a
+0..127 range, byte 3 is almost always 0, byte 7 is signed with -1 common, and byte
+8 is 0 in 347 of them. They are not copies of the mixer's own per-drum pan and
+volume either: the best agreement is byte 4 against pan at 22%, which is what two
+values clustered near 63 give by chance.
+
 Not verified: `+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56). Only the last
 two bytes of the second are ever non-zero across the 100 PLUS songs here, and
 their values look like a counter rather than a setting - 0x0000, 0x0015, 0x0236,
