@@ -133,6 +133,72 @@ Sub-tick counts are for a straight step of 12 (24 per step pair, split by swing)
 | `retrig` | 6 | — | restrikes, never auto-releases: the sample plays out |
 | `hold` | 0xFF | — | sounds until an empty step releases it; no button, in no file |
 
+## Synth knobs
+
+The 31 of a patch, i.e. bytes `0x20..0x3E` of a `ds10synth*.dat`, the 31 at
+pattern `+0x004` per synth track, and each drum's 31 at `+0x2B2C`. Ranges are the
+synth's own knob descriptors, so signedness comes from the range and not from the
+data. `INIT` is the ROM's INIT patch, which is this format's default - those
+values are the ones never written.
+
+| knob | name | range | enc | INIT | |
+|---|---|---|---|---|---|
+| 0 | `octave` | -2..2 | s8 | 0 |  |
+| 1 | `pitcheg` | -63..63 | s8 | 0 |  |
+| 2 | `porta` | 0..127 | u8 | 0 | portamento |
+| 3 | `pitchint` | -63..63 | s8 | 0 | intensity for `mod pitch=` |
+| 4 | `vco1int` | -63..63 | s8 | 0 | intensity for `mod vco1p=` |
+| 5 | `vco2int` | -63..63 | s8 | 0 | intensity for `mod vco2p=` |
+| 6 | `wave1` | 0..3 | u8 | 1 | `tri` `saw` `square` `noise` |
+| 7 | `wave2` | 0..3 | u8 | 1 | `tri` `saw` `square` `noise` |
+| 8 | `vco2pitch` | -63..63 | s8 | 3 |  |
+| 9 | `balance` | 0..127 | u8 | 0 | VCO1 to VCO2 |
+| 10 | `sync` | 0..1 | u8 | 0 | `off` `on` |
+| 11 | `cutoff` | 0..127 | u8 | 127 |  |
+| 12 | `peak` | 0..127 | u8 | 0 | resonance |
+| 13 | `filter` | 0..2 | u8 | 0 | `lp` `bp` `hp` |
+| 14 | `cutoffeg` | -63..63 | s8 | 0 | VCF EG intensity |
+| 15 | `cutoffint` | -63..63 | s8 | 0 | intensity for `mod cutoff=` |
+| 16 | `vcaeg` | 0..1 | u8 | 0 | `off` `on` |
+| 17 | `vcaint` | -63..63 | s8 | 0 | intensity for `mod vca=` |
+| 18 | `drive` | 0..127 | u8 | 0 |  |
+| 19 | `level` | 0..127 | u8 | 105 |  |
+| 20 | `attack` | 0..127 | u8 | 0 |  |
+| 21 | `decay` | 0..127 | u8 | 66 |  |
+| 22 | `sustain` | 0..127 | u8 | 127 |  |
+| 23 | `release` | 0..127 | u8 | 0 |  |
+| 24 | `mgfreq` | 0..127 | u8 | 19 | LFO rate |
+| 25 | `mgsync` | 0..1 | u8 | 0 | `off` `on`, LFO to BPM |
+| 26 | `pitchsrc` | 0..6 | u8 | 0 | source for `mod pitch=` |
+| 27 | `vco1src` | 0..6 | u8 | 0 | source for `mod vco1p=` |
+| 28 | `vco2src` | 0..6 | u8 | 0 | source for `mod vco2p=` |
+| 29 | `cutoffsrc` | 0..6 | u8 | 0 | source for `mod cutoff=` |
+| 30 | `vcasrc` | 0..6 | u8 | 0 | source for `mod vca=` |
+
+Knobs 26..30 take `none sine saw square sh eg vco2`. A routed slot and its
+intensity are written as one `mod <dest>=<source>:<intensity>` token instead of
+two `patch` tokens, and an unrouted one is not written at all. Any of the 31 can
+be an automation lane's target: `syn1 lane1 knob=cutoff`.
+
+## Mixer knobs
+
+The 25 at pattern `+0x242`, from the dispatch at `0x020736C0`.
+
+| knob | text | goes to |
+|---|---|---|
+| 0 | `mix route=` | `syn1` `syn2` `syn1+syn2` `drums` `all` `off` |
+| 1 | `fx <type>` | `delay` `chorus` `flanger` |
+| 2 | `fx time=` | delay time, or the chorus and flanger equivalent |
+| 3 | `fx ratio=` | L/R ratio |
+| 4 | `fx rate=` | LFO rate, shared by all three types |
+| 5 | `fx depth=` | depth |
+| 6 | `fx sync=` | tempo-sync divisor, delay only |
+| 7 | `fx fb=` | feedback |
+| 8 | `fx wet=` | dry/wet; forced to 0 when the route is `off` |
+| 9..14 | `mix pan=` | pan for syn1, syn2, drum1..4 - `value*258`, linear |
+| 15, 16 | `fx k15= k16=` | forwarded to the effect, which has no parameter there; 127 or 0 in every song |
+| 17..22 | `mix vol=` | volume, same channel order - `value^2 * 0x10404 >> 15`, quadratic |
+| 23, 24 | - | the setter returns early above 22; zero in all 1744 patterns |
 ## Defaults
 
 Written only when a field differs. Percentages are over `data/saves` and the ROM's
