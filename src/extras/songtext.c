@@ -1168,13 +1168,14 @@ static void write_named(struct sink *k, const uint8_t *p, size_t len,
             if (*fxline) emit(&sub, "fx %s\n", fxline);
         }
         {
-            /* The 12-byte per-track editor record at +0x25C. The nine bytes the
-             * ROM reads are 0..7 and 9 - its accessor family at 0x0206B100 has
-             * one variant per displacement 0x310..0x317 and 0x319 - and the three
-             * with no accessor are zero in all 1744 patterns here. Byte 0 is the
-             * piano-roll scroll, 2 and 3 copy the lanes' knob ids, the rest are
-             * read and unnamed. One line, because it is editor state and it
-             * repeats from pattern to pattern. */
+            /* The 12-byte per-track editor record at +0x25C: piano-roll scroll,
+             * keyboard octave, the two lanes' knob ids, the KAOSS pad's scale,
+             * key, path (HLD/SMT) and slot, and the pattern page's LOCK. The
+             * accessor at 0x0206B0C0 takes a field 0..9 and reads record byte
+             * `field`; nothing calls it with 8, and 10 and 11 have no accessor,
+             * and all three are zero in every record here. One line, because it
+             * is editor state and it repeats from pattern to pattern -
+             * tools/songtext.py and docs/songtext.md name each position. */
             static const int VIEW_BYTES[9] = {0, 1, 2, 3, 4, 5, 6, 7, 9};
             char groups[NTRACKS][64];
             int any = 0, j;

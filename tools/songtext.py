@@ -421,12 +421,23 @@ def parse_grid(kind, tokens, pat, track):
             pat[o + 3] = int(t) & 0xFF
 
 
-# The 12-byte per-track record at pattern +0x25C. The nine bytes the ROM reads
-# are 0..7 and 9: its accessor family at 0x0206B100 has one variant per
-# displacement 0x310..0x317 and 0x319, and bytes 8, 10 and 11 - the three it has
-# no accessor for - are zero in all 1744 patterns here. Byte 0 is the piano-roll
-# scroll and 2 and 3 are a copy of the two lanes' knob ids; the rest are read by
-# the game and not named.
+# The 12-byte per-track record at pattern +0x25C, and the nine bytes of it that
+# the game reads. Its accessor (0x0206B0C0) takes a field 0..9 and reads record
+# byte `field`, so there is one for byte 8 as well - but nothing calls it with 8,
+# and 10 and 11 have no accessor at all; all three are zero in every record here.
+#
+#   0  piano-roll scroll                          0..84
+#   1  keyboard octave, the six dots over the keys 0..5, clamped at 0x0204D3E8
+#   2  lane 1 knob id, a copy of the lane array's; playback reads the array
+#   3  lane 2 knob id
+#   4  KAOSS pad scale, index into the 31 names at 0x02084E54
+#   5  KAOSS pad key, 0 = C .. 11 = B, the names at 0x02084B70
+#   6  automation path: 1 = HLD, 2 = SMT. This is the one thing here the
+#      sequencer reads - 0x0206DD4C puts it in the automation object's `enable`
+#   7  KAOSS pad slot, the 1/2/3 buttons
+#   9  the pattern page's LOCK: 1 = engaged, 0xFF = neither LOCK nor COPY
+#
+# docs/songtext.md has the scale table and how each of these was measured.
 VIEW_BYTES = (0, 1, 2, 3, 4, 5, 6, 7, 9)
 
 

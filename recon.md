@@ -1139,8 +1139,22 @@ Two lanes per track, 8 bytes each at `track + 0x10 + lane*8`: knob id, value
 (`-1` means take the pattern default), offset, scale, then a current value and a
 per-sub-tick delta. These do **not** post events — they call the machine's knob
 handler directly through vtable slot `+0x18`, which for a synth is the same
-`0x02075648` the patch loader uses. Track mode `+0x20` selects between held and
-interpolated, and `+0x22` selects between play, record and overdub.
+`0x02075648` the patch loader uses. `+0x22` selects between play, record and
+overdub.
+
+`+0x20` is the pad's `HLD`/`SMT` button, and it is what the song file's editor
+record carries in byte 6 (§14). Both paths map a raw value the same way and both
+only latch on a step's first sub-tick (`+0x33 == 0`), and both leave a track alone
+unless `+0x21` is 0:
+
+- `1`, `HLD`: `cur = map(raw[step])`, and nothing moves until the next step.
+- `2`, `SMT`: `cur = map(raw[step])` as well, but it also maps `raw[step+1]`
+  (`step+1 & 0xFF`, or this step again on the last one) and stores
+  `delta = ((next - cur) << 8) / subticks` — `0x0200C158`, with the count at
+  `+0x32`. Every later sub-tick of the step adds `delta` to `cur`, so a lane ramps
+  into the next recorded value instead of stepping to it.
+
+Both then push `cur >> 8` to every lane whose knob id is not `-1`.
 
 ### Note and gate logic, `0x0206E9D8` and `0x0206EABC`
 
@@ -1544,13 +1558,45 @@ correctly, and that is how the layout below was verified rather than guessed.
 +0x25B  0x049 a zero byte, then six 12-byte per-track editor records
 ```
 
-The editor records are read by an accessor family at `0x0206B100`, one variant per
-displacement, and the displacements it uses are `0x310`..`0x317` and `0x319` -
-bytes 0..7 and 9 of the record. Byte 0 is the piano-roll scroll (0..84, and
-`0x02034500` reaches it to set the scrollbar up), bytes 2 and 3 are a copy of the
-two automation lanes' knob ids that agrees with the lane array in 94% of cases and
-is not what playback reads, and the rest are read but not named. Bytes 8, 10 and
-11 have no accessor and are zero in all 1744 patterns here.
+The editor records are reached through one accessor pair: getter `0x0206B0C0`,
+setter `0x0206AF28`, both `cmp field,#9` then a jump table of ten cases, case *i*
+being `ldrb [record + i]` after `mla pattern,#676` and `mla track,#12`. So a field
+index *is* a record byte index, 0..9. Two wrapper pairs sit in front: `0x02034500`
+/ `0x020344DC` take the pattern and track the live header's `+0x50`/`+0x54` name,
+`0x02034548` / `0x02034524` take a song instance (stride `0x43040`).
+
+Every byte the game reads, and how each was pinned down - a Ghidra sweep of all 55
+54 call sites for the field index, then `tools/uibyte.py` to change one byte, boot
+twice and diff the framebuffers:
+
+```
+0  piano-roll scroll       0..84    242 px on the SEQ page's scrollbar
+1  keyboard octave         0..5     the six dots over the keys; 0x0204D3E8 is
+                                    octUp/octDown, clamped to 0..5, written back
+2  lane 1 knob id                   a copy of the lane array's, agreeing in 94%
+3  lane 2 knob id                   of cases; not what playback reads
+4  KAOSS pad scale         0..29    the SET page's SCALE row: 0 CHROMA, 1 IONIAN,
+                                    20 EGYPT - 31 names of 16 bytes at 0x02084E54
+5  KAOSS pad key           0..11    the SET page's KEY row: 3 draws D#; the twelve
+                                    names of 8 bytes at 0x02084B70
+6  automation path         1, 2      1 draws HLD, 2 draws SMT
+7  KAOSS pad slot          0..2      the 1/2/3 button highlight, x 4..21 y 2..15
+9  pattern page LOCK    0, 1, 0xFF   1 lights LOCK, x 35..62 y 2..15 - exactly the
+                                    widget's box in the table at 0x020845DC
+```
+
+Byte 6 is the only one of these the sequencer reads: `0x02052864` compares it
+against the automation object's `enable` (`0x0206DD7C`, live `+0x8A` in the
+104-byte array and `+0x84` in the 36-byte one) and writes it through `0x0206DD4C`.
+`ds10_seq_run` runs a lane only when `enable == 1`, so `SMT` is a second
+interpolation path that is not decompiled; `songplay` installs 1 for every
+pattern. Byte 9 is written by `0x020312B0` and `0x02031418`, which scan the two
+widgets of the pattern page - `COPY` and `LOCK` - and store the pressed one's
+index, or -1 for neither; only `1` is restored when the page is built
+(`0x0202E01C`).
+
+Byte 8 has a jump-table case but no call site anywhere, and bytes 10 and 11 have
+no case at all; all three are zero in all 10464 records here.
 
 Accessors, all leaf functions taking `(doc, pattern, track, step, out)` and
 copying signed bytes:

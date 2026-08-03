@@ -60,7 +60,7 @@ view 46,3,11,12,1,0,2,0,0 31,3,11,12,1,0,2,0,0 36,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1
 | `syn1 name "XLEAD"` | payload `+0x2BFC` + pattern*48 | `58 4c 45 41 44 00` |
 | `syn1 lane1 knob=cutoff 0=69 1=62` | pattern `+0x1C2` | raw 69, 62, then -1 for the rest; knob 11 on every step |
 | `mix route=drums vol=…` | pattern `+0x242`, 25 knobs | knob 0=3 (drums), 17..22=105,105,104,105,66,105 |
-| `view 46,3,11,12,…` | pattern `+0x25C`, six 12-byte editor records | track 0: scroll 46, then the bytes the ROM reads |
+| `view 46,3,11,12,…` | pattern `+0x25C`, six 12-byte editor records | track 0: scroll 46, octave 3, lane knobs 11 and 12, pad scale IONIAN key C, `SMT`, pad slot 0, no `LOCK` |
 
 The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + step*4`:
 
@@ -138,22 +138,43 @@ be one held sample.
 
 ## `view` — the editor records
 
-One line per pattern, one comma-separated group per track, nine bytes each. They
-are editor state, not music, and they repeat from pattern to pattern, which is why
-they are one line rather than six.
+One line per pattern, one comma-separated group per track, nine bytes each. Mostly
+editor state, and it repeats from pattern to pattern, which is why it is one line
+rather than six.
 
-| position | byte in the record | what |
-|---|---|---|
-| 0 | 0 | piano-roll scroll, 0..84 counting upward |
-| 1 | 1 | read by the ROM, not named. 2..5 on a synth track, 0 on a drum one |
-| 2, 3 | 2, 3 | a copy of the two lanes' knob ids — agrees with the lane array in 94% of cases and is *not* what playback reads |
-| 4..7 | 4..7 | read, not named |
-| 8 | 9 | read, not named. 0 or 0xFF |
+| position | byte | what | seen |
+|---|---|---|---|
+| 0 | 0 | piano-roll scroll, counting upward | 0..84 |
+| 1 | 1 | keyboard octave — the row of six dots over the keys | 0..5 |
+| 2, 3 | 2, 3 | a copy of the two lanes' knob ids — agrees with the lane array in 94% of cases and is *not* what playback reads | |
+| 4 | 4 | KAOSS pad scale, index into the table below | 0..29 |
+| 5 | 5 | KAOSS pad key, 0 = C .. 11 = B | 0..11 |
+| 6 | 6 | automation path: 1 = `HLD`, 2 = `SMT`, 0 = off | 0..2 |
+| 7 | 7 | KAOSS pad slot the `1`/`2`/`3` buttons select | 0..2 |
+| 8 | 9 | pattern page `LOCK`: 1 = engaged, 0xFF = neither it nor `COPY` | 0, 1, 0xFF |
 
-Bytes 8, 10 and 11 of the record are not in the line: the accessor family at
-`0x0206B100` has a variant for displacements `0x310`..`0x317` and `0x319` and none
-for those three, and they are zero in all 1744 patterns here. Naming this line
-took the `raw` lines of a clean dump from 54 per song to 2.
+Bytes 8, 10 and 11 of the record are not in the line. The accessor at `0x0206B0C0`
+takes a field 0..9 and reads record byte *field*, so byte 8 has one; nothing calls
+it with 8, and 10 and 11 have no accessor at all. All three are zero in all 10464
+records here.
+
+Position 6 is the one the sequencer reads: it lands in the automation object's
+`enable` (`0x0206DD4C`, live `+0x8A`), and `ds10_seq_run` only runs a lane whose
+enable is 1 — so `SMT` selects a second interpolation path that is not decompiled.
+`songplay` installs 1 for every pattern; TODO.md §6.
+
+Pad scales, `0x02084E54`, 16 bytes each:
+
+| | | | | | |
+|---|---|---|---|---|---|
+| 0 CHROMA | 1 IONIAN | 2 DORIAN | 3 PHRYGI | 4 LYDIAN | 5 MIXLYD |
+| 6 AEOLIA | 7 LOCRIA | 8 MBLUES | 9 mBLUES | 10 DIM | 11 COMDIM |
+| 12 MPENTA | 13 mPENTA | 14 RAGA1 | 15 RAGA2 | 16 RAGA3 | 17 SPANISH |
+| 18 GYPSY | 19 ARABIA | 20 EGYPT | 21 HAWAII | 22 PELOG | 23 JAPAN |
+| 24 RYUKYU | 25 WHOLE | 26 m3RD | 27 M3RD | 28 4TH | 29 5TH |
+| 30 OCTAVE | | | | | |
+
+Keys are the twelve names at `0x02084B70`, 8 bytes each, `C` through `B`.
 
 ## Gates
 
