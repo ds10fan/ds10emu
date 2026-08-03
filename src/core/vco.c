@@ -22,6 +22,18 @@ static inline int32_t lfsr_step(int32_t reg)
     return ds10_shl(reg, 1);
 }
 
+void ds10_vco_clock_noise(ds10_vco *o, int n)
+{
+    int i;
+
+    for (i = 0; i < n; i++) {
+        if (o->wave1 == DS10_WAVE_NOISE)
+            o->lfsr1 = lfsr_step(o->lfsr1);
+        if (o->wave2 == DS10_WAVE_NOISE)
+            o->lfsr2 = lfsr_step(o->lfsr2);
+    }
+}
+
 /* Slightly tilted triangle: -32767 + 2*|p| + (p * 4259 >> 15). */
 static inline int32_t wave_triangle(int32_t phase)
 {

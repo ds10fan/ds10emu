@@ -72,45 +72,33 @@ Record from the device, compare against the same file rendered here.
   same code path.
 - **Multiplayer.** Out of scope by request.
 
-## 5. The drum buffers, and what is still not bit-exact
+## 5. The drum buffers - two rounding residuals left
 
 `src/core/drumbuf.c` renders a drum patch into its one-second buffer the way
-`0x0206CCC8` does - the master stage, the two fades, and the drum's own nine
-effect bytes as mixer knobs 0..8 - and `songplay` uses it. recon.md §14 has the
-recipe with an address for every constant.
+`0x0206CCC8` does, and `songplay` uses it. recon.md §14 has the recipe, including
+the frame that runs before the note - which is what makes noise and the delay come
+out where the hardware has them.
 
 `make test-drumbuf` holds it to buffers read out of a **running DS**, not to our
-own oracle: `tools/drumref.py vectors` packs each song into a save, boots it under
-melonDS and reads the four buffers out of main RAM. Three windows a drum - past
-the head fade, the middle, and the tail fade.
+own oracle. Plain dry drums are exact. What is left:
 
-Where it stands:
+1. **A noise oscillator mixed with another waveform.** `ds10plus_00`'s drum 1 is
+   noise plus a triangle at balance 64. Its timing is right - correlation 1.000 at
+   lag 0 - but 24% of the sampled window differs, by up to 23 counts, most of it in
+   the decay. Something in the voice's mixing of the two rounds differently than
+   ours; `make test-voice`'s vectors do not cover a balance like that one.
+2. **The wet mix.** A drum at dry/wet 127 has its echo on the right sample now, and
+   3% of its samples differ by 4 counts or less. Likely the same class: where the
+   two multiplies by 32764 land.
 
-| case | result |
-|---|---|
-| a plain-oscillator dry drum | **bit-exact**, 32704 of 32704 samples from sample 64 to the end |
-| the same drum with dry/wet 127 | 95.95% - the delay's echo arrives 64 samples early |
-| any drum with a noise oscillator | does not reproduce at all |
-| `ds10plus_00`'s drum 3 | 24%, and it is neither noise nor wet |
+Both are bounded by the test (24 counts, 25% of samples), so a timing regression
+cannot hide behind them - getting the pre-note frame or the delay wrong puts nearly
+every sample out by thousands.
 
-Three things left, in the order they are worth doing:
-
-1. **The wet echo, 64 samples.** The effect's timeline runs one frame ahead of what
-   is captured: pre-rolling a frame puts the echo exactly where the hardware has it
-   (7991 both) but then shifts the dry path, so the two cannot both be right in the
-   present structure. Something in the recorder captures a frame behind the graph.
-2. **Noise drums.** Their LFSR carries state from whatever the machine did before
-   the render, so the same patch does not give the same sample twice from a cold
-   start. Reproducing them means knowing that state at load, which probably means
-   the boot sequence.
-3. **`ds10plus_00`'s drum 3.** attack 37, and `vcasrc = eg` rather than `vcaeg`.
-   The hardware opens its envelope faster than we do - our peak lands at 3252
-   against their 1369 - and the render block size is not the reason: 64 is right
-   (drum 0 is exact with it, and 16/32/128 make drum 0 worse).
-
-The first 64 samples of every buffer are excluded above. The head fade is the
-master gain still ramping and it is not modelled, since the value it ramps from is
-not known; from sample 64 on the gain is `0x7FD7` exactly.
+Still open beyond that: `ds10plus_00`'s drum 2 (pure noise through a band-pass
+filter, 73%) and drum 3 (a resonant filter, attack 37, `vcasrc = eg`, 24% and our
+render about 254 samples out). Both are state-sensitive filters, so the suspicion is
+the filter's state at the note rather than anything about the recorder.
 
 ## 5c. The master gain is never set to 0x7FD7
 

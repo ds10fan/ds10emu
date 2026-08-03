@@ -36,4 +36,13 @@
 void ds10_drumbuf_render(const int8_t *knobs, const int8_t *extra,
                          ds10_fx *fx, int16_t *out, int frame);
 
+/* The same, with the voice supplied. 0x0206CCC8 renders the four drums in a loop
+ * that pushes each one's knobs into the *same* machine, so whatever state a drum
+ * leaves - a noise register, an oscillator phase - is where the next one starts.
+ * `ds10_drumbuf_render` is this with a fresh voice, which is only right for the
+ * first drum of a run. */
+void ds10_drumbuf_render_with(ds10_voice *v, const int8_t *knobs,
+                              const int8_t *extra, ds10_fx *fx, int16_t *out,
+                              int frame);
+
 #endif /* DS10_DRUMBUF_H */

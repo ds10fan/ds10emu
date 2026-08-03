@@ -60,4 +60,10 @@ void ds10_vco_update(ds10_vco *o, int32_t inc1, int32_t inc2);
 /* Advance one sample; returns the mixed output that feeds the filter. */
 int32_t ds10_vco_step(ds10_vco *o);
 
+/* Clock the noise registers `n` samples without rendering: what a frame that runs
+ * before a voice has any pitch does to them - the phases stay put, the LFSRs do
+ * not, and only an oscillator set to noise clocks, since that is where the
+ * original steps it. */
+void ds10_vco_clock_noise(ds10_vco *o, int n);
+
 #endif /* DS10_VCO_H */

@@ -1651,11 +1651,27 @@ shaped sides summed. Both two-sided forms - `shape(L)+shape(R)` and `shape(L+R)`
 are wrong by thousands of counts, so the recorder is not taking the mixer's stereo
 pair.
 
-**What is left** is those first 64 samples, and there the difference is our voice,
-not the gain: the hardware's is already at full amplitude on sample 1 while ours
-interpolates its envelope over its first frame. So the render does not start the
-voice with an ordinary note-on - `0x0206D5C4` -> `0x0206EEA0(seq, 127, 0)` is the
-call to read next.
+**A frame runs before the note.** Two things that looked unrelated turned out to
+be the same fact. A pure-noise drum rendered from the note is byte for byte the
+hardware's buffer shifted 64 samples - correlation 1.000 at lag 64 - and a wet
+drum's echo starts 64 samples later than the hardware's. Both follow if the render
+gives the voice a frame before the note goes on: the noise register clocks every
+sample whatever the pitch, and the effect sees that frame too, so its delay line is
+a frame further on. The oscillator phase does *not* advance, which is why a plain
+drum needs no shift at all - the voice has no pitch until the note.
+
+`src/core/drumbuf.c` does that, and `make test-drumbuf` measures the result against
+buffers read out of a running DS:
+
+| case | result |
+|---|---|
+| plain dry drum, two songs | **exact**, 0 of 3072 window samples differ |
+| noise drum | timing exact (correlation 1.000 at lag 0); 24% of window samples differ by up to 23 counts, most of them in its decay |
+| the same drum at dry/wet 127 | echo starts on the hardware's sample, 7991; 3% differ by up to 4 counts |
+
+The two residuals are rounding, not timing: one in the voice's mixing of a noise
+oscillator against a second waveform, one in the wet mix. What they are not is a
+frame out - that mistake costs nearly every sample, by thousands.
 
 ### The trailing blocks, named
 

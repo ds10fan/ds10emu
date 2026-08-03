@@ -30,6 +30,12 @@
  * `remaining/64 < 8` is the one starting seven frames from the end. */
 #define FADE_AT (DS10_DRUMBUF_LEN - 7 * 64)
 
+/* The frame that runs before the note goes on. */
+#define PRE_FRAME 64
+
+/* Enough ds10_fx_update calls for the effect's ramped parameters to stop moving. */
+#define FX_SETTLE 128
+
 static int32_t clamp_one(int32_t v)
 {
     if (v < -MIX_ONE) return -MIX_ONE;
@@ -59,6 +65,17 @@ void ds10_drumbuf_render(const int8_t *knobs, const int8_t *extra,
                          ds10_fx *fx, int16_t *out, int frame)
 {
     ds10_voice v;
+
+    memset(&v, 0, sizeof v);
+    ds10_voice_state_load(&v, ds10_tbl_voice_init);
+    ds10_drumbuf_render_with(&v, knobs, extra, fx, out, frame);
+}
+
+void ds10_drumbuf_render_with(ds10_voice *vp, const int8_t *knobs,
+                              const int8_t *extra, ds10_fx *fx, int16_t *out,
+                              int frame)
+{
+    ds10_voice v = *vp;
     int32_t gain = GAIN_UNITY;
     int wet = 0, i;
 
@@ -77,12 +94,37 @@ void ds10_drumbuf_render(const int8_t *knobs, const int8_t *extra,
          * running since boot, so its ramped parameters are already at their
          * targets. Ours start from the constructor's, so settle them: 128 steps
          * is past where the delay's read pointer stops moving. */
-        for (k = 0; k < 128; k++)
+        for (k = 0; k < FX_SETTLE; k++)
             ds10_fx_update(fx);
     }
-    memset(&v, 0, sizeof v);
-    ds10_voice_state_load(&v, ds10_tbl_voice_init);
     ds10_patch_load(&v, knobs);
+    /* The render's first frame runs before the voice has a pitch: the phases stay
+     * put but the noise registers clock, so the hardware's noise is 64 samples
+     * ahead of a buffer that starts at the note. */
+    {
+        /* The frame before the note: the voice runs, so its noise register clocks
+         * and its filter settles, but there is no pitch yet, so the phases stay
+         * where they are. */
+        int16_t scratch[PRE_FRAME];
+        int32_t p1 = v.vco.phase1, p2 = v.vco.phase2;
+        int j;
+
+        ds10_voice_render(&v, scratch, PRE_FRAME);
+        v.vco.phase1 = p1;
+        v.vco.phase2 = p2;
+        /* The effect sees that frame too, so its delay line is a frame further on
+         * than a render starting at the note would leave it - which is why the
+         * hardware's echo arrives 64 samples earlier. */
+        if (fx) {
+            for (j = 0; j < PRE_FRAME; j++) {
+                int32_t s = scratch[j], fl, fr;
+
+                ds10_fx_step(fx, wet ? s : 0, wet ? s : 0, &fl, &fr);
+            }
+            ds10_fx_update(fx);
+        }
+    }
+
     ds10_voice_note_on(&v, DS10_DRUMBUF_NOTE);
 
     for (i = 0; i < DS10_DRUMBUF_LEN; i += frame) {
@@ -115,4 +157,5 @@ void ds10_drumbuf_render(const int8_t *knobs, const int8_t *extra,
             out[i + j] = (int16_t)(ds10_mul32(shape(clamp_one(s)), gain) >> 15);
         }
     }
+    *vp = v;
 }

@@ -71,12 +71,12 @@ def render(song, outdir="out/drumref", frame=FRAME):
 # Drum 0 of each of two songs, both of which are plain oscillators, plus a copy
 # of the first with its dry/wet turned up so the effect path is covered too.
 #
-# The drums left out are the ones whose render cannot be reproduced from the patch
-# alone: any drum with a noise oscillator, because its LFSR carries state from
-# whatever the machine did before the render, and ds10plus_00's drum 3, whose
-# envelope the hardware opens faster than ours. TODO.md section 5.
+# Drum 1 of the first song is in because it is a noise drum, and noise reproduces
+# now that the pre-note frame is modelled. Left out: ds10plus_00's drum 2 and 3,
+# whose renders still differ - see TODO.md section 5.
 VEC_SONGS = (("data/saves/ds10plus_00.ds10song", 0, None),
              ("data/saves/ds10plus_02.ds10song", 0, None),
+             ("data/saves/ds10plus_00.ds10song", 1, None),
              ("data/saves/ds10plus_00.ds10song", 0, ("wet", 127)))
 VEC_WINDOWS = ((64, 1088), (16000, 17024), (31744, 32768))
 
