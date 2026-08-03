@@ -85,8 +85,15 @@ own oracle. Plain dry drums are exact. What is left:
 1. **A noise oscillator mixed with another waveform.** `ds10plus_00`'s drum 1 is
    noise plus a triangle at balance 64. Its timing is right - correlation 1.000 at
    lag 0 - but 24% of the sampled window differs, by up to 23 counts, most of it in
-   the decay. Something in the voice's mixing of the two rounds differently than
-   ours; `make test-voice`'s vectors do not cover a balance like that one.
+   the decay.
+
+   It is **not** the voice's arithmetic. Rendering all four of that song's drum
+   patches through our `ds10_voice_render` and through the original's own code under
+   Unicorn gives **0 differences in 32768 samples, for every one of the four** - so
+   the voice is right and what differs is the state it starts from. A note-on resets
+   neither the filter nor the oscillator phases (`src/core/event.c`), so the frame
+   that runs before the note leaves state behind that we do not reproduce; clocking
+   only the noise register, as we do, is evidently not all of it.
 2. **The wet mix.** A drum at dry/wet 127 has its echo on the right sample now, and
    3% of its samples differ by 4 counts or less. Likely the same class: where the
    two multiplies by 32764 land.
