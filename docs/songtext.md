@@ -341,8 +341,10 @@ the `31_SONG` page, which has three modes — `PATTERN`, `MUTE` and `TRS`.
 | — | `+0x2FA4`, 4 bytes | five more 6-bit slots; only the page's "clear song" ever writes them, nothing reads them, zero in the whole corpus |
 | `trs` | `+0x2FA8`, 52 bytes | one signed byte of semitones per bar |
 
-- A `mute` bit set is a track muted in that bar: 87 of the 97 saved songs have both
-  masks all-zero, and the page draws a marker where a bit is set.
+- A `mute` bit set is a track muted in that bar: 78 of the 97 saved songs have both
+  masks all-zero, and the page draws a marker where a bit is set. `mute b` is
+  all-zero in every one of them — deck B is the DSi build's second instance, which
+  §6 of recon.md puts out of reach.
 - Both are indexed by bar 0..99 — the same 100 bars as `chain`. A mask array has
   room for 105, but `trs` runs out at the end of the payload after 52, so bars
   52..99 of a transpose cannot survive a save. The ROM's own accessors write all

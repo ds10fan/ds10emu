@@ -1867,6 +1867,9 @@ each bar advance - `0x0206D23C`, into player `+0x8C` - and nothing reads that wo
 back, so the mute the engine acts on is still the per-track toggle a widget drives
 (`0x02052FDC` solo, `0x02052FEC` mute).
 
+Deck B's mask is zero in all 97 saved songs and deck A's in 78 of them, which is
+what the instance story above predicts: a DS-mode build only ever edits deck A.
+
 Two measured limits. `TRS` is indexed 0..99 like the mask but the payload ends
 after 52 bytes of it, so bars 52..99 of a transpose never reach a file. And the
 last two bytes of the payload, the only ones ever non-zero in the corpus (49 of 97
