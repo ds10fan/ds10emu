@@ -131,11 +131,18 @@ first sample is the -1 our mixer also produces for silence) and it is *not* "one
 second of a fresh voice at note 60" as songplay.c assumes: the recorder drives it
 differently.
 
-**Most of it is now solved.** recon.md §14 has the chain, measured against
-hardware with `tools/drumref.py`: `buffer[i] = shape(clamp(2*((voice[i]*vol)>>15)))
-* 0x7FD7 >> 15`, exact for 31720 consecutive samples of a one-second buffer. What
-is left is the onset (~600 samples) and the tail (~440), which is how the recorder
-drives the voice, and the code-level origin of the factor of two.
+**It is solved but for 64 samples.** recon.md §14 has the whole recipe with an
+address for every constant, and `tools/drumref.py` verifies it against the real
+thing: **32704 of 32704 samples exact from sample 64 on**, on a synthetic patch and
+a real one. The head is the master gain still ramping until the counter at
+`mixer+0x8A` reaches 64; the tail is the recorder asking to stop with fewer than 8
+frames left, after which the gain decays by `0x7D85/0x8000` a sample. Both ends are
+the recorder's, not the patch's.
+
+What is left is the first 64 samples: the hardware's voice is at full amplitude on
+sample 1 while ours interpolates its envelope across its first frame, so the render
+does not begin with an ordinary note-on. `0x0206D5C4` -> `0x0206EEA0(seq, 127, 0)`
+is the next thing to read.
 
 That is now a well-posed problem rather than a guess, because the target bytes are
 readable. The order is: get the buffer itself to match the dump, and only then

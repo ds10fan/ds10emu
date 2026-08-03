@@ -1611,24 +1611,51 @@ from 0 to 127 in `ds10plus_00` moves the rendered buffer's peak from sample 59 t
 8002 and extends it from 10404 samples to 32672 - a delay tail, baked into the
 sample. Setting the level knob from 127 to 40 scales it. Both on hardware.
 
-**The sample chain.** With a steady patch (sawtooth, envelope flat, no effect) the
-buffer is, sample for sample:
+**The recipe, end to end.** Every constant here is from the disassembly, and the
+result is bit-exact against the hardware for all but the first 64 samples:
 
 ```
-buffer[i] = (shape(clamp(2 * ((voice[i] * vol) >> 15))) * 0x7FD7) >> 15
+buffer is 1000 ms = 32768 samples        0x02070610(rec, 1000) allocates
+                                         [rec+0x14] * 1000
+mixer: knob 17 = 127, knob 9 = 64,       0x0206CCC8, 0x0206CD34 onwards
+       every other channel silent        (r7 = 0)
+the drum's 31 knobs -> a voice,          0x0206B9DC, called at 0x0206CE10
+its nine bytes -> mixer knobs 0..8
+per sample:
+  v    = 2 * ((voice[i] * vol) >> 15)    vol = 32764, from knob 17 = 127
+  out  = (shape(clamp(v)) * gain) >> 15  the master stage, 0x02074054..0x020740A8
+gain:
+  samples 0..63    ramping               the counter at mixer+0x8A
+  sample 64        := 0x7FD7             0x02072DAC writes it, 0x02072E64
+  from 32320       (gain*0x7D85) >> 15   the smoother's own coefficient, the
+                   per sample            literal at 0x020740E8
 ```
 
-where `vol` is the mixer channel volume the render sets, knob 17 = 127 giving
-32764, `clamp` and `shape` are the master stage of §12, and `0x7FD7` is the gain
-that section shows being written directly. Verified against the hardware buffer:
-**exact for samples 600..32319, 31720 consecutive samples**, with the first ~600
-and the last ~440 differing - the onset and the tail, where our voice's envelope
-does not yet match how the recorder drives it.
+Verified with `tools/drumref.py` against the real thing: **32704 of 32704 samples
+exact from sample 64 to the end**, on a synthetic steady patch and on
+`ds10plus_00`'s drum 0 alike - 99.8% of the whole buffer, the only misses being
+inside those first 64.
+
+**Both ends are shaped, and neither is the patch's doing.** The head is the gain
+still ramping: the handler at `0x02072DAC` counts in `mixer+0x8A` and only when
+that count reaches 64 does it clear the mute and write `0x7FD7`, so the first 64
+samples fade in. The tail starts at sample **32320**, exactly where `0x02070728`
+finds fewer than 8 frames of buffer left (`remaining/64 < 8`) and sets
+`rec+0x2E = 1`, `rec+0x30 = 2`; from there the gain decays by `0x7D85/0x8000` =
+0.98062 a sample and the buffer is silent by ~32700. That fade is identical with
+release 127, release 0 and decay 20, so it belongs to the recorder and not to the
+envelope - the ends are deliberately silenced.
 
 Note what the doubling means: one `shape` over twice the channel signal, not two
 shaped sides summed. Both two-sided forms - `shape(L)+shape(R)` and `shape(L+R)` -
 are wrong by thousands of counts, so the recorder is not taking the mixer's stereo
-pair. Where the factor of two comes from in the code is still open.
+pair.
+
+**What is left** is those first 64 samples, and there the difference is our voice,
+not the gain: the hardware's is already at full amplitude on sample 1 while ours
+interpolates its envelope over its first frame. So the render does not start the
+voice with an ordinary note-on - `0x0206D5C4` -> `0x0206EEA0(seq, 127, 0)` is the
+call to read next.
 
 ### The trailing blocks, named
 
