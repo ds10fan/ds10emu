@@ -1696,12 +1696,18 @@ against our own render of the same song the zero-crossing rates agree to a perce
 while the envelopes and peak positions do not (correlations +0.93, +0.54, -0.08,
 +0.55). TODO.md §5 has the table.
 
-**A second knob space.** The same ROM table continues past the mixer's 25 knobs
-with `(42, 34)`, `(43, 35)`, `(44, 36)` … - `volume = 42 + channel` and
-`pan = 34 + channel`, which is the mixer's layout offset by 25. So the original's
-knob numbering has room for two 25-knob mixers, and the second table at
-`0x0208790A` is the same list starting five entries in. Nothing here models that
-yet.
+**A second knob space, and whose it is.** The same ROM table continues past the
+mixer's 25 knobs with `(42, 34)`, `(43, 35)`, `(44, 36)` … - `volume = 42 + channel`
+and `pan = 34 + channel`, the mixer's layout offset by 25. That is the **second
+DS-10 instance**: the DSi build runs two, A and B, and their outputs have to meet
+somewhere, so the knob numbering carries a mixer for each. The second table at
+`0x0208790A` is the same id list starting five entries in.
+
+The RAM dump agrees that only one is live in DS mode: one stride earlier than the
+record we found there are two buffers holding data but nothing pointing at them,
+and one stride later is empty. So B is a DSi-mode thing, and §6 has already
+established those sections are modcrypt-encrypted and not readable - which puts
+instance B out of reach of decompilation, while explaining the ids.
 
 Not verified: `+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56). Only the last
 two bytes of the second are ever non-zero across the 100 PLUS songs here, and
