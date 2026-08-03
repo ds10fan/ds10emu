@@ -1586,25 +1586,60 @@ knobs into its machine through `0x0206DF64`, then loops `j = 0..8` over
 `0x0206E084`. So it is a second parameter set of a drum voice, not dead space -
 what the nine mean is still open.
 
-They are **not** the `54_DRUM_FX` page. There is one effect processor in the whole
-engine - the mixer owns it at `+0x80` and knob 0 selects what feeds it, `drums`
-being one of the six choices - so a drum FX page can only be editing that same
-shared effect, whose eight parameters are mixer knobs 1..8. And the nine bytes
-never reach it: every one of the 16 calls to the effect's parameter setter
-`0x020726D4` is inside the mixer/effect module (`0x2072630`..`0x2077520`), while
-this path goes to `0x0206E084`, which dispatches through a table built at run time
-in BSS at `0x02160828`, one 2-byte entry per index, into `0x0206EB44` or
-`0x0206EBB0`. Both index 36-byte per-track records, add a byte fetched through a
-pointer at `+0x60`, clamp around 64 (`subs r2, r2, #0x40; movmi r2, #0`) and offset
-the parameter id by 64 - the shape of the per-step volume and pan the sequencer
-posts, not of an effect parameter.
+They **are** the `54_DRUM_FX` page, or at least they are a route and the eight
+effect parameters. The path, traced end to end:
 
-What the values look like, over 432 drum records: bytes 0, 1 and 6 are small flags
-(0..2, 0..2, 0..1), bytes 2, 4 and 5 cluster at 60..65 like something centred in a
-0..127 range, byte 3 is almost always 0, byte 7 is signed with -1 common, and byte
-8 is 0 in 347 of them. They are not copies of the mixer's own per-drum pan and
-volume either: the best agreement is byte 4 against pan at 22%, which is what two
-values clustered near 63 give by chance.
+```
+0x0206B9DC(song, drum, seq)   the 31 knobs through 0x0206DF64, then
+  j = 0..8: 0x0206E084(seq, j, byte)
+    if seq+0x40 (current pattern) is 0, or the dispatch table has no entry for j:
+      router = seq+0x34; machine = router[+4]; machine.vtable[0x18](j, value)
+```
+
+The dispatch table is built at run time in BSS at `0x02160828` by the loop at
+`0x0206D754`, which inverts a ROM table: for each channel `i` it writes
+`dest[volume_id(i)] = (i, kind 1)` and `dest[pan_id(i)] = (i, kind 2)`. The ROM
+table at `0x02087900` is the id list, and it is the mixer's own knob numbering -
+`(17, 9)`, `(18, 10)`, `(19, 11)` … which is `volume = 17 + channel` and
+`pan = 9 + channel`, exactly `mixer.h`. The two kinds are the per-step velocity
+and pan appliers, `0x0206EB44` and `0x0206EBB0`: both fetch the pattern's mixer
+knob through the pointer at `seq+0x60`, combine it with the track's latch at
+`+0x6A` or `+0x6B` (a multiply for volume, an offset around 64 clamped to 0..127
+for pan) and post opcode 6 with knob id 7 or 10 - `DS10_MIX_EV_KNOB` with
+`EVK_VOL` and `EVK_PAN`.
+
+Ids 1..8 have no entry in that table, so a drum's nine bytes take the fallback and
+land as `setKnob(0..8)` on the machine at `router+4`. Knobs 0..8 of the mixer are
+route, effect type, time, L/R ratio, LFO rate, depth, sync, feedback and dry/wet -
+and the nine bytes match that slot for slot, over 388 drum records:
+
+| j | mixer knob | drum bytes | the mixer's own |
+|---|---|---|---|
+| 0 | route | 0..2 | 0..5 |
+| 1 | type | 0..2 | 0..1 |
+| 2 | time | 0..106 | 0..127 |
+| 3 | L/R ratio | 0..255, mostly 0 | 0..255 |
+| 4 | LFO rate | 0..63 | 20..64 |
+| 5 | depth | 60..115 | 43..104 |
+| 6 | sync | 0..1, and equal to the mixer's on 71% of records | 0..1 |
+| 7 | feedback | 0..255, -1 common | 0..249 |
+| 8 | dry/wet | 0..127, 0 on 347 of 432 | 11..89 |
+
+They are mostly *not* equal to the master effect's settings, which is what a
+separate per-drum setting looks like rather than a mirror. There is still one
+effect processor, so four stored sets do not mean four effects running: whichever
+drum's set was pushed last is what the shared effect holds.
+
+Not measured: that pushing them changes the audio. Nothing renders them - our
+engine ignores them (`songplay.c` says so) and so does the oracle, which pushes
+only the 31 knobs, so `make test-songrender` is blind to them on both sides.
+
+**A second knob space.** The same ROM table continues past the mixer's 25 knobs
+with `(42, 34)`, `(43, 35)`, `(44, 36)` … - `volume = 42 + channel` and
+`pan = 34 + channel`, which is the mixer's layout offset by 25. So the original's
+knob numbering has room for two 25-knob mixers, and the second table at
+`0x0208790A` is the same list starting five entries in. Nothing here models that
+yet.
 
 Not verified: `+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56). Only the last
 two bytes of the second are ever non-zero across the 100 PLUS songs here, and
