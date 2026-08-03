@@ -12,6 +12,7 @@ songs/
 # change whenever a test does, so they stay out of history. The small, stable
 # ROM-derived inputs live in data/ and are committed.
 tests/vectors/
+!tests/vectors/drumbuf.bin
 
 # Build output
 build/

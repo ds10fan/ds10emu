@@ -21,12 +21,11 @@
  *     the drum patch from a fresh voice at note 60. The buffer CONTENT is checked
  *     against the original by make test-songrender; the driving conditions are
  *     not.
- *   - The drums' own effect settings: the nine bytes per drum at payload +0x2BA8
- *     are a route and the eight effect parameters, and 0x0206B9DC pushes them
- *     from inside 0x0206CE04 - the routine that renders the drum buffers - so a
- *     drum sample goes through the effect as it is rendered. The buffers here are
- *     rendered dry, which is wrong for the 10 of 48 drums in the ROM's demos that
- *     ask for wet. See TODO.md section 5; recon.md section 14 has the trace.
+ *   - Nothing about the drum buffers: src/core/drumbuf.c renders them the way
+ *     0x0206CCC8 does, master stage and per-drum effect included, and it is
+ *     bit-exact against a running DS for a dry drum. A fully wet one still
+ *     differs in about 4% of its samples, all of them the delay's echo, which
+ *     arrives 64 samples early there - TODO.md section 5.
  *   - Automation paths other than the per-step latch. A track whose pattern asks
  *     for one of the others is left un-automated; none of the ROM's demos does.
  *   - The 73 bytes of a pattern after its 25 mixer knobs, at payload +0x25B.
@@ -44,6 +43,7 @@
 #include <string.h>
 
 #include "../core/drum.h"
+#include "../core/drumbuf.h"
 #include "../core/event.h"
 #include "../core/mixer_state.h"
 #include "../core/seq.h"
@@ -288,18 +288,22 @@ int main(int argc, char **argv)
     for (i = 0; i < DS10_SONG_PATTERNS; i++)
         build_pattern(&rt[i], &song.pattern[i]);
 
-    /* Render each drum patch into its one-second buffer, then hand it to the
-     * voice the way 0x02072268 does. */
+    /* Render each drum patch into its one-second buffer the way 0x0206CCC8
+     * does - through the master stage and with its own nine effect bytes - then
+     * hand it to the voice the way 0x02072268 does. */
     for (i = 0; i < NDRUM; i++) {
-        ds10_voice v;
-        int j;
+        static ds10_fx dfx;
+        static int16_t dfx_l[DS10_FX_BUFLEN], dfx_r[DS10_FX_BUFLEN];
 
-        memset(&v, 0, sizeof v);
-        ds10_voice_state_load(&v, ds10_tbl_voice_init);
-        ds10_patch_load(&v, ds10_song_drum_knobs(&song, i));
-        ds10_voice_note_on(&v, DRUM_ROOT);
-        for (j = 0; j < DRUM_LEN; j += FRAME)
-            ds10_voice_render(&v, drumbuf[i] + j, FRAME);
+        memset(&dfx, 0, sizeof dfx);
+        memset(dfx_l, 0, sizeof dfx_l);
+        memset(dfx_r, 0, sizeof dfx_r);
+        ds10_fx_state_load(&dfx, ds10_tbl_fx_init);
+        dfx.buf_l = dfx_l;
+        dfx.buf_r = dfx_r;
+        ds10_drumbuf_render(ds10_song_drum_knobs(&song, i),
+                            ds10_song_drum_extra(&song, i), &dfx,
+                            drumbuf[i], FRAME);
         memset(&drum[i], 0, sizeof drum[i]);
         drum[i].env.stage = DS10_DRUM_RELEASE;
         drum[i].env.retrig = 1;

@@ -9,10 +9,10 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: songtext test-songtext test-songtext-py test-drumfx fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: songtext test-songtext test-songtext-py test-drumfx test-drumbuf fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-songtext test-drumfx test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-songtext test-drumfx test-drumbuf test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -107,6 +107,25 @@ out/test_drumfx: tests/test_drumfx.c src/core/mixer.c src/core/fx.c \
 tests/vectors/drumfx.bin: extract tools/oracle.py tools/emu.py
 	@$(PY) tools/oracle.py drumfx-vectors
 
+# A drum buffer against one a running DS rendered. The vectors are committed
+# because making them needs melonDS as well as the ROM: `tools/drumref.py
+# vectors` packs each song into a save, boots it and reads the buffers out of
+# main RAM.
+test-drumbuf: out/test_drumbuf tests/vectors/drumbuf.bin
+	@./out/test_drumbuf
+
+out/test_drumbuf: tests/test_drumbuf.c src/core/drumbuf.c src/core/fx.c \
+                  src/core/mixer_state.c src/core/patch.c src/core/event.c \
+                  src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
+                  src/core/lfo.c src/core/pitch.c src/core/amp.c \
+                  src/core/voice_state.c src/core/drumbuf.h $(CORE_HDRS) $(TBL_SRC)
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ tests/test_drumbuf.c src/core/drumbuf.c \
+	    src/core/fx.c src/core/mixer_state.c src/core/patch.c src/core/event.c \
+	    src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
+	    src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/voice_state.c \
+	    $(TBL_SRC)
+
 out/test_mixer: tests/test_mixer.c src/core/mixer.c src/core/fx.c \
                 src/core/mixer_state.c src/core/mixer.h src/core/fx.h $(CORE_HDRS) $(TBL_SRC)
 	@mkdir -p out
@@ -137,7 +156,7 @@ test-seq: out/test_seq tests/vectors/seq.bin
 
 # The whole chain: a demo song's patches and steps through the sequencer into two
 # synth voices, bit-compared against the original doing the same.
-SONG_SRC = src/core/seq.c src/core/song.c src/core/md5.c \
+SONG_SRC = src/core/seq.c src/core/song.c src/core/md5.c src/core/drumbuf.c \
            src/core/patch.c src/core/event.c src/core/voice.c src/core/vco.c \
            src/core/vcf.c src/core/env.c src/core/lfo.c src/core/pitch.c \
            src/core/amp.c src/core/fx.c src/core/drum.c src/core/voice_state.c \

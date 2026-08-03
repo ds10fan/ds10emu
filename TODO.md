@@ -72,84 +72,45 @@ Record from the device, compare against the same file rendered here.
   same code path.
 - **Multiplayer.** Out of scope by request.
 
-## 5. The drums' own effect settings are ignored
+## 5. The drum buffers, and what is still not bit-exact
 
-The nine bytes per drum at payload `+0x2BA8` are a route and the eight effect
-parameters - `setKnob(0..8)` on the mixer machine, traced in recon.md §14 - and
-`0x0206B9DC` pushes them from *inside* `0x0206CE04`, the routine that renders the
-four one-second drum buffers. So they are render-time settings: a drum sample goes
-through the effect as it is rendered, which happens at load and again whenever the
-drum patch is edited, and the buffer the voice then resamples already has the
-effect baked in.
+`src/core/drumbuf.c` renders a drum patch into its one-second buffer the way
+`0x0206CCC8` does - the master stage, the two fades, and the drum's own nine
+effect bytes as mixer knobs 0..8 - and `songplay` uses it. recon.md §14 has the
+recipe with an address for every constant.
 
-Nothing here does that. `out/songplay` renders each drum buffer dry, and the
-divergence is not hypothetical: **10 of the 48 drums in the ROM demos, across 4 of
-the 12 songs, have a non-zero dry/wet**, and so do 75 of 388 drums in 59 of the 97
-songs in `data/saves`.
+`make test-drumbuf` holds it to buffers read out of a **running DS**, not to our
+own oracle: `tools/drumref.py vectors` packs each song into a save, boots it under
+melonDS and reads the four buffers out of main RAM. Three windows a drum - past
+the head fade, the middle, and the tail fade.
 
-`make test-songrender` cannot see it. It compares our buffer against the oracle's,
-and `tools/oracle.py render_drum_buffers` pushes only the 31 knobs - so both sides
-render dry and agree.
+Where it stands:
 
-**Half of it now has a reference.** `make test-drumfx` captures, for every drum in
-the ROM's demos whose dry/wet is not zero, the dry buffer the original's voice
-makes and the stereo its own mixer and effect make of it, with the nine bytes
-pushed as knobs 0..8 and channel 0 at full volume, centre pan - the setup
-`0x0206CCC8` uses. Our mixer and effect reproduce that sample for sample, 73728 of
-them. So the effect stage is settled: the nine bytes are those knobs, and we can
-apply them.
+| case | result |
+|---|---|
+| a plain-oscillator dry drum | **bit-exact**, 32704 of 32704 samples from sample 64 to the end |
+| the same drum with dry/wet 127 | 95.95% - the delay's echo arrives 64 samples early |
+| any drum with a noise oscillator | does not reproduce at all |
+| `ds10plus_00`'s drum 3 | 24%, and it is neither noise nor wet |
 
-**What is left is the stereo-to-mono step**, and it is not a formality: the
-recorder hands the drum voice a mono buffer, but L and R differ even for a dry
-drum, because centre pan is 64 of 127. Whether the buffer is L, R, a sum, or a tap
-taken before the pan stage lives in the object at `+0x10` of `0x0206CCC8`'s
-`this`, which is not decompiled.
+Three things left, in the order they are worth doing:
 
-**There is now ground truth, and it says the problem is bigger.** A RAM dump of
-the running game (`make ndsref`, then `tools/snapui.py drums` and
-`tools/drumbuf.py`) has the four rendered buffers in it, and finding them settled
-the record layout: a live song record is
-`[4 x 0x10000 drum buffer][the song, live 0xB4 header]`, 0x43040 bytes, which is
-what that stride at `0x020347EC` is and why the drum knobs sit at record +0x42AF4.
-Each of the four drum part objects (0x2E0 apart) points at its buffer, which is
-what identifies them.
+1. **The wet echo, 64 samples.** The effect's timeline runs one frame ahead of what
+   is captured: pre-rolling a frame puts the echo exactly where the hardware has it
+   (7991 both) but then shifts the dry path, so the two cannot both be right in the
+   present structure. Something in the recorder captures a frame behind the graph.
+2. **Noise drums.** Their LFSR carries state from whatever the machine did before
+   the render, so the same patch does not give the same sample twice from a cold
+   start. Reproducing them means knowing that state at load, which probably means
+   the boot sequence.
+3. **`ds10plus_00`'s drum 3.** attack 37, and `vcasrc = eg` rather than `vcaeg`.
+   The hardware opens its envelope faster than we do - our peak lands at 3252
+   against their 1369 - and the render block size is not the reason: 64 is right
+   (drum 0 is exact with it, and 16/32/128 make drum 0 worse).
 
-Comparing those against `songplay`'s idea of a drum buffer, for the song the dump
-had loaded, `ds10plus_00`:
-
-| drum | their peak | at | our peak | at | zero crossings | correlation |
-|---|---|---|---|---|---|---|
-| 0 | 32727 | 59 | 32766 | 30 | 38 vs 39 | +0.93 |
-| 1 | 32727 | 106 | 25092 | 67 | 1430 vs 1426 | +0.54 |
-| 2 | 32727 | 53 | 22774 | 59 | 2900 vs 2878 | -0.08 |
-| 3 | 32727 | 1369 | 26858 | 3252 | 111 vs 106 | +0.55 |
-
-The pitch and character are right - the zero-crossing rates agree to a percent, so
-note 60 is the right note - but the envelopes and levels are not, and all four of
-theirs peak at exactly 32727 while ours vary. So the buffer is post-mixer (its
-first sample is the -1 our mixer also produces for silence) and it is *not* "one
-second of a fresh voice at note 60" as songplay.c assumes: the recorder drives it
-differently.
-
-**It is solved but for 64 samples.** recon.md §14 has the whole recipe with an
-address for every constant, and `tools/drumref.py` verifies it against the real
-thing: **32704 of 32704 samples exact from sample 64 on**, on a synthetic patch and
-a real one. The head is the master gain still ramping until the counter at
-`mixer+0x8A` reaches 64; the tail is the recorder asking to stop with fewer than 8
-frames left, after which the gain decays by `0x7D85/0x8000` a sample. Both ends are
-the recorder's, not the patch's.
-
-What is left is the first 64 samples: the hardware's voice is at full amplitude on
-sample 1 while ours interpolates its envelope across its first frame, so the render
-does not begin with an ordinary note-on. `0x0206D5C4` -> `0x0206EEA0(seq, 127, 0)`
-is the next thing to read.
-
-That is now a well-posed problem rather than a guess, because the target bytes are
-readable. The order is: get the buffer itself to match the dump, and only then
-apply the nine effect bytes on top - tuning an effect over a signal that is
-already wrong would just fit one error to another. All four drums in the dumped
-song happen to be dry, so a dump of a song with a wet drum is also wanted; the
-survey in this section says which of the ROM's demos have one.
+The first 64 samples of every buffer are excluded above. The head fade is the
+master gain still ramping and it is not modelled, since the value it ramps from is
+not known; from sample 64 on the gain is `0x7FD7` exactly.
 
 ## 5c. The master gain is never set to 0x7FD7
 

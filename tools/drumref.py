@@ -65,10 +65,66 @@ def render(song, outdir="out/drumref", frame=FRAME):
     return drumbuf.buffers(ram, base), base, path
 
 
+
+# --- vectors: the hardware's own buffers, for make test-drumbuf ---------------
+
+# Drum 0 of each of two songs, both of which are plain oscillators, plus a copy
+# of the first with its dry/wet turned up so the effect path is covered too.
+#
+# The drums left out are the ones whose render cannot be reproduced from the patch
+# alone: any drum with a noise oscillator, because its LFSR carries state from
+# whatever the machine did before the render, and ds10plus_00's drum 3, whose
+# envelope the hardware opens faster than ours. TODO.md section 5.
+VEC_SONGS = (("data/saves/ds10plus_00.ds10song", 0, None),
+             ("data/saves/ds10plus_02.ds10song", 0, None),
+             ("data/saves/ds10plus_00.ds10song", 0, ("wet", 127)))
+VEC_WINDOWS = ((64, 1088), (16000, 17024), (31744, 32768))
+
+
+def cmd_vectors(path="tests/vectors/drumbuf.bin"):
+    """Boot each song and keep three windows of each drum's buffer: just past
+    the head fade, the middle, and the tail fade. Windows rather than whole
+    buffers so the committed file stays small - 6 KB a drum instead of 64."""
+    import struct as _s
+    import songtext as _st
+    cases = []
+    for song, d, tweak in VEC_SONGS:
+        p = bytearray(_st.read_song(song))
+        use = song
+        if tweak:
+            what, v = tweak
+            p[0x2BA8 + d * 9 + 8] = v          # that drum's dry/wet
+            use = os.path.join("out", "drumref", "vec_%s.ds10song" % what)
+            _st.write_song(use, bytes(p))
+        bufs, _, _ = render(use, "out/drumref")
+        knobs = [c - 256 if c > 127 else c
+                 for c in p[0x2B2C + d * 31:0x2B2C + (d + 1) * 31]]
+        extra = [c - 256 if c > 127 else c
+                 for c in p[0x2BA8 + d * 9:0x2BA8 + (d + 1) * 9]]
+        cases.append((os.path.basename(use), d, knobs, extra, bufs[d]))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(b"DBUF" + _s.pack("<II", len(cases), len(VEC_WINDOWS)))
+        for lo, hi in VEC_WINDOWS:
+            f.write(_s.pack("<II", lo, hi))
+        for _, d, knobs, extra, buf in cases:
+            f.write(_s.pack("<i", d))
+            f.write(_s.pack("<31b", *knobs))
+            f.write(_s.pack("<9b", *extra))
+            for lo, hi in VEC_WINDOWS:
+                f.write(_s.pack("<%dh" % (hi - lo), *buf[lo:hi]))
+    wet = sum(1 for c in cases if c[3][8])
+    print("%s: %d drums, %d of them wet, %d samples each"
+          % (path, len(cases), wet, sum(hi - lo for lo, hi in VEC_WINDOWS)))
+
+
 def main():
     if len(sys.argv) < 2:
         print(__doc__)
         return 1
+    if sys.argv[1] == "vectors":
+        cmd_vectors(*sys.argv[2:])
+        return 0
     song = sys.argv[1]
     outdir = sys.argv[2] if len(sys.argv) > 2 else "out/drumref"
     bufs, base, path = render(song, outdir)
