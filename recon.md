@@ -1599,6 +1599,37 @@ accessors, and a parse/serialise round trip that reproduces each file byte for
 byte - which is what makes the parse total, since a field I could not name still
 survives it.
 
+### How a drum buffer is actually rendered - measured against hardware
+
+`tools/drumref.py` packs any song into slot 0 of a save, boots the real thing
+under melonDS, snapshots main RAM and reads the four buffers back out - about four
+seconds a song, so it is a reference generator rather than a one-off dump. What it
+establishes:
+
+**The nine bytes are applied, and they are the effect.** Setting drum 0's dry/wet
+from 0 to 127 in `ds10plus_00` moves the rendered buffer's peak from sample 59 to
+8002 and extends it from 10404 samples to 32672 - a delay tail, baked into the
+sample. Setting the level knob from 127 to 40 scales it. Both on hardware.
+
+**The sample chain.** With a steady patch (sawtooth, envelope flat, no effect) the
+buffer is, sample for sample:
+
+```
+buffer[i] = (shape(clamp(2 * ((voice[i] * vol) >> 15))) * 0x7FD7) >> 15
+```
+
+where `vol` is the mixer channel volume the render sets, knob 17 = 127 giving
+32764, `clamp` and `shape` are the master stage of §12, and `0x7FD7` is the gain
+that section shows being written directly. Verified against the hardware buffer:
+**exact for samples 600..32319, 31720 consecutive samples**, with the first ~600
+and the last ~440 differing - the onset and the tail, where our voice's envelope
+does not yet match how the recorder drives it.
+
+Note what the doubling means: one `shape` over twice the channel signal, not two
+shaped sides summed. Both two-sided forms - `shape(L)+shape(R)` and `shape(L+R)` -
+are wrong by thousands of counts, so the recorder is not taking the mixer's stereo
+pair. Where the factor of two comes from in the code is still open.
+
 ### The trailing blocks, named
 
 Two of the three are name fields, six per row at an 8-byte stride - 6 characters

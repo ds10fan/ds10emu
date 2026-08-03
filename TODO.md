@@ -131,6 +131,12 @@ first sample is the -1 our mixer also produces for silence) and it is *not* "one
 second of a fresh voice at note 60" as songplay.c assumes: the recorder drives it
 differently.
 
+**Most of it is now solved.** recon.md §14 has the chain, measured against
+hardware with `tools/drumref.py`: `buffer[i] = shape(clamp(2*((voice[i]*vol)>>15)))
+* 0x7FD7 >> 15`, exact for 31720 consecutive samples of a one-second buffer. What
+is left is the onset (~600 samples) and the tail (~440), which is how the recorder
+drives the voice, and the code-level origin of the factor of two.
+
 That is now a well-posed problem rather than a guess, because the target bytes are
 readable. The order is: get the buffer itself to match the dump, and only then
 apply the nine effect bytes on top - tuning an effect over a signal that is
