@@ -105,11 +105,38 @@ drum, because centre pan is 64 of 127. Whether the buffer is L, R, a sum, or a t
 taken before the pan stage lives in the object at `+0x10` of `0x0206CCC8`'s
 `this`, which is not decompiled.
 
-Until that is known, implementing this is not an improvement in verification, only
-a change of inference: our render and the oracle's would both have to adopt the
-same guess to keep `test-songrender` passing, which is the same blind spot in a
-different place. The two ways out are the recorder itself, or `make ndsref` and a
-RAM dump of the real thing, where the rendered buffers can simply be read out.
+**There is now ground truth, and it says the problem is bigger.** A RAM dump of
+the running game (`make ndsref`, then `tools/snapui.py drums` and
+`tools/drumbuf.py`) has the four rendered buffers in it, and finding them settled
+the record layout: a live song record is
+`[4 x 0x10000 drum buffer][the song, live 0xB4 header]`, 0x43040 bytes, which is
+what that stride at `0x020347EC` is and why the drum knobs sit at record +0x42AF4.
+Each of the four drum part objects (0x2E0 apart) points at its buffer, which is
+what identifies them.
+
+Comparing those against `songplay`'s idea of a drum buffer, for the song the dump
+had loaded, `ds10plus_00`:
+
+| drum | their peak | at | our peak | at | zero crossings | correlation |
+|---|---|---|---|---|---|---|
+| 0 | 32727 | 59 | 32766 | 30 | 38 vs 39 | +0.93 |
+| 1 | 32727 | 106 | 25092 | 67 | 1430 vs 1426 | +0.54 |
+| 2 | 32727 | 53 | 22774 | 59 | 2900 vs 2878 | -0.08 |
+| 3 | 32727 | 1369 | 26858 | 3252 | 111 vs 106 | +0.55 |
+
+The pitch and character are right - the zero-crossing rates agree to a percent, so
+note 60 is the right note - but the envelopes and levels are not, and all four of
+theirs peak at exactly 32727 while ours vary. So the buffer is post-mixer (its
+first sample is the -1 our mixer also produces for silence) and it is *not* "one
+second of a fresh voice at note 60" as songplay.c assumes: the recorder drives it
+differently.
+
+That is now a well-posed problem rather than a guess, because the target bytes are
+readable. The order is: get the buffer itself to match the dump, and only then
+apply the nine effect bytes on top - tuning an effect over a signal that is
+already wrong would just fit one error to another. All four drums in the dumped
+song happen to be dry, so a dump of a song with a wet drum is also wanted; the
+survey in this section says which of the ROM's demos have one.
 
 ## 5b. Unnamed bytes
 

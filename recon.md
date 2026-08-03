@@ -1645,6 +1645,21 @@ not a small gap: 10 of the 48 drums in the ROM's demos, across 4 of its 12 songs
 have a non-zero dry/wet, and so do 75 of 388 drums in 59 of the 97 songs in
 `data/saves`. TODO.md §5.
 
+**The live record, from a RAM dump.** `tools/drumbuf.py` finds it by the four
+pointers the drum part objects hold: a live song record is 0x43040 bytes and it is
+`[4 x 0x10000 drum buffer][the song, with the live 0xB4 header]`. That is the
+stride the wrapper at `0x020347EC` multiplies by, and it explains the drum knobs
+being at record +0x42AF4: 0x40000 past the buffers, plus the song's own 0x2AF4,
+which is the file's 0x2B2C less the 0x38 the live header is shorter. The four
+parts sit 0x2E0 apart, each pointing at its buffer.
+
+The buffers themselves say the render is not what `songplay.c` assumes. Their
+first sample is -1, the value the mixer produces from silence, so they are the
+mixer's output rather than the voice's; all four peak at exactly 32727; and
+against our own render of the same song the zero-crossing rates agree to a percent
+while the envelopes and peak positions do not (correlations +0.93, +0.54, -0.08,
++0.55). TODO.md §5 has the table.
+
 **A second knob space.** The same ROM table continues past the mixer's 25 knobs
 with `(42, 34)`, `(43, 35)`, `(44, 36)` … - `volume = 42 + channel` and
 `pan = 34 + channel`, which is the mixer's layout offset by 25. So the original's
