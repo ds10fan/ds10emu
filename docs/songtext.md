@@ -312,7 +312,6 @@ mod vco2p=saw:+16 cutoff=sine:+8
   what playback reads), bytes 1, 4, 5, 6 and 9 unknown.
 - payload `+0x2EFC` (168 bytes, PLUS) and `+0x2FA4` (56, only its last two bytes
   ever non-zero).
-- `drumN extra`, nine bytes per drum: a route and the eight effect parameters,
-  pushed as knobs 0..8 of the mixer machine, so almost certainly the `54_DRUM_FX`
-  page. Named positionally here until something renders them - nothing does, on
-  either side of the differential. recon.md §14 has the trace and the ranges.
+- nothing in a drum's own effect: `drumN fx` is named, `src/core/drumbuf.c` applies
+  it, and `make test-drumbuf` checks the result against a running DS. The two
+  residuals it still has are in TODO.md §5.

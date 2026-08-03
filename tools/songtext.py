@@ -260,6 +260,40 @@ def parse_mods(tokens, knobs):
         knobs[kint] = int(amount) & 0xFF if amount else 0
 
 
+# A drum's nine bytes are a route and the eight effect parameters, pushed in as
+# mixer knobs 0..8 - the same ids and the same names the `fx` line uses. Written
+# only where a byte is not zero, and the type as its word.
+def drumfx_text(x):
+    out = []
+    if x[0]:
+        out.append("route=%s" % (ROUTES[x[0]] if x[0] < len(ROUTES) else x[0]))
+    for k in sorted(FX):
+        if k > 8 or not x[k]:
+            continue
+        name, signed = FX[k]
+        v = x[k] - 256 if signed and x[k] > 127 else x[k]
+        out.append("%s=%d" % (name, v))
+    if not out:
+        return ""
+    kind = FX_TYPES[x[1]] if x[1] < len(FX_TYPES) else str(x[1])
+    return "%s %s" % (kind, " ".join(out)) if out else kind
+
+
+def parse_drumfx(tokens, x):
+    """`<type> route=… time=… …` back into the nine bytes."""
+    if not tokens:
+        return
+    x[1] = (FX_TYPES.index(tokens[0]) if tokens[0] in FX_TYPES
+            else int(tokens[0]) & 0xFF)
+    byname = {n: k for k, (n, _) in FX.items() if k <= 8}
+    for t in tokens[1:]:
+        name, _, val = t.partition("=")
+        if name == "route":
+            x[0] = (ROUTES.index(val) if val in ROUTES else int(val)) & 0xFF
+        elif name in byname:
+            x[byname[name]] = int(val) & 0xFF
+
+
 def mix_text(mix, default=INIT_MIX):
     """The mixer's 25 knobs as `mix` and `fx` lines, defaults left out."""
     out, head = [], []
@@ -571,9 +605,9 @@ def dumps(payload, clean=False, source=None):
             if len(payload) >= DRUM_EXTRA + DRUMS * DRUM_EXTRA_N:
                 x = payload[DRUM_EXTRA + d * DRUM_EXTRA_N:
                             DRUM_EXTRA + (d + 1) * DRUM_EXTRA_N]
-                if any(x):
-                    out.append("drum%d extra %s"
-                               % (d + 1, " ".join(str(v) for v in x)))
+                line = drumfx_text(x)
+                if line:
+                    out.append("drum%d fx %s" % (d + 1, line))
 
     for i in range(PATTERNS):
         o = PAT_OFF + i * PAT_SIZE
@@ -695,7 +729,7 @@ def loads(text, _raw=True):
                 blob = bytes.fromhex("".join(rest[1:]))
                 p[off:off + len(blob)] = blob
         elif (pat is None and key.startswith("drum") and rest
-              and rest[0] in ("patch", "mod", "extra")):
+              and rest[0] in ("patch", "mod", "fx")):
             d = int(key[4:]) - 1
             o = DRUM_KNOBS + d * KNOBS
             if rest[0] == "patch":
@@ -707,9 +741,10 @@ def loads(text, _raw=True):
                 parse_mods(rest[1:], knobs)
                 p[o:o + KNOBS] = knobs
             else:
-                x = DRUM_EXTRA + d * DRUM_EXTRA_N
-                for i, v in enumerate(rest[1:]):
-                    p[x + i] = int(v) & 0xFF
+                at = DRUM_EXTRA + d * DRUM_EXTRA_N
+                x = bytearray(p[at:at + DRUM_EXTRA_N])
+                parse_drumfx(rest[1:], x)
+                p[at:at + DRUM_EXTRA_N] = x
         elif pat is not None:
             track = apply_pattern_line(p, pat, key, rest, line, track)
     return p

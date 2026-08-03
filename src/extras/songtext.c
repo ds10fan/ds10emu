@@ -591,6 +591,66 @@ static void parse_lane(char **tok, int n, uint8_t *pat, int track, int lane)
 
 /* ------------------------------------------------------------- mixer and fx */
 
+/* A drum's nine bytes are a route and the eight effect parameters, pushed in as
+ * mixer knobs 0..8 - the same ids and names the `fx` line uses. Only the non-zero
+ * ones are written, and the type as its word. */
+static void drumfx_text(const uint8_t *x, char *out)
+{
+    char tok[64];
+    char params[256] = "";
+    int i;
+
+    *out = 0;
+    if (x[0]) {
+        if (x[0] < (int)(sizeof ROUTES / sizeof *ROUTES))
+            sprintf(params, "route=%s", ROUTES[x[0]]);
+        else
+            sprintf(params, "route=%d", x[0]);
+    }
+    for (i = 0; i < (int)(sizeof FX / sizeof *FX); i++) {
+        int k = FX[i].knob, v = x[k];
+
+        if (k > 8 || !v) continue;
+        if (FX[i].is_signed && v > 127) v -= 256;
+        sprintf(tok, "%s=%d", FX[i].name, v);
+        if (*params) strcat(params, " ");
+        strcat(params, tok);
+    }
+    if (!*params) return;
+    if (x[1] < (int)(sizeof FX_TYPES / sizeof *FX_TYPES))
+        sprintf(out, "%s %s", FX_TYPES[x[1]], params);
+    else
+        sprintf(out, "%d %s", x[1], params);
+}
+
+static void parse_drumfx(char **tok, int n, uint8_t *x)
+{
+    int i, j;
+    char *eq;
+
+    if (n < 1) return;
+    for (j = 0; j < (int)(sizeof FX_TYPES / sizeof *FX_TYPES); j++)
+        if (!strcmp(tok[0], FX_TYPES[j])) break;
+    x[1] = (uint8_t)(j < (int)(sizeof FX_TYPES / sizeof *FX_TYPES)
+                     ? j : atoi(tok[0]));
+    for (i = 1; i < n; i++) {
+        eq = strchr(tok[i], '=');
+        if (!eq) continue;
+        *eq = 0;
+        if (!strcmp(tok[i], "route")) {
+            for (j = 0; j < (int)(sizeof ROUTES / sizeof *ROUTES); j++)
+                if (!strcmp(eq + 1, ROUTES[j])) break;
+            x[0] = (uint8_t)(j < (int)(sizeof ROUTES / sizeof *ROUTES)
+                             ? j : atoi(eq + 1));
+        } else {
+            for (j = 0; j < (int)(sizeof FX / sizeof *FX); j++)
+                if (FX[j].knob <= 8 && !strcmp(tok[i], FX[j].name))
+                    x[FX[j].knob] = (uint8_t)(atoi(eq + 1) & 0xFF);
+        }
+        *eq = '=';
+    }
+}
+
 static void mix_text(const uint8_t *mix, char *mixline, char *fxline)
 {
     int i, ch;
@@ -879,13 +939,9 @@ int ds10_songtext_read(const char *text, uint8_t *out, size_t cap, size_t *len,
                 parse_patch(tok + 2, n - 2, out + T_DRUM_KNOBS + d * NKNOBS);
             else if (!strcmp(tok[1], "mod"))
                 parse_mods(tok + 2, n - 2, out + T_DRUM_KNOBS + d * NKNOBS);
-            else if (!strcmp(tok[1], "extra")) {
-                int i;
-
-                for (i = 2; i < n && i - 2 < DRUM_EXTRA_N; i++)
-                    out[T_DRUM_EXTRA + d * DRUM_EXTRA_N + i - 2] =
-                        (uint8_t)(atoi(tok[i]) & 0xFF);
-            }
+            else if (!strcmp(tok[1], "fx"))
+                parse_drumfx(tok + 2, n - 2,
+                             out + T_DRUM_EXTRA + d * DRUM_EXTRA_N);
             continue;
         }
         if (pat < 0 || pat >= NPATTERNS) continue;
@@ -1038,15 +1094,10 @@ static void write_named(struct sink *k, const uint8_t *p, size_t len,
             if (*body) emit(k, "drum%d patch %s\n", i + 1, body);
             if (*mods) emit(k, "drum%d mod %s\n", i + 1, mods);
             if (len >= T_DRUM_EXTRA + NDRUMS * DRUM_EXTRA_N) {
-                const uint8_t *x = p + T_DRUM_EXTRA + i * DRUM_EXTRA_N;
-                int any = 0;
+                char fxline[320];
 
-                for (s = 0; s < DRUM_EXTRA_N; s++) any |= x[s];
-                if (any) {
-                    emit(k, "drum%d extra", i + 1);
-                    for (s = 0; s < DRUM_EXTRA_N; s++) emit(k, " %u", x[s]);
-                    emit(k, "\n");
-                }
+                drumfx_text(p + T_DRUM_EXTRA + i * DRUM_EXTRA_N, fxline);
+                if (*fxline) emit(k, "drum%d fx %s\n", i + 1, fxline);
             }
         }
 
