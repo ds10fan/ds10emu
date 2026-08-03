@@ -371,7 +371,7 @@ out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 # ---------------------------------------------------------------------------
 
 # Everything committed that is a song: the save slots and the ROM's own demos.
-TEXT_SONGS = $(wildcard data/saves/*.dat) \
+TEXT_SONGS = $(wildcard data/saves/*.ds10song) \
     $(wildcard data/nitrofs/demo/ds10*demo*.dat) data/nitrofs/demo/ds10init.dat
 
 songtext: out/songtext
@@ -410,10 +410,10 @@ test-songtext-py: out/songtext
 # Assets the engine and its tests read
 # ---------------------------------------------------------------------------
 
-# The songs in songs/*.SAV, extracted so they can be loaded by name.
+# The songs in songs/*.ds10save, extracted so they can be loaded by name.
 # tools/sav.py pack puts one back into a slot.
-data/saves: tools/sav.py $(wildcard songs/*.SAV)
-	@rm -rf data/saves && $(PY) tools/sav.py extract data/saves songs/*.SAV \
+data/saves: tools/sav.py $(wildcard songs/*.ds10save)
+	@rm -rf data/saves && $(PY) tools/sav.py extract data/saves songs/*.ds10save \
 	    | tail -1
 
 # Both files come out of one run; the header is what the engine includes.

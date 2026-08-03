@@ -1,7 +1,7 @@
 # data/ — ROM-derived inputs
 
 `tables.bin` and `nitrofs/` come out of `ds10plus.nds`, `saves/` out of
-`songs/*.SAV`. All of it is committed so the engine, its tests and the browser
+`songs/*.ds10save`. All of it is committed so the engine, its tests and the browser
 build work without anyone having a copy of the ROM.
 
 ## tables.bin
@@ -44,8 +44,8 @@ Stock Nintendo containers:
 
 ## saves/
 
-The songs in `songs/*.SAV`, one file per written slot, named
-`<save>_<slot>.dat`. A slot is the same record a `ds10*.dat` is, so these load
+The songs in `songs/*.ds10save`, one file per written slot, named
+`<save>_<slot>.ds10song`. A slot is the same record a `ds10*.dat` is, so these load
 like any other song file.
 
     make data/saves        # rm -rf and re-extract, 97 slots from 6 saves
@@ -53,8 +53,8 @@ like any other song file.
 Written by `tools/sav.py extract`. The same tool lists a save's slots and packs
 a song file back into one:
 
-    python3 tools/sav.py list songs/*.SAV
-    python3 tools/sav.py pack songs/NEW.SAV 3 out/scale.dat out/NEW.SAV
+    python3 tools/sav.py list songs/*.ds10save
+    python3 tools/sav.py pack songs/NEW.ds10save 3 out/scale.ds10song out/NEW.ds10save
 
 `pack` replaces the slot's 12268 bytes and nothing else — the save's own header
 hash covers only its 28 constant bytes, and nothing outside a slot refers to

@@ -6,7 +6,7 @@ scale on a bare sawtooth with the filter open, everything else silent and the
 effect off. If that comes out as a recognisable scale at the right pitches, the
 note-to-pitch path and the whole chain downstream of it are right.
 
-    python3 tools/mksong.py out/scale.dat [root] [bars]
+    python3 tools/mksong.py out/scale.ds10song [root] [bars]
 
 The result is a real song file - MD5 header and all - so the original would load
 it too.
@@ -47,7 +47,7 @@ MAJOR = [0, 2, 4, 5, 7, 9, 11, 12]
 
 
 def main():
-    out = sys.argv[1] if len(sys.argv) > 1 else "out/scale.dat"
+    out = sys.argv[1] if len(sys.argv) > 1 else "out/scale.ds10song"
     root = int(sys.argv[2]) if len(sys.argv) > 2 else 60
     bars = int(sys.argv[3]) if len(sys.argv) > 3 else 4
 

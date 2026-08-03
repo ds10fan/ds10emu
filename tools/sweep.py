@@ -15,7 +15,7 @@ import subprocess
 import sys
 
 ROM = os.environ.get("DS10_ROM", "ds10plus.nds")
-SAVE = "songs/DS10PLUS.SAV"
+SAVE = "songs/DS10PLUS.ds10save"
 
 # The map's boxes, from the table its constructor walks (0x02087018 and
 # 0x02086f08) - the same one src/app/ui.c carries, as x, y, w, h.

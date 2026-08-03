@@ -1,8 +1,8 @@
 /* songtext - a song file as text and back, on the command line.
  *
- *   out/songtext dump [--clean] song.dat [out.txt]
- *   out/songtext load song.txt [out.dat]
- *   out/songtext check song.dat...
+ *   out/songtext dump [--clean] song.ds10song [out.ds10song.txt]
+ *   out/songtext load song.ds10song.txt [out.ds10song]
+ *   out/songtext check song.ds10song...
  *
  * `check` is the round trip: dump, read back, compare with the original byte for
  * byte, in both exact and clean mode. The format is docs/songtext.md.
@@ -114,7 +114,7 @@ static int cmd_dump(int argc, char **argv)
         else if (n < 2) arg[n++] = argv[i];
     }
     if (!n) {
-        fprintf(stderr, "usage: songtext dump [--clean] <song.dat> [out.txt]\n");
+        fprintf(stderr, "usage: songtext dump [--clean] <song> [out.txt]\n");
         return 1;
     }
     dump(arg[0], clean);
@@ -130,7 +130,7 @@ static int cmd_load(int argc, char **argv)
     char out[512];
 
     if (!argc) {
-        fprintf(stderr, "usage: songtext load <song.txt> [out.dat]\n");
+        fprintf(stderr, "usage: songtext load <song.txt> [out]\n");
         return 1;
     }
     n = slurp(argv[0], text, sizeof text - 1);
@@ -149,7 +149,7 @@ static int cmd_load(int argc, char **argv)
     } else {
         const char *dot = strrchr(argv[0], '.');
 
-        snprintf(out, sizeof out, "%.*s.dat",
+        snprintf(out, sizeof out, "%.*s",
                  (int)(dot ? dot - argv[0] : (long)strlen(argv[0])), argv[0]);
     }
     spit(out, file, 16 + len);

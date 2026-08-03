@@ -29,7 +29,7 @@ import nitro
 import snap
 
 ROM = os.environ.get("DS10_ROM", "ds10plus.nds")
-SAVE = "songs/DS10PLUS.SAV"
+SAVE = "songs/DS10PLUS.ds10save"
 
 # Boot, SINGLE PLAYER, session S-01, confirm - the same as tools/sweep.py.
 BOOT = """1180 touch 128 55

@@ -7,9 +7,9 @@ to the same output byte for byte and is kept out of `make test` because it needs
 python3.
 
 ```sh
-make songtext && out/songtext dump [--clean] song.dat [out.txt]   # `load`, `check`
-python3 tools/songtext.py dump song.dat [out.txt]                 # the reference
-python3 tools/sav.py unpack save.SAV dir/    # 18 songs + bank.txt; `repack` rebuilds
+make songtext && out/songtext dump [--clean] x.ds10song [x.ds10song.txt]  # load, check
+python3 tools/songtext.py dump x.ds10song [x.ds10song.txt]             # the reference
+python3 tools/sav.py unpack x.ds10save dir/   # slotNN.ds10song.txt + bank.ds10patch.txt
 ```
 
 ```c
@@ -238,7 +238,7 @@ kept — dropping it changes the file.
 ## The instrument bank
 
 Save-level, not song-level: 24 slots at `0x38000`, stride `0x100`, shared by all 18
-songs and referenced by none of them. `sav.py unpack` writes it to `bank.txt`, one
+songs and referenced by none of them. `sav.py unpack` writes it to `bank.ds10patch.txt`, one
 line per written slot, absent slots omitted.
 
 ```
@@ -259,7 +259,7 @@ instrument 3 mod vco2p=saw:+16 cutoff=sine:+8
   512 KiB save, from the text alone.
 - `--clean` drops one thing: the gate, velocity and pan of a step with no note —
   dead bytes, 129 distinct combinations across the corpus. A song's text goes from
-  491 lines to 270. On `DS10PLUS.SAV` that changes 54090 of 524288 bytes, all of
+  491 lines to 270. On `DS10PLUS.ds10save` that changes 54090 of 524288 bytes, all of
   them dead bytes or recomputed MD5s; all 18 slots still hash and 90720 live
   fields compare equal.
 

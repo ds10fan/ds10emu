@@ -14,7 +14,7 @@ DIR = "out/audio"
 
 
 def source(name):
-    for p in ("%s/%s.dat" % (DIR, name),
+    for p in ("%s/%s.ds10song" % (DIR, name),
               "out/nitrofs/data/demoSP/%s.dat" % name[:-3],
               "out/nitrofs/data/demo/%s.dat" % name):
         if os.path.exists(p):
@@ -53,7 +53,7 @@ def main():
         % (html.escape(n), html.escape(t), v, bpm, sw, ba,
            int(s) // 60, int(s) % 60, n, n, n,
            " <a href=\"%s.dat\">dat</a>" % n
-           if os.path.exists("%s/%s.dat" % (DIR, n)) else "")
+           if os.path.exists("%s/%s.ds10song" % (DIR, n)) else "")
         for n, t, v, bpm, sw, ba, s in rows)
 
     open("%s/index.html" % DIR, "w").write("""<!doctype html>

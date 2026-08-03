@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 ROM = os.environ.get("DS10_ROM", "ds10plus.nds")
-SAVE = "songs/DS10PLUS.SAV"
+SAVE = "songs/DS10PLUS.ds10save"
 
 BOOT = """1180 touch 128 55
 1195 release

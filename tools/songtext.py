@@ -2,9 +2,9 @@
 """songtext - a DS-10 song or instrument as editable text, and back again.
 
 Subcommands:
-  dump <song.dat> [out.txt]     song file -> text
-  load <song.txt> [out.dat]     text -> song file, MD5 header and all
-  check <song.dat>...           dump, load, and compare with the original
+  dump <song> [out.txt]         a .ds10song -> text
+  load <song.txt> [out]         text -> a .ds10song, MD5 header and all
+  check <song>...               dump, load, and compare with the original
 
 Sections in brackets - `[song]`, `[pattern N]`, `[raw]` - then lines of a keyword
 and its tokens. `#` starts a comment at the start of a line or after whitespace,
@@ -792,7 +792,7 @@ def instr_seal(rec):
 
 def bank_loads(text):
     """Text to {slot: 63-byte record}. Slots that are not mentioned stay
-    empty - the bank is sparse, and 13 of EMPTY10.SAV's 24 slots are."""
+    empty - the bank is sparse, and 13 of EMPTY10's 24 slots are."""
     bank = {}
     for raw in text.splitlines():
         line = strip_comment(raw).strip()
@@ -840,7 +840,7 @@ def cmd_dump(args):
     clean = "--clean" in args
     args = [a for a in args if a != "--clean"]
     if not args:
-        print("usage: songtext.py dump [--clean] <song.dat> [out.txt]")
+        print("usage: songtext.py dump [--clean] <song> [out.ds10song.txt]")
         return 1
     payload = read_song(args[0])
     text = dumps(payload, clean=clean, source=os.path.basename(args[0]))
@@ -854,10 +854,10 @@ def cmd_dump(args):
 
 def cmd_load(args):
     if not args:
-        print("usage: songtext.py load <song.txt> [out.dat]")
+        print("usage: songtext.py load <song.ds10song.txt> [out.ds10song]")
         return 1
     payload = loads(open(args[0]).read())
-    out = args[1] if len(args) > 1 else os.path.splitext(args[0])[0] + ".dat"
+    out = args[1] if len(args) > 1 else os.path.splitext(args[0])[0]
     write_song(out, payload)
     print("%s: %d bytes" % (out, len(payload) + 16))
     return 0

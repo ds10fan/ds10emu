@@ -2,11 +2,11 @@
 """sav - read and write the song slots of a DS-10 PLUS save file.
 
 Subcommands:
-  list <SAV>...                     what each slot holds
-  extract <outdir> <SAV>...         write every written slot out as a song file
-  pack <SAV> <slot> <song> <out>    put a song file back into a slot
-  unpack <SAV> <dir> [--clean]      the whole save as editable text
-  repack <dir> <out.SAV>            that text back into a save file
+  list <save>...                    what each slot holds
+  extract <outdir> <save>...        write every written slot out as a .ds10song
+  pack <save> <slot> <song> <out>   put a .ds10song back into a slot
+  unpack <save> <dir> [--clean]     the whole save as editable text
+  repack <dir> <out.ds10save>       that text back into a save file
 
 A save is 512 KiB and everything in it is MD5-checked the same way the rest of
 the game is - the hash comes first, and it is what tells a written record from
@@ -139,7 +139,7 @@ def cmd_list(args):
 
 def cmd_extract(args):
     if len(args) < 2:
-        print("usage: sav.py extract <outdir> <SAV>...")
+        print("usage: sav.py extract <outdir> <save>...")
         return 1
     outdir, paths = args[0], args[1:]
     os.makedirs(outdir, exist_ok=True)
@@ -149,7 +149,7 @@ def cmd_extract(args):
         tag = os.path.splitext(os.path.basename(path))[0].lower()
         print("%s:" % os.path.basename(path))
         for i, rec in slots(blob):
-            out = os.path.join(outdir, "%s_%02d.dat" % (tag, i))
+            out = os.path.join(outdir, "%s_%02d.ds10song" % (tag, i))
             with open(out, "wb") as f:
                 f.write(rec)
             total += 1
@@ -162,7 +162,7 @@ def cmd_extract(args):
 
 def cmd_pack(args):
     if len(args) != 4:
-        print("usage: sav.py pack <SAV> <slot> <song> <out>")
+        print("usage: sav.py pack <save> <slot> <song> <out>")
         return 1
     path, which, song, out = args
     i = int(which, 0)
@@ -199,7 +199,7 @@ def cmd_unpack(args):
     clean = "--clean" in args
     args = [a for a in args if a != "--clean"]
     if len(args) != 2:
-        print("usage: sav.py unpack <SAV> <dir> [--clean]")
+        print("usage: sav.py unpack <save> <dir> [--clean]")
         return 1
     path, outdir = args
     blob = load(path)
@@ -208,7 +208,7 @@ def cmd_unpack(args):
     for i, rec in slots(blob):
         text = songtext.dumps(rec[16:], clean=clean,
                               source="%s slot %d" % (os.path.basename(path), i))
-        with open(os.path.join(outdir, "slot%02d.txt" % i), "w") as f:
+        with open(os.path.join(outdir, "slot%02d.ds10song.txt" % i), "w") as f:
             f.write(text)
         n += 1
     bank = list(patches(blob))
@@ -217,7 +217,7 @@ def cmd_unpack(args):
         "# Global - shared by every song, and referenced by none of them."]
     for i, rec in bank:
         lines += songtext.instr_text(i, rec)
-    with open(os.path.join(outdir, "bank.txt"), "w") as f:
+    with open(os.path.join(outdir, "bank.ds10patch.txt"), "w") as f:
         f.write("\n".join(lines) + "\n")
     print("%s: %d songs, %d instruments%s"
           % (outdir, n, len(bank), " (clean)" if clean else ""))
@@ -228,7 +228,7 @@ def cmd_unpack(args):
 
 def cmd_repack(args):
     if len(args) != 2:
-        print("usage: sav.py repack <dir> <out.SAV>")
+        print("usage: sav.py repack <dir> <out.ds10save>")
         return 1
     src, out = args
     blob = bytearray(b"\xff" * SIZE)
@@ -236,7 +236,7 @@ def cmd_repack(args):
     blob[len(HEADER):len(HEADER) + 16] = hashlib.md5(HEADER).digest()
     for i in range(SLOTS):
         o = BASE + i * STRIDE
-        txt = os.path.join(src, "slot%02d.txt" % i)
+        txt = os.path.join(src, "slot%02d.ds10song.txt" % i)
         if os.path.exists(txt):
             payload = songtext.loads(open(txt).read())
             if len(payload) != PAYLOAD:
@@ -247,7 +247,7 @@ def cmd_repack(args):
         else:
             blob[o:o + BLANK_SLOT] = bytes(BLANK_SLOT)
     bank = {}
-    txt = os.path.join(src, "bank.txt")
+    txt = os.path.join(src, "bank.ds10patch.txt")
     if os.path.exists(txt):
         bank = songtext.bank_loads(open(txt).read())
     for i in range(PATCHES):
@@ -257,7 +257,7 @@ def cmd_repack(args):
             blob[o:o + PATCH_SIZE] = bank[i]
     with open(out, "wb") as f:
         f.write(blob)
-    songs = len(glob.glob(os.path.join(src, "slot??.txt")))
+    songs = len(glob.glob(os.path.join(src, "slot??.ds10song.txt")))
     print("%s: %d bytes, %d songs, %d instruments"
           % (out, len(blob), songs, len(bank)))
     return 0
