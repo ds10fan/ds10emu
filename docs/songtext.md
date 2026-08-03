@@ -34,9 +34,11 @@ drum2 mod vca=eg:+63
 syn1 name "XLEAD\b"
 syn1 patch porta=14 wave1=square cutoff=57 peak=51 cutoffeg=14 mgfreq=77
 syn1 mod pitch=sine:+4
-syn1 .  .  G4 .  | .  G4 G4 .  | E4 E4 .  F4 | .  .  .  .
-drum1 x . x . | . . . . | . . x . | . . . .
-drum4 F2,p64 .  .  .  | .  .  .  .  | .  .  E2,p64 .  | .  .  .  .
+syn1  note D4   F2   -    .    | .    G#2  -    -    | .    .    .    A3
+      gate tie  .    tie  .    | .    .    .    tie  | .    .    .    .
+drum1 note C2   .    .    .    | C2   .    .    .    | C2   x    x    x
+      gate 100% .    .    .    | 100% .    .    .    | 100% .    .    .
+      pan  .    .    .    .    | 64   .    .    .    | 64   .    .    .
 syn2 lane1 knob=cutoff 0=69 1=62 2=51 3=45 4=48 5=50 6=37
 mix route=syn1+syn2 vol=105,105,104,105,66,105 pan=65,62,61,63,74,56
 fx delay time=14 ratio=14 rate=23 depth=62 sync=0 fb=38 wet=52
@@ -44,33 +46,42 @@ scroll 46 31 36 36 57 36             # each track's piano-roll position
 steps 12                             # only when it is not 16
 ```
 
-A step cell is `<note>[:<gate>][,v<velocity>][,p<pan>]`, or `.` for no note, `-`
-to repeat the previous step, or `x` on a drum track for the root note 60 — unity
-playback speed for a drum buffer. Notes are MIDI names with 60 = C4. Gates are
-`tie`, `retrig`, `over`, `full`, `3/4`, `2/4`, `1/4` (recon.md §13: 4 and 5 are a
-sub-tick short of and over a full step, 6 retriggers, 0xFF ties, and anything
-else is `gate * subticks / 4`). Sub-ticks come from swing, so the same gate is a
-different absolute length on swung even and odd steps — which is why the token
-stores the code and not a duration.
+A track is up to four rows — `note`, `gate`, `vel`, `pan` — which are the four
+pages the sequencer's own sub-mode button steps through. Only `note` is always
+there; the other three appear when some step is not at its default. Every row of
+every track in a pattern shares one column width, so a step sits in the same
+column throughout and the note starts line up.
 
-### How a held note actually looks
+A `note` cell is a MIDI note name with 60 = C4, or `x` on a drum track for the
+root note 60 — unity playback speed for a drum buffer — or `.` for no note, or
+`-` to carry the previous note on. In the other three rows `.` means that step is
+at the default. Gates are `off`, `25%`, `50%`, `75%`, `100%`, `tie`, `retrig` and
+`hold`, which are the interface's own six plus the 0xFF mode it has no button
+for; recon.md §13 has the sub-tick counts.
 
-`-` means the step's four bytes repeat the previous step's, and it is what a tie
-looks like in a real song. The 0xFF gate code that recon.md calls a tie does not
-occur once in the 109 songs here. What does occur, 6209 times, is the same note
-on consecutive steps under gate `over`: the gate bleeds one sub-tick into the
-next step, so the note is still sounding when the identical step arrives, and
-`0x0206E9D8` emits nothing rather than restarting it. On synth tracks 8695 of the
-9775 repeated steps carry `over`, and 325 notes are held across all 16 steps.
+### A held note is `-`, and the tie is implied
 
 ```
-syn1 D4  F2  -   .   | .   G#2 -   -   | .   .   .   A3  | -   -   -   -
+syn1  note D5   D6   C3   -    -
+      gate .    .    .    .    .
 ```
 
-`F2 -` is a two-step note, `G#2 - -` three, `A3 - - -` four. Under `retrig` or
-`full` the same shorthand is a note struck again rather than held, so what `-`
-sounds like depends on the gate on the cell it repeats — it is a byte-level
-shorthand, not a claim about the envelope.
+is D5 and D6 at the default, then one C3 lasting three steps. `-` carries the
+note on, and the step before a `-` has to be a `tie` for that to happen — so the
+format writes the tie as the `-` and leaves the gate row alone. The last step of
+a run keeps its own gate, because that is what ends the note: here it is the
+default 25%, so C3 is released three sub-ticks into its last step.
+
+This is also why a repeat is not always a `-`. `x x x` on a drum track is three
+separate hits, because their gate is `retrig`, and only `tie` holds a note. The
+two cases look different in the text because they sound different.
+
+The 0xFF gate code recon.md used to call a tie does not occur once in the 109
+songs here. The tie a song actually contains is this: the same note on
+consecutive steps under gate `tie`, whose count of 13 sub-ticks outlives the
+12-sub-tick step, so `0x0206E9D8` finds the note still inside its gate and emits
+nothing instead of restarting it. It happens 6209 times, and 325 notes are held
+across all 16 steps.
 
 A patch is `name=value` tokens over knobs 0..30, with `filter=lp|bp|hp`,
 `wave1=tri|saw|square|noise` and `sync=off|on` spelled out. The five modulation
@@ -94,7 +105,7 @@ over `data/saves` and the ROM's demos — 109 songs, 1744 patterns, 165888 steps
 | `steps` | 16 | 1738 of 1744 patterns |
 | velocity | 127 | 96% of sounding steps |
 | pan | 63 | 70% of sounding steps |
-| gate | `over` synth, `retrig` drum | 79% and 68% of their sounding steps |
+| gate | `25%` synth, `retrig` drum | the interface's neutral setting. Note this is not the majority: 79% of synth steps are `tie`, so their gate rows are explicit. `tie` as the synth default instead would cut the corpus from 13710 explicit gate cells in 3029 rows to 6393 in 1294 |
 | patch knob | the ROM's INIT patch, `ds10synth00.dat` | a patch differs in 10 of 31 knobs on average |
 | mix | the INIT template's mix | |
 | lane | absent | 75% of the 6912 lane slots have nothing recorded |

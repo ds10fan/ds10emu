@@ -6,10 +6,18 @@ Subcommands:
   load <song.txt> [out.dat]     text -> song file, MD5 header and all
   check <song.dat>...           dump, load, and compare with the original
 
-The format is line oriented: a keyword, then tokens. `#` starts a comment,
-indentation and blank lines are ignored, and a `|` inside a step grid is a bar
-mark the parser drops. Anything at its default is left out - see DEFAULTS below -
-so what a file shows is what the song actually sets.
+Sections in brackets - `[song]`, `[pattern N]`, `[raw]` - then lines of a keyword
+and its tokens. `#` starts a comment at the start of a line or after whitespace,
+so `C#2` is a note; blank lines and indentation are ignored; a `|` in a step row
+is a bar mark the parser drops. Anything at its default is left out - see
+DEFAULTS below - so what a file shows is what the song actually sets.
+
+A track is up to four rows, `note`, `gate`, `vel` and `pan`, the same four pages
+the sequencer's sub-mode button steps through, and they share one column width so
+a step is in the same column everywhere. In the note row `-` carries the previous
+note on, which implies a `tie` on the step before it - that is how a held note is
+written, and why a run of `x` on a drum track (gate `retrig`) is three hits while
+`x - -` would be one held sample.
 
 Exactness. The dumper writes the named fields, loads its own output back, and
 appends a `raw <offset> <hex>` line for every byte that did not survive. So a
@@ -18,7 +26,7 @@ byte-identical proves the whole payload, not the parts I could name. In `clean`
 mode (dump --clean) one thing is dropped: the gate, velocity and pan of a step
 that has no note. Those three bytes are dead - the sequencer only reads them for
 a step whose note byte is not 0xFF - and they hold whatever the editor last left
-there, 129 distinct combinations across the 108 songs in this repo. The song
+there, 129 distinct combinations across the 109 songs in this repo. The song
 plays the same; its MD5 changes.
 
 DEFAULTS, measured over data/saves and the ROM's demos (109 songs, 1744
@@ -28,7 +36,8 @@ patterns, 165888 steps) - a field is written only when it differs:
   steps 16            1738 of 1744 patterns
   velocity 127        96% of sounding steps
   pan 63              70% of sounding steps
-  gate over / retrig  79% of synth steps, 68% of drum steps
+  gate 25% / retrig   the interface's neutral setting, not the majority: 79%
+                      of synth steps are a tie, so they say so
   patch knobs         the ROM's own INIT patch, ds10synth00.dat (mean 10 of 31
                       knobs differ, so a patch line is short)
   lanes               75% of the 6912 lane slots have no automation at all
@@ -119,7 +128,9 @@ INIT_MIX = bytes([0, 0, 62, 0, 0, 0, 1, 0, 0, 65, 62, 61, 63, 65, 73, 0, 0,
 GATE_NAME = {0xFF: "hold", 6: "retrig", 5: "tie", 4: "100%",
              3: "75%", 2: "50%", 1: "25%", 0: "off"}
 GATE_VAL = {v: k for k, v in GATE_NAME.items()}
-GATE_DEFAULT = (5, 6)        # synth tie, drum retrig: 79% and 68% of steps
+GATE_DEFAULT = (1, 6)        # 25% on a synth track, retrig on a drum track
+DS10_TIE = 5                 # what a `-` in the note row implies on the step
+                             # before it, and the only gate that holds a note
 VEL_DEFAULT, PAN_DEFAULT = 127, 63
 REST_FILLER = (3, 127, 64)   # what ds10init.dat leaves on a step with no note
 
@@ -296,64 +307,84 @@ def parse_fx(tokens, mix):
         mix[byname[name]] = int(val) & 0xFF
 
 
+GRID_KINDS = ("note", "gate", "vel", "pan")
+
+
 def grid_text(pat, track):
-    """One track's 16 steps. A rest is `.`, a drum hit at the root note is `x`,
-    and gate, velocity and pan are suffixes only when they are not the
-    default."""
+    """One track's 16 steps as up to four rows - the same four the sequencer's
+    own sub-mode button steps through. A rest is `.`, a step whose four bytes
+    repeat the one before it is `-`, a drum hit at the root note is `x`, and a
+    `.` in the gate, vel or pan row means that step is at the default.
+
+    Keeping gate, velocity and pan off the note cell is what lets every row use
+    one column width, so a step sits in the same column in every row of the
+    pattern and the note starts line up."""
     drum = track >= 2
-    out = []
+    dflt = GATE_DEFAULT[1 if drum else 0]
+    rows = {k: [] for k in GRID_KINDS}
     for s in range(STEPS):
         o = P_STEP + track * 64 + s * 4
         gate, note, vel, pan = pat[o], pat[o + 1], pat[o + 2], pat[o + 3]
         if note == NO_NOTE:
-            out.append(".")
+            for k in GRID_KINDS:
+                rows[k].append(".")
             continue
-        if s and pat[o - 4:o] == pat[o:o + 4]:
-            out.append("-")     # same four bytes again: held under `over`,
-            continue            # struck again under `retrig` or `full`
-        tok = "x" if drum and note == DRUM_ROOT else note_name(note)
-        if gate != GATE_DEFAULT[1 if drum else 0]:
-            tok += ":" + GATE_NAME.get(gate, str(gate))
-        if vel != VEL_DEFAULT:
-            tok += ",v%d" % vel
-        if pan != PAN_DEFAULT:
-            tok += ",p%d" % pan
-        out.append(tok)
-    return out
+        held = s and note == pat[o - 3] and pat[o - 4] == DS10_TIE
+        if held:
+            # The note carries on, so the step before it has to be a tie and
+            # saying so twice would be noise: `-` is the tie.
+            rows["note"].append("-")
+            rows["gate"][s - 1] = "."
+        else:
+            rows["note"].append("x" if drum and note == DRUM_ROOT
+                                else note_name(note))
+        rows["gate"].append("." if gate == dflt
+                            else GATE_NAME.get(gate, str(gate)))
+        rows["vel"].append("." if vel == VEL_DEFAULT else str(vel))
+        rows["pan"].append("." if pan == PAN_DEFAULT else str(pan))
+    # A run's last step keeps its own gate: it is what ends the note.
+    return rows
 
 
-def parse_grid(tokens, pat, track):
+def grid_rows(rows):
+    """Which of the four rows carry anything worth printing."""
+    if all(c == "." for c in rows["note"]):
+        return []
+    return [k for k in GRID_KINDS
+            if k == "note" or any(c not in (".", "-") for c in rows[k])]
+
+
+def parse_grid(kind, tokens, pat, track):
+    """One `note`, `gate`, `vel` or `pan` row. The note row has to be read
+    first - it is what decides which steps exist - and the other three then
+    override a byte of a step the note row already placed."""
     drum = track >= 2
-    s = 0
-    for t in tokens:
-        if t == "|":
-            continue
-        if s >= STEPS:
-            break
+    cells = [t for t in tokens if t != "|"][:STEPS]
+    for s, t in enumerate(cells):
         o = P_STEP + track * 64 + s * 4
-        if t == ".":
-            pat[o], pat[o + 1], pat[o + 2], pat[o + 3] = \
-                REST_FILLER[0], NO_NOTE, REST_FILLER[1], REST_FILLER[2]
-            s += 1
+        if kind == "note":
+            if t == "." or (t == "-" and s == 0):
+                pat[o], pat[o + 1], pat[o + 2], pat[o + 3] = \
+                    REST_FILLER[0], NO_NOTE, REST_FILLER[1], REST_FILLER[2]
+            elif t == "-":
+                # Carry the note on, and tie the step before it so it does.
+                pat[o - 4] = DS10_TIE
+                pat[o] = GATE_DEFAULT[1 if drum else 0]
+                pat[o + 1] = pat[o - 3]
+                pat[o + 2], pat[o + 3] = VEL_DEFAULT, PAN_DEFAULT
+            else:
+                pat[o] = GATE_DEFAULT[1 if drum else 0]
+                pat[o + 1] = DRUM_ROOT if t == "x" else note_value(t)
+                pat[o + 2], pat[o + 3] = VEL_DEFAULT, PAN_DEFAULT
             continue
-        if t == "-":
-            pat[o:o + 4] = pat[o - 4:o]
-            s += 1
+        if t in (".", "-"):
             continue
-        cell = t.split(",")
-        head, _, gate = cell[0].partition(":")
-        note = DRUM_ROOT if head == "x" else note_value(head)
-        g = GATE_DEFAULT[1 if drum else 0]
-        if gate:
-            g = GATE_VAL[gate] if gate in GATE_VAL else int(gate)
-        vel, pan = VEL_DEFAULT, PAN_DEFAULT
-        for extra in cell[1:]:
-            if extra.startswith("v"):
-                vel = int(extra[1:]) & 0xFF
-            elif extra.startswith("p"):
-                pan = int(extra[1:]) & 0xFF
-        pat[o], pat[o + 1], pat[o + 2], pat[o + 3] = g, note, vel, pan
-        s += 1
+        if kind == "gate":
+            pat[o] = GATE_VAL[t] if t in GATE_VAL else int(t) & 0xFF
+        elif kind == "vel":
+            pat[o + 2] = int(t) & 0xFF
+        else:
+            pat[o + 3] = int(t) & 0xFF
 
 
 def lane_text(pat, track, lane):
@@ -545,10 +576,14 @@ def dumps(payload, clean=False, source=None):
                 body.append("%s patch %s" % (TRACK_NAME[t], pbody))
             if mods:
                 body.append("%s mod %s" % (TRACK_NAME[t], mods))
-        for t in range(TRACKS):
-            g = grid_text(pat, t)
-            if any(x != "." for x in g):
-                body.append("%s %s" % (TRACK_NAME[t], fmt_grid(g)))
+        grids = [(t, grid_text(pat, t)) for t in range(TRACKS)]
+        width = max([len(c) for _, rows in grids for k in grid_rows(rows)
+                     for c in rows[k]] + [1])
+        for t, rows in grids:
+            for n, kind in enumerate(grid_rows(rows)):
+                body.append("%-5s %-4s %s"
+                            % (TRACK_NAME[t] if n == 0 else "", kind,
+                               fmt_grid(rows[kind], width)))
         for t in range(LANES):
             for l in range(LANES):
                 line = lane_text(pat, t, l)
@@ -581,9 +616,8 @@ def dumps(payload, clean=False, source=None):
     return text
 
 
-def fmt_grid(cells):
-    """Bar marks every four steps, and columns wide enough to line up."""
-    w = min(max(len(c) for c in cells), 6)
+def fmt_grid(cells, w):
+    """Bar marks every four steps, one column width for the whole pattern."""
     out = []
     for s, c in enumerate(cells):
         if s and s % 4 == 0:
@@ -607,11 +641,12 @@ def loads(text, _raw=True):
         if line.startswith("payload "):
             length = int(line.split()[1])
     p = blank(length)
-    pat = None
+    pat, track = None, None
     for line in lines:
         if line.startswith("["):
             head = line.strip("[]").split()
             pat = int(head[1]) if head[0] == "pattern" else None
+            track = None
             continue
         tok = line.split()
         key, rest = tok[0], tok[1:]
@@ -655,31 +690,39 @@ def loads(text, _raw=True):
                 for i, v in enumerate(rest[1:]):
                     p[x + i] = int(v) & 0xFF
         elif pat is not None:
-            apply_pattern_line(p, pat, key, rest, line)
+            track = apply_pattern_line(p, pat, key, rest, line, track)
     return p
 
 
-def apply_pattern_line(p, i, key, rest, line):
+def apply_pattern_line(p, i, key, rest, line, track):
+    """`track` is the one the last `note` row named, so the `gate`, `vel` and
+    `pan` rows under it can leave the label column empty."""
     o = PAT_OFF + i * PAT_SIZE
+    if key in GRID_KINDS:
+        if track is not None:
+            pat = bytearray(p[o:o + PAT_SIZE])
+            parse_grid(key, rest, pat, track)
+            p[o:o + PAT_SIZE] = pat
+        return track
     if key == "steps":
         struct.pack_into("<I", p, o + P_STEPS, int(rest[0]))
-        return
+        return track
     if key == "scroll":
         for t, v in enumerate(rest):
             p[o + P_PARAMS + 1 + t * 12] = int(v) & 0xFF
-        return
+        return track
     if key == "mix":
         mix = bytearray(p[o + P_MIX:o + P_MIX + MIX_KNOBS])
         parse_mix(rest, mix)
         p[o + P_MIX:o + P_MIX + MIX_KNOBS] = mix
-        return
+        return track
     if key == "fx":
         mix = bytearray(p[o + P_MIX:o + P_MIX + MIX_KNOBS])
         parse_fx(rest, mix)
         p[o + P_MIX:o + P_MIX + MIX_KNOBS] = mix
-        return
+        return track
     if key not in TRACK_BY_NAME:
-        return
+        return track
     t = TRACK_BY_NAME[key]
     what = rest[0] if rest else ""
     if what == "name":
@@ -706,10 +749,11 @@ def apply_pattern_line(p, i, key, rest, line):
         pat = bytearray(p[o:o + PAT_SIZE])
         parse_lane(rest[1:], pat, t, int(what[4:]) - 1)
         p[o:o + PAT_SIZE] = pat
-    else:
+    elif what in GRID_KINDS:
         pat = bytearray(p[o:o + PAT_SIZE])
-        parse_grid(rest, pat, t)
+        parse_grid(what, rest[1:], pat, t)
         p[o:o + PAT_SIZE] = pat
+    return t
 
 
 # ------------------------------------------------- the global instrument bank
