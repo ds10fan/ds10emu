@@ -144,10 +144,19 @@ nothing in the suite covers a lane in `SMT` today.
 
 Everything round-trips, so nothing is lost - these are just not understood:
 
-- payload `+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56, only its last two
-  bytes ever non-zero);
+- bytes 8, 10 and 11 of the per-track editor record at pattern `+0x25C`: no
+  accessor call site touches them and they are zero in all 10464 records here;
 - the second 25-knob mixer space the ROM's own id table implies - volume
   `42 + channel`, pan `34 + channel` - which nothing here models.
+
+## 5e. The song page's two per-bar lanes are stored, not played
+
+`mute a` / `mute b` / `trs` are named and round-trip (recon.md §14), but nothing
+here acts on them: `songplay` chains patterns without a per-bar track mask or a
+per-bar transpose. The original's own engine only latches the deck-A mask into the
+player and never reads it back, so matching it means deciding what the hardware
+actually does with a muted bar - which needs a listening test on a song that has
+one, e.g. `xfer2_10`, whose first 32 bars mute drums.
 
 ## 6. GUI
 

@@ -35,6 +35,15 @@
 #define T_NAME_PAT 0x2BFC
 #define NAME_SIZE 8
 
+/* The PLUS-only tail: the 31_SONG page's two per-bar lanes. A `MUTE` mask is six
+ * bits of track per bar, five bars to a word, one array per deck; `TRS` is a
+ * signed transpose per bar. docs/songtext.md has the accessors. */
+#define T_MUTE_A 0x2EFC
+#define T_MUTE_B 0x2F50
+#define MUTE_SLOTS 105
+#define T_TRS 0x2FA8
+#define TRS_N 52
+
 #define NKNOBS 31
 #define NMIX 25
 #define NDRUMS 4
@@ -589,6 +598,33 @@ static void parse_lane(char **tok, int n, uint8_t *pat, int track, int lane)
     }
 }
 
+/* ------------------------------------------------------- the per-bar lanes */
+
+/* One bar's six-bit mute mask out of the five packed into each word. */
+static int mute_get(const uint8_t *p, size_t base, int bar)
+{
+    size_t o = base + (size_t)(bar / 5) * 4;
+    uint32_t word = (uint32_t)p[o] | (uint32_t)p[o + 1] << 8 |
+                    (uint32_t)p[o + 2] << 16 | (uint32_t)p[o + 3] << 24;
+
+    return (int)((word >> (bar % 5) * 6) & 0x3F);
+}
+
+static void mute_set(uint8_t *p, size_t base, int bar, int value)
+{
+    size_t o = base + (size_t)(bar / 5) * 4;
+    uint32_t word = (uint32_t)p[o] | (uint32_t)p[o + 1] << 8 |
+                    (uint32_t)p[o + 2] << 16 | (uint32_t)p[o + 3] << 24;
+    int shift = (bar % 5) * 6;
+
+    word = (word & ~((uint32_t)0x3F << shift)) |
+           ((uint32_t)(value & 0x3F) << shift);
+    p[o] = (uint8_t)word;
+    p[o + 1] = (uint8_t)(word >> 8);
+    p[o + 2] = (uint8_t)(word >> 16);
+    p[o + 3] = (uint8_t)(word >> 24);
+}
+
 /* ------------------------------------------------------------- mixer and fx */
 
 /* A drum's nine bytes are a route and the eight effect parameters, pushed in as
@@ -917,6 +953,36 @@ int ds10_songtext_read(const char *text, uint8_t *out, size_t cap, size_t *len,
             }
             continue;
         }
+        if (!strcmp(tok[0], "mute") && n > 1) {
+            size_t base = tok[1][0] == 'a' ? T_MUTE_A : T_MUTE_B;
+            int i;
+
+            for (i = 2; i < n; i++) {
+                const char *eq = strchr(tok[i], '=');
+                int bar, value;
+
+                if (!eq) continue;
+                bar = atoi(tok[i]);
+                value = atoi(eq + 1);
+                if (bar >= 0 && bar < MUTE_SLOTS)
+                    mute_set(out, base, bar, value);
+            }
+            continue;
+        }
+        if (!strcmp(tok[0], "trs")) {
+            int i;
+
+            for (i = 1; i < n; i++) {
+                const char *eq = strchr(tok[i], '=');
+                int bar;
+
+                if (!eq) continue;
+                bar = atoi(tok[i]);
+                if (bar >= 0 && bar < TRS_N)
+                    out[T_TRS + bar] = (uint8_t)atoi(eq + 1);
+            }
+            continue;
+        }
         if (!strcmp(tok[0], "raw")) {
             size_t off = (size_t)strtoul(tok[1], NULL, 16);
             int i;
@@ -1083,6 +1149,36 @@ static void write_named(struct sink *k, const uint8_t *p, size_t len,
             for (i = 0; i < bars; i++)
                 emit(k, " %u", (unsigned)(p[0x24 + i * 2] |
                                           p[0x25 + i * 2] << 8));
+            emit(k, "\n");
+        }
+    }
+    if (len >= T_MUTE_B + MUTE_SLOTS / 5 * 4) {
+        int deck;
+
+        for (deck = 0; deck < 2; deck++) {
+            size_t base = deck ? T_MUTE_B : T_MUTE_A;
+            int any = 0;
+
+            for (i = 0; i < MUTE_SLOTS; i++)
+                if (mute_get(p, base, i)) { any = 1; break; }
+            if (!any) continue;
+            emit(k, "mute %c", deck ? 'b' : 'a');
+            for (i = 0; i < MUTE_SLOTS; i++)
+                if (mute_get(p, base, i))
+                    emit(k, " %d=%d", i, mute_get(p, base, i));
+            emit(k, "\n");
+        }
+    }
+    if (len >= T_TRS + TRS_N) {
+        int any = 0;
+
+        for (i = 0; i < TRS_N; i++)
+            if (p[T_TRS + i]) { any = 1; break; }
+        if (any) {
+            emit(k, "trs");
+            for (i = 0; i < TRS_N; i++)
+                if (p[T_TRS + i])
+                    emit(k, " %d=%d", i, (int)(int8_t)p[T_TRS + i]);
             emit(k, "\n");
         }
     }

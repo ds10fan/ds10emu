@@ -99,9 +99,12 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `swing N` | `+0x0A` percent |
 | `name "…"` | `+0x14`, 16 bytes |
 | `chain A B C …` | `+0x24`, one u16 per bar |
+| `mute a bar=mask …` | `+0x2EFC`, six bits of track per bar, five bars to a word |
+| `mute b bar=mask …` | `+0x2F50`, the same for the second deck |
+| `trs bar=semitones …` | `+0x2FA8`, one signed byte per bar |
 | `drumN patch …` | `+0x2B2C + (N-1)*31`, knobs 0..30 |
 | `drumN mod …` | the same knobs, modulation slots only |
-| `drumN extra …` | `+0x2BA8 + (N-1)*9`: route, fx type, time, ratio, rate, depth, sync, feedback, dry/wet |
+| `drumN fx …` | `+0x2BA8 + (N-1)*9`: route, fx type, time, ratio, rate, depth, sync, feedback, dry/wet |
 
 ## `[pattern N]` lines
 
@@ -326,13 +329,33 @@ mod vco2p=saw:+16 cutoff=sine:+8
   them dead bytes or recomputed MD5s; all 18 slots still hash and 90720 live
   fields compare equal.
 
+## `mute` and `trs` — the PLUS tail
+
+The 224 bytes a PLUS payload has beyond a DS-10 one are the two per-bar lanes of
+the `31_SONG` page, which has three modes — `PATTERN`, `MUTE` and `TRS`.
+
+| line | at | shape |
+|---|---|---|
+| `mute a` | `+0x2EFC`, 84 bytes | 6 bits of track per bar, 5 bars to a word, 105 slots. `DECK-A` |
+| `mute b` | `+0x2F50`, 84 bytes | the same, `DECK-B` |
+| — | `+0x2FA4`, 4 bytes | five more 6-bit slots; only the page's "clear song" ever writes them, nothing reads them, zero in the whole corpus |
+| `trs` | `+0x2FA8`, 52 bytes | one signed byte of semitones per bar |
+
+- A `mute` bit set is a track muted in that bar: 87 of the 97 saved songs have both
+  masks all-zero, and the page draws a marker where a bit is set.
+- Both are indexed by bar 0..99 — the same 100 bars as `chain`. A mask array has
+  room for 105, but `trs` runs out at the end of the payload after 52, so bars
+  52..99 of a transpose cannot survive a save. The ROM's own accessors write all
+  100 either way.
+- The two bytes the corpus does have set, `trs 50` and `trs 51`, are not loaded:
+  after a boot with such a song the live document has zero at both. They are the
+  record buffer's leftovers, which is why they read as transposes for bars that
+  most of those songs do not have.
+
 ## Not named yet
 
-- pattern `+0x25C`, the 12-byte per-track record: byte 0 is `scroll`, bytes 2 and 3
-  copy the lanes' knob ids (agreeing with the lane array in 94% of cases, and not
-  what playback reads), bytes 1, 4, 5, 6 and 9 unknown.
-- payload `+0x2EFC` (168 bytes, PLUS) and `+0x2FA4` (56, only its last two bytes
-  ever non-zero).
+- pattern `+0x25C`: bytes 8, 10 and 11 of the per-track record, which no accessor
+  call site touches and which are zero in all 10464 records here.
 - nothing in a drum's own effect: `drumN fx` is named, `src/core/drumbuf.c` applies
   it, and `make test-drumbuf` checks the result against a running DS. The two
   residuals it still has are in TODO.md §5.

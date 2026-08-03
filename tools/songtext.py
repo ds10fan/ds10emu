@@ -64,6 +64,15 @@ P_MIX, P_PARAMS = 0x242, 0x25B
 DRUM_KNOBS, DRUM_EXTRA, DRUM_EXTRA_N = 0x2B2C, 0x2BA8, 9
 NAME_NOW, NAME_PAT, NAME_SIZE = 0x2BCC, 0x2BFC, 8   # 6 chars, then two pad
 
+# The PLUS-only tail, which is the 31_SONG page's two per-bar lanes. `MUTE` is a
+# six-bit track mask per bar, one array per deck, packed five to a word - the
+# accessors are 0x0206BE08/0x0206BE64 for deck A and 0x0206BEAC/0x0206BF04 for
+# deck B. `TRS` is a signed transpose per bar, 0x0206BF4C/0x0206BF5C. Both are
+# indexed by bar 0..99; a mask array holds 105 slots and the transpose array is
+# cut off by the end of the payload at 52, so its last 48 bars never reach a file.
+MUTE_A, MUTE_B, MUTE_SLOTS = 0x2EFC, 0x2F50, 105
+TRS_WORD, TRS, TRS_N = 0x2FA4, 0x2FA8, 52
+
 PAYLOADS = (11212, 11260, 12028, 12252)
 
 # ---------------------------------------------------------------- knobs
@@ -441,6 +450,44 @@ def parse_grid(kind, tokens, pat, track):
 VIEW_BYTES = (0, 1, 2, 3, 4, 5, 6, 7, 9)
 
 
+def mute_get(payload, base, bar):
+    """One bar's six-bit mask out of the five packed into each word."""
+    word = struct.unpack_from("<I", payload, base + (bar // 5) * 4)[0]
+    return (word >> (bar % 5) * 6) & 0x3F
+
+
+def mute_set(payload, base, bar, value):
+    o = base + (bar // 5) * 4
+    word = struct.unpack_from("<I", payload, o)[0]
+    shift = (bar % 5) * 6
+    word = (word & ~(0x3F << shift)) | ((value & 0x3F) << shift)
+    struct.pack_into("<I", payload, o, word)
+
+
+def mute_text(payload, base):
+    """`mute a` / `mute b` - only the bars that mute something."""
+    if base + MUTE_SLOTS // 5 * 4 > len(payload):
+        return None
+    out = ["%d=%d" % (b, mute_get(payload, base, b))
+           for b in range(MUTE_SLOTS) if mute_get(payload, base, b)]
+    return " ".join(out) if out else None
+
+
+def trs_text(payload):
+    """`trs` - only the bars that transpose."""
+    if TRS + TRS_N > len(payload):
+        return None
+    out = ["%d=%d" % (b, v - 256 if v > 127 else v)
+           for b, v in enumerate(payload[TRS:TRS + TRS_N]) if v]
+    return " ".join(out) if out else None
+
+
+def parse_bar_pairs(tokens):
+    for t in tokens:
+        bar, _, value = t.partition("=")
+        yield int(bar), int(value)
+
+
 def view_text(pat):
     """`view` - one comma-separated group of nine bytes per track, or None when
     the whole thing is zero. One line rather than six: it is editor state, and it
@@ -603,6 +650,13 @@ def dumps(payload, clean=False, source=None):
     bars = next((i for i, v in enumerate(chain) if v == NO_PATTERN), CHAIN)
     if bars:
         out.append("chain " + " ".join(str(c) for c in chain[:bars]))
+    for tag, base in (("a", MUTE_A), ("b", MUTE_B)):
+        line = mute_text(payload, base)
+        if line:
+            out.append("mute %s %s" % (tag, line))
+    line = trs_text(payload)
+    if line:
+        out.append("trs %s" % line)
 
     if len(payload) >= DRUM_KNOBS + DRUMS * KNOBS:
         for d in range(DRUMS):
@@ -734,6 +788,13 @@ def loads(text, _raw=True):
         elif key == "chain":
             for i, v in enumerate(rest):
                 struct.pack_into("<H", p, 0x24 + i * 2, int(v))
+        elif key == "mute":
+            base = MUTE_A if rest[0] == "a" else MUTE_B
+            for bar, value in parse_bar_pairs(rest[1:]):
+                mute_set(p, base, bar, value)
+        elif key == "trs":
+            for bar, value in parse_bar_pairs(rest):
+                p[TRS + bar] = value & 0xFF
         elif key == "raw":
             if _raw:
                 off = int(rest[0], 16)

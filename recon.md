@@ -1829,14 +1829,49 @@ and one stride later is empty. So B is a DSi-mode thing, and §6 has already
 established those sections are modcrypt-encrypted and not readable - which puts
 instance B out of reach of decompilation, while explaining the ids.
 
-Not verified: `+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56). Only the last
-two bytes of the second are ever non-zero across the 100 PLUS songs here, and
-their values look like a counter rather than a setting - 0x0000, 0x0015, 0x0236,
-0xFFFF, 0x1782. A base near the first, `record + 0x42F5C`, is in the literal pool
-of `0x0206C3A0` along with the drum-knob and name-row bases, so the region is
-reached by the same code that loads a pattern; which bytes it touches is not
-traced. The first block's non-zero offsets fall in two halves of 84, each with
-data at 0..35 and 42..53.
+`+0x2EFC` (168 bytes, PLUS only) and `+0x2FA4` (56) are the **two per-bar lanes of
+the `31_SONG` page**, whose three modes are `PATTERN`, `MUTE` and `TRS`
+(`0x02084AC4`..`0x02084AF8`, with `DECK-A` and `DECK-B` labelling the row groups).
+
+```
++0x2EFC   84   MUTE, deck A   6 bits of track per bar, five bars to a word
++0x2F50   84   MUTE, deck B   same
++0x2FA4    4   five more 6-bit slots, only ever cleared
++0x2FA8   52   TRS            one signed byte of semitones per bar
+```
+
+The doc accessors, all reached through the `+0x8CD9C` instance wrappers in the
+`0x02034900` block:
+
+```
+0x0206BE08 / 0x0206BE64   set/get MUTE deck A   doc + 0x42F5C + (bar/5)*4, field (bar%5)*6
+0x0206BEAC / 0x0206BF04   set/get MUTE deck B   doc + 0x42FB0 + ...
+0x0206BF4C / 0x0206BF5C   set/get TRS           doc + 0x43008 + bar, signed
+0x0206BF6C                set the spare word    doc + 0x43004, no getter anywhere
+0x0206BDE0 / 0x0206BDF4   set/get the chain     doc + 0x42B94 + bar*2
+```
+
+Which is also how the live document is laid out - **not** in file order. Measured
+against a snapshot (a song's 768 name bytes and 168 mute bytes each found at one
+place): patterns at `+0x400B4`, drum knobs and fx at `+0x42AF4`, chain at
+`+0x42B94`, the 16 name rows at `+0x42C5C`, mute at `+0x42F5C`, TRS at `+0x43004`.
+The save at `0x0205D320` copies from a *file-layout* record buffer, `[obj+0x134] +
+16`, which is why its offsets match the file and not this.
+
+What reads them: `0x0203C488` draws the mute grid, 12 rows of 16 bars, row *r* of
+the current deck from `mask & (1 << r)`; `0x0203C6FC` draws TRS as a seven-row
+window with a signed readout; `0x0203C038` writes a touched TRS cell as
+`centre + row - 12`; and the "clear song" handlers walk bars 0..99 setting the
+chain to `0xFFFF` and every lane to 0. The song player latches deck A's mask at
+each bar advance - `0x0206D23C`, into player `+0x8C` - and nothing reads that word
+back, so the mute the engine acts on is still the per-track toggle a widget drives
+(`0x02052FDC` solo, `0x02052FEC` mute).
+
+Two measured limits. `TRS` is indexed 0..99 like the mask but the payload ends
+after 52 bytes of it, so bars 52..99 of a transpose never reach a file. And the
+last two bytes of the payload, the only ones ever non-zero in the corpus (49 of 97
+songs), are **not loaded**: boot a song that has them and the live document holds
+zero at both, so they are the record buffer's leftovers travelling with the file.
 
 ---
 
