@@ -475,6 +475,7 @@ def dumps(payload, clean=False, source=None):
     out = []
     if source:
         out.append("# %s" % source)
+    out.append("[song]")
     out.append("payload %d" % len(payload))
     ver, rev, tempo = struct.unpack_from("<HHI", payload, 0)
     f08, swing = struct.unpack_from("<HH", payload, 8)
@@ -549,8 +550,8 @@ def dumps(payload, clean=False, source=None):
             body.append("scroll " + " ".join(str(v) for v in scroll))
         if body:
             out.append("")
-            out.append("pattern %d" % i)
-            out += ["  " + b for b in body]
+            out.append("[pattern %d]" % i)
+            out += body
 
     text = "\n".join(out) + "\n"
     rebuilt = loads(text, _raw=False)
@@ -558,6 +559,7 @@ def dumps(payload, clean=False, source=None):
     extra = spans(payload, rebuilt, skip)
     if extra:
         out.append("")
+        out.append("[raw]")
         out.append("# bytes this format does not name, payload-relative")
         for off, blob in extra:
             for k in range(0, len(blob), 24):
@@ -595,11 +597,12 @@ def loads(text, _raw=True):
     p = blank(length)
     pat = None
     for line in lines:
+        if line.startswith("["):
+            head = line.strip("[]").split()
+            pat = int(head[1]) if head[0] == "pattern" else None
+            continue
         tok = line.split()
         key, rest = tok[0], tok[1:]
-        if key == "pattern":
-            pat = int(rest[0])
-            continue
         if key == "payload":
             continue
         if key == "version":

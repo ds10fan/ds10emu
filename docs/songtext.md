@@ -11,36 +11,37 @@ modulation slot with no source: none of them appear at all.
 
 ## Shape
 
-Line oriented: a keyword, then tokens. `#` starts a comment when it is at the
-start of a line or follows whitespace — so `C#2` is a note, not a truncated
-line. Indentation and blank lines are ignored; a `|` inside a step grid is a bar
-mark the parser drops. Everything before the first `pattern` line is the song;
-after it, lines belong to that pattern.
+Sections in brackets, then lines of a keyword and its tokens. `#` starts a
+comment when it is at the start of a line or follows whitespace — so `C#2` is a
+note, not a truncated line. Blank lines and indentation are ignored; a `|` inside
+a step grid is a bar mark the parser drops. `[song]` holds the header and the
+four drum instruments, `[pattern N]` one pattern, `[raw]` whatever the format
+could not name.
 
 ```
+[song]
 payload 12252              # 11212, 11260, 12028 or 12252 - the four that exist
 version 2                  # 1 = DS-10, 2 = PLUS, 0 or 0xFFFF = pre-release
 revision 1
 tempo 127
 name "FLUTER"
 chain 12 13 12 14 15 15 15 15        # bar -> pattern; absent means no song
-
 drum1 patch octave=-2 cutoff=23 peak=83 decay=19 release=21
 drum1 extra 0 0 63 0 62 60 0 0 0     # the nine per-drum bytes nobody has named
 drum2 mod vca=eg:+63
 
-pattern 0
-  syn1 name "XLEAD"
-  syn1 patch porta=14 wave1=square cutoff=57 peak=51 cutoffeg=14 mgfreq=77
-  syn1 mod pitch=sine:+4
-  syn1 .  .  G4 .  | .  G4 G4 .  | E4 E4 .  F4 | .  .  .  .
-  drum1 x . x . | . . . . | . . x . | . . . .
-  drum4 F2,p64 .  .  .  | .  .  .  .  | .  .  E2,p64 .  | .  .  .  .
-  syn2 lane1 knob=cutoff 0=69 1=62 2=51 3=45 4=48 5=50 6=37
-  mix route=syn1+syn2 vol=105,105,104,105,66,105 pan=65,62,61,63,74,56
-  fx delay time=14 ratio=14 rate=23 depth=62 sync=0 fb=38 wet=52
-  scroll 46 31 36 36 57 36           # each track's piano-roll position
-  steps 12                           # only when it is not 16
+[pattern 0]
+syn1 name "XLEAD\b"
+syn1 patch porta=14 wave1=square cutoff=57 peak=51 cutoffeg=14 mgfreq=77
+syn1 mod pitch=sine:+4
+syn1 .  .  G4 .  | .  G4 G4 .  | E4 E4 .  F4 | .  .  .  .
+drum1 x . x . | . . . . | . . x . | . . . .
+drum4 F2,p64 .  .  .  | .  .  .  .  | .  .  E2,p64 .  | .  .  .  .
+syn2 lane1 knob=cutoff 0=69 1=62 2=51 3=45 4=48 5=50 6=37
+mix route=syn1+syn2 vol=105,105,104,105,66,105 pan=65,62,61,63,74,56
+fx delay time=14 ratio=14 rate=23 depth=62 sync=0 fb=38 wet=52
+scroll 46 31 36 36 57 36             # each track's piano-roll position
+steps 12                             # only when it is not 16
 ```
 
 A step cell is `<note>[:<gate>][,v<velocity>][,p<pan>]`, or `.` for no note, or
