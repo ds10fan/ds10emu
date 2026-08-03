@@ -303,6 +303,9 @@ def grid_text(pat, track):
         if note == NO_NOTE:
             out.append(".")
             continue
+        if s and pat[o - 4:o] == pat[o:o + 4]:
+            out.append("-")     # same four bytes again: held under `over`,
+            continue            # struck again under `retrig` or `full`
         tok = "x" if drum and note == DRUM_ROOT else note_name(note)
         if gate != GATE_DEFAULT[1 if drum else 0]:
             tok += ":" + GATE_NAME.get(gate, str(gate))
@@ -326,6 +329,10 @@ def parse_grid(tokens, pat, track):
         if t == ".":
             pat[o], pat[o + 1], pat[o + 2], pat[o + 3] = \
                 REST_FILLER[0], NO_NOTE, REST_FILLER[1], REST_FILLER[2]
+            s += 1
+            continue
+        if t == "-":
+            pat[o:o + 4] = pat[o - 4:o]
             s += 1
             continue
         cell = t.split(",")

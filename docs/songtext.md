@@ -44,12 +44,33 @@ scroll 46 31 36 36 57 36             # each track's piano-roll position
 steps 12                             # only when it is not 16
 ```
 
-A step cell is `<note>[:<gate>][,v<velocity>][,p<pan>]`, or `.` for no note, or
-`x` on a drum track for the root note 60 — unity playback speed for a drum
-buffer. Notes are MIDI names with 60 = C4. Gates are `tie`, `retrig`, `over`,
-`full`, `3/4`, `2/4`, `1/4` (recon.md §13: 4 and 5 are a sub-tick short of and
-over a full step, 6 retriggers, 0xFF ties, and anything else is
-`gate * subticks / 4`).
+A step cell is `<note>[:<gate>][,v<velocity>][,p<pan>]`, or `.` for no note, `-`
+to repeat the previous step, or `x` on a drum track for the root note 60 — unity
+playback speed for a drum buffer. Notes are MIDI names with 60 = C4. Gates are
+`tie`, `retrig`, `over`, `full`, `3/4`, `2/4`, `1/4` (recon.md §13: 4 and 5 are a
+sub-tick short of and over a full step, 6 retriggers, 0xFF ties, and anything
+else is `gate * subticks / 4`). Sub-ticks come from swing, so the same gate is a
+different absolute length on swung even and odd steps — which is why the token
+stores the code and not a duration.
+
+### How a held note actually looks
+
+`-` means the step's four bytes repeat the previous step's, and it is what a tie
+looks like in a real song. The 0xFF gate code that recon.md calls a tie does not
+occur once in the 109 songs here. What does occur, 6209 times, is the same note
+on consecutive steps under gate `over`: the gate bleeds one sub-tick into the
+next step, so the note is still sounding when the identical step arrives, and
+`0x0206E9D8` emits nothing rather than restarting it. On synth tracks 8695 of the
+9775 repeated steps carry `over`, and 325 notes are held across all 16 steps.
+
+```
+syn1 D4  F2  -   .   | .   G#2 -   -   | .   .   .   A3  | -   -   -   -
+```
+
+`F2 -` is a two-step note, `G#2 - -` three, `A3 - - -` four. Under `retrig` or
+`full` the same shorthand is a note struck again rather than held, so what `-`
+sounds like depends on the gate on the cell it repeats — it is a byte-level
+shorthand, not a claim about the envelope.
 
 A patch is `name=value` tokens over knobs 0..30, with `filter=lp|bp|hp`,
 `wave1=tri|saw|square|noise` and `sync=off|on` spelled out. The five modulation
