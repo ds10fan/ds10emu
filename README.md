@@ -5,6 +5,11 @@ the synthesizer engine, and the interface, running in a browser.
 
 Multiplayer (DS Wireless Play / WiFi) is out of scope.
 
+**The interface is being rewritten.** See `UIPLAN.md`: the drawing is a
+verified model of the DS 2D hardware, but the behaviour was invented rather
+than decompiled, and is being replaced by a function-by-function decompilation
+driven like a DS - pen events in, 2D state out.
+
 ## Status
 
 **Audio.** Reimplemented and verified sample-exact against the original ARM9

@@ -2035,6 +2035,68 @@ from there, which is also where the transport and the screen swap come from.
 The pad's own placement, `(0, 0x14, 0x100, 0xac)`, is the one this document
 already had.
 
+### The document's field accessors
+
+`0x02034500(store, idx)` tail-calls a jump table at `0x0206b0c0` with the
+per-deck block:
+
+```
+(*0x0206b0c0)(store + 0x20 + store[+0x8cd9c] * 0x43040, idx)     idx <= 9
+```
+
+`+0x8cd9c` is the deck flag and `0x43040` the per-deck stride. Index 0 reads a
+byte at `base + 0x40000 + 0x310 + pattern*676 + track*12`, with the pattern
+index at `base + 0x40050` and the track at `+0x40054` - so these are per
+pattern and per track, and `0x310 - 0xB4` is `0x25C`, the per-track record in
+the pattern. `0x02034548(store, a, b)` is a three-argument sibling.
+
+Which index is which comes from the constructors that call it:
+
+```
+idx 0   60_SYN_SEQ +0x390, 62_DRUM_SEQ +0x3B4   the piano roll's scroll
+idx 1   81_KEY +0x144                            the keyboard's octave
+idx 2   71_KAOSS +0x394                          the pad's first knob id
+idx 3   71_KAOSS +0x398                          the pad's second knob id
+idx 4   71_KAOSS -> FUN_0204974c(+0x18c, v)      the pad, unnamed
+idx 5   71_KAOSS -> FUN_02049754(+0x18c, v)      the pad, unnamed
+idx 6   71_KAOSS +0x15c                          unnamed
+idx 7   71_KAOSS +0x14c, and it selects which of the pad's three slot buttons
+        comes up lit - `FUN_02029d88(+0x4a0 + v*0xfc, 1)`
+```
+
+Indices 2 and 3 being the pad's knob ids matters: the lane knob assignment the
+song format keeps at the per-track record's bytes 2 and 3 is reached through
+the same accessor, so the pad's two axes and the automation lanes are the same
+two fields, which is what this reimplementation had inferred from the data.
+
+`0x020338ec(store)` tests whether the document has the second deck, which is
+what gates `ptdeck` on 32_PATTERN.
+
+### The software float helpers
+
+The screens use software floating point for anything curved, so these turn up
+constantly and are worth naming:
+
+```
+0x0200bf08  int -> float          0x0200c548  float -> int
+0x0200c608  multiply              0x0200ca18  add
+0x0200c7e8  divide                0x0200cc9c  ?, takes a float and a constant
+0x0200be50  compare against zero
+0x0200c158  the compiler's signed integer divide: quotient r0, remainder r1
+0x0201263c  atan2-ish             0x0201235c  square root
+0x02011fc4  build a 2x2 rotation from (sin, cos)
+0x02011fd0  scale a 2x2 by (sx, sy), each term >> 12
+```
+
+Two float-heavy functions located but not read:
+
+- `0x0202cb20` builds a ribbon or curve: seventeen sampled points, then sixteen
+  pairs of shorts written to `screen + index*0x40 + 0x68` and `+0x1e8`. It
+  reads the sine table as an easing curve. Most likely the patch bay's cables
+  on 70_PATCH or the pad's trail.
+- `0x02047224` is a screen tween, also using the sine table's cosine column as
+  an easing curve, driven by a state at `+0x1c`.
+
 ### The widget object
 
 `0x0202e750(w, kind, x, y, cw, ch, name, cap)` is the constructor, and it maps

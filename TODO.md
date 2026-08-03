@@ -228,6 +228,12 @@ Remaining, roughly in order:
 
 ## 6b. Decompiling the UI, function by function
 
+**See `UIPLAN.md`.** The interface is being restarted as a faithful
+decompilation driven like a DS - pen events in, 2D state out - because the
+behaviour layer described below was invented rather than read, and it does not
+behave like the device. What follows is the findings so far, which the plan
+builds on; the plan itself says what survives and what goes.
+
 A different standard from the rest of section 6. The screens there were
 reimplemented from decompiled coordinate tables and from tapping the hardware,
 and checked by rendering a frame and diffing it against a capture - which
