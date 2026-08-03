@@ -779,6 +779,42 @@ left  = in * (volume - P) >> 15
 dry into the output. Confirms thement's list:
 `0 syn1, 1 syn2, 2 syn1+syn2, 3 drums, 4 all, 5 off`.
 
+### Where a sample is clipped, and why the rail is 0x7FD7
+
+The master stage runs per sample, at `0x02074054`..`0x020740A8`:
+
+```
+x = clamp(sum, -0x7FFF, +0x7FFF)          0x02074054  blt / cmp / movgt
+ref = x < 1 ? -0x7FFF : +0x7FFF           0x02074060  cmp / movle
+d   = x - ref                             0x0207406C  subs
+a   = |d|                                 0x02074070  rsbmi / movpl
+out = (ref + ((d * a) >> 15)) * gain >> 15   0x02074078  mul / add / mul / asr
+```
+
+So it is a hard clamp at `±0x7FFF` and then the soft-knee waveshaper - reflect
+about the nearer rail, square the distance, come back - and finally the master
+gain. `src/core/mixer.c` has all three as `clamp_one`, `shape` and the multiply in
+`ds10_mixer_render`.
+
+**The rails are `+32726` and `-32727`, not `±32767`**, because the gain that
+multiplies them is `0x7FD7` = 32727, and the negative side comes out one LSB
+louder because the shift floors toward minus infinity. That is exactly what the
+four rendered drum buffers in a RAM dump show: max `+32726`, min `-32727`, on all
+four (`tools/drumbuf.py`, §14).
+
+`0x7FD7` is **written**, not reached by the ramp. The handler at `0x02072DAC`
+counts in `mixer +0x8A`, and when the count hits 64 it clears that counter, clears
+the mute flag at `+0x88`, and stores `0x7FD7` into the gain at `+0x30`
+(`0x02072E50`..`0x02072E64`). Two sibling machines have the same idiom at
+`0x02073A58` and `0x020762DC`, writing their own gain fields.
+
+Nothing here models that write, so our gain only ever ramps, and its integer fixed
+point is `(g*0x7F35>>15) + 0xCB` = **32607 = 0x7F5F**. Every sample of a long
+render is therefore 0.99633 of the hardware's, and a clipped one lands on
+`+32606 / -32607` instead. It is inaudible, and invisible to the tests: the mixer
+vectors are eight frames, so the count never reaches 64, and the oracle does not
+run that handler either - both sides ramp identically and agree with each other.
+
 **The master gain at `+0x30` is a click-free mute ramp**, and answers
 thement's "used by mixer, volume of sorts, (?)". Per sample:
 

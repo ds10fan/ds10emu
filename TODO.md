@@ -138,6 +138,19 @@ already wrong would just fit one error to another. All four drums in the dumped
 song happen to be dry, so a dump of a song with a wet drum is also wanted; the
 survey in this section says which of the ROM's demos have one.
 
+## 5c. The master gain is never set to 0x7FD7
+
+recon.md §12 has the trace. The hardware's handler at `0x02072DAC` writes
+`0x7FD7` straight into the mixer's master gain once its counter reaches 64; our
+mixer only ramps, and its fixed point is `0x7F5F`. So every sample of a render
+longer than that is 0.99633 of the hardware's, and a clipped sample lands on
+`+32606 / -32607` instead of the hardware's `+32726 / -32727`.
+
+Inaudible, but it is a real difference and no test can see it: the mixer vectors
+are eight frames, and the oracle does not run the handler either. Whoever wires
+the sequencer's message path next should push that message and let the gain be
+set the way the machine does it, rather than special-casing a constant.
+
 ## 5b. Unnamed bytes
 
 Everything round-trips, so nothing is lost - these are just not understood:

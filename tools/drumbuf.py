@@ -12,8 +12,10 @@ the 0x43040 stride at 0x020347EC is, and why the drum knobs sit at record
 objects (0x2E0 apart) holds a pointer to its buffer, and this finds the record by
 those four pointers.
 
-Given the song that was loaded, it also says how far `songplay`'s idea of a drum
-buffer is from the real one. Today: not close. Same pitch and character - the
+Given the song that was loaded, it also writes our own render beside each one -
+`drumN.hw.wav` from the dump, `drumN.ours.wav` as songplay makes it, and
+`drumN.ours-mixed.wav` through our mixer with that drum's nine effect bytes - and
+says how far apart they are. Today: not close. Same pitch and character - the
 zero-crossing rates agree to a percent - but the envelopes and levels do not, so
 the "one second of a fresh voice at note 60" inference in songplay.c is wrong
 about how the render is driven. See TODO.md section 5.
@@ -95,7 +97,7 @@ def main():
     outdir = os.path.join("out", "drumbuf")
     os.makedirs(outdir, exist_ok=True)
     for d, b in enumerate(bufs):
-        path = os.path.join(outdir, "drum%d.wav" % d)
+        path = os.path.join(outdir, "drum%d.hw.wav" % d)
         wav(path, b)
         last = max((i for i, v in enumerate(b) if v not in (0, -1)), default=-1)
         print("  drum %d  peak %6d at %5d  ends %5d  %s"
@@ -111,8 +113,11 @@ def main():
         p = songtext.read_song(sys.argv[2])
         print("\nagainst our own render of %s:" % os.path.basename(sys.argv[2]))
         for d in range(DRUMS):
-            _, _, _, _, dry, _ = oracle.capture_drum_fx(p, d, frames=512)
+            _, _, _, _, dry, wet = oracle.capture_drum_fx(p, d, frames=512)
             ours = [s for f in dry for s in f]
+            mixed = [s for f, _ in wet for s in f]
+            wav(os.path.join(outdir, "drum%d.ours.wav" % d), ours)
+            wav(os.path.join(outdir, "drum%d.ours-mixed.wav" % d), mixed)
             print("  drum %d  peak %6d at %5d  zcr ours %5d theirs %5d"
                   "  corr %+.4f"
                   % (d, max(abs(v) for v in ours),
