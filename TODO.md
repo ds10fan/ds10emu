@@ -90,10 +90,17 @@ own oracle. Plain dry drums are exact. What is left:
    It is **not** the voice's arithmetic. Rendering all four of that song's drum
    patches through our `ds10_voice_render` and through the original's own code under
    Unicorn gives **0 differences in 32768 samples, for every one of the four** - so
-   the voice is right and what differs is the state it starts from. A note-on resets
-   neither the filter nor the oscillator phases (`src/core/event.c`), so the frame
-   that runs before the note leaves state behind that we do not reproduce; clocking
-   only the noise register, as we do, is evidently not all of it.
+   the voice is right and what differs is the state it starts from.
+
+   And the shape of the residual says which state: it is front-loaded and decays
+   away - 1100 mismatches in the first 2048 samples, then 226, 41, 6, 2, then none
+   at all. That is filter memory. A note-on resets neither the filter nor the
+   oscillator phases (`src/core/event.c`), so the pre-note frame leaves the filter
+   holding a frame of noise, and our render starts it cold. Rendering a pre-frame
+   through the whole voice and restoring only the phases does not reproduce it
+   either, so the filter's input during that frame is not simply what our idle voice
+   produces - the envelope's state during the pre-frame is the next thing to pin
+   down, since it is what the filter's cutoff modulation reads.
 2. **The wet mix.** A drum at dry/wet 127 has its echo on the right sample now, and
    3% of its samples differ by 4 counts or less. Likely the same class: where the
    two multiplies by 32764 land.
