@@ -9,7 +9,7 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: songtext test-songtext fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: songtext test-songtext test-songtext-py fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-songtext test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -381,12 +381,17 @@ out/songtext: src/app/songtext.c src/extras/songtext.c src/extras/songtext.h \
 	$(CC) $(CFLAGS) -o $@ src/app/songtext.c src/extras/songtext.c \
 	    src/core/song.c src/core/md5.c
 
-# Two checks. The round trip: every song dumps to text and reads back byte for
-# byte, and clean mode only ever loses the dead bytes of a step with no note.
-# Then the differential: tools/songtext.py is where the format is worked out, so
-# the C encoder has to produce exactly its output, in both modes.
+# The round trip: every song dumps to text and reads back byte for byte, and
+# clean mode only ever loses the dead bytes of a step with no note. Pure C, so it
+# belongs in `make test`.
 test-songtext: out/songtext
 	@./out/songtext check $(TEXT_SONGS)
+
+# The differential, which is what the C encoder is really justified by:
+# tools/songtext.py is where the format is worked out, so the C has to reproduce
+# its output exactly, in both modes. Separate from `make test` because it needs
+# python3, and a missing interpreter is not a failing engine.
+test-songtext-py: out/songtext
 	@n=0; for f in $(TEXT_SONGS); do \
 	    for m in "" --clean; do \
 	        ./out/songtext dump $$m $$f > out/.songtext.c.txt; \

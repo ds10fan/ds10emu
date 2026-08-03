@@ -1,8 +1,10 @@
 # songtext — a DS-10 song as text
 
-Two implementations, which `make test-songtext` holds to the same output byte for
-byte: `src/extras/songtext.c` for anything that links the engine, and
-`tools/songtext.py`, which is where the format is worked out.
+Two implementations: `src/extras/songtext.c` for anything that links the engine,
+and `tools/songtext.py`, which is where the format is worked out. `make
+test-songtext` is the round trip, in C alone; `make test-songtext-py` holds the two
+to the same output byte for byte and is kept out of `make test` because it needs
+python3.
 
 ```sh
 make songtext && out/songtext dump [--clean] song.dat [out.txt]   # `load`, `check`
@@ -248,7 +250,11 @@ instrument 3 mod vco2p=saw:+16 cutoff=sine:+8
 
 - The dumper parses its own output back and appends a `raw` line for every byte
   that did not survive, so unnamed fields round-trip too.
-- All **109** songs in `data/saves` and the ROM round-trip byte for byte.
+- All **109** songs in `data/saves` and the ROM round-trip byte for byte, in C
+  (`make test-songtext`) and in Python.
+- The C and the Python produce identical text for every song in both modes -
+  218 dumps, `make test-songtext-py`. This is what caught the two bugs the round
+  trip could not see, both quoted names holding a space.
 - All **six** saves in `songs/` unpack to text and repack to a byte-identical
   512 KiB save, from the text alone.
 - `--clean` drops one thing: the gate, velocity and pan of a step with no note —

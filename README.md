@@ -62,7 +62,8 @@ Every claim above is a test, not an impression.
 | `make test-2d` | the 2D hardware against melonDS, pixel for pixel | 72 frames |
 | `make test-page` | each page rebuilt from assets, against melonDS | 22 screens |
 | `make test-editor` | an edited song round-tripped through the file format | hash and all |
-| `make test-songtext` | the text format's round trip, and the C encoder against the Python one | 109 songs, 218 dumps |
+| `make test-songtext` | every song through the text format and back | 109 songs |
+| `make test-songtext-py` | the C encoder against `tools/songtext.py`, byte for byte | 218 dumps |
 | `make test-webedit` | a song entered in the browser build, then rendered by `songplay` | sample-exact |
 
 Read `TODO.md` §1 before trusting the audio number — those suites are strong on
