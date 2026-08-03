@@ -1,8 +1,20 @@
 # songtext — a DS-10 song as text
 
+Two implementations, which `make test-songtext` holds to the same output byte for
+byte: `src/extras/songtext.c` for anything that links the engine, and
+`tools/songtext.py`, which is where the format is worked out.
+
 ```sh
-python3 tools/songtext.py dump song.dat [out.txt]   # and `load` for the way back
-python3 tools/sav.py unpack save.SAV dir/           # 18 songs + bank.txt; `repack` rebuilds
+make songtext && out/songtext dump [--clean] song.dat [out.txt]   # `load`, `check`
+python3 tools/songtext.py dump song.dat [out.txt]                 # the reference
+python3 tools/sav.py unpack save.SAV dir/    # 18 songs + bank.txt; `repack` rebuilds
+```
+
+```c
+#include "extras/songtext.h"
+size_t n = ds10_songtext_write(payload, len, NULL, clean, buf, sizeof buf);
+int    e = ds10_songtext_read(buf, payload, sizeof payload, &len, &errline);
+/* or ds10_songtext_dump / _parse, which take a parsed ds10_song */
 ```
 
 ## Example

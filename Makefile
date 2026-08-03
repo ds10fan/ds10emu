@@ -9,10 +9,10 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: songtext test-songtext fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-songtext test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -365,6 +365,41 @@ test-2d: out/test_2d
 out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_2d.c src/gfx/nds2d.c
+
+# ---------------------------------------------------------------------------
+# songtext - the text format, and the Python reference it has to match
+# ---------------------------------------------------------------------------
+
+# Everything committed that is a song: the save slots and the ROM's own demos.
+TEXT_SONGS = $(wildcard data/saves/*.dat) \
+    $(wildcard data/nitrofs/demo/ds10*demo*.dat) data/nitrofs/demo/ds10init.dat
+
+songtext: out/songtext
+out/songtext: src/app/songtext.c src/extras/songtext.c src/extras/songtext.h \
+    src/core/song.c src/core/song.h src/core/md5.c
+	@mkdir -p out
+	$(CC) $(CFLAGS) -o $@ src/app/songtext.c src/extras/songtext.c \
+	    src/core/song.c src/core/md5.c
+
+# Two checks. The round trip: every song dumps to text and reads back byte for
+# byte, and clean mode only ever loses the dead bytes of a step with no note.
+# Then the differential: tools/songtext.py is where the format is worked out, so
+# the C encoder has to produce exactly its output, in both modes.
+test-songtext: out/songtext
+	@./out/songtext check $(TEXT_SONGS)
+	@n=0; for f in $(TEXT_SONGS); do \
+	    for m in "" --clean; do \
+	        ./out/songtext dump $$m $$f > out/.songtext.c.txt; \
+	        $(PY) tools/songtext.py dump $$m $$f > out/.songtext.py.txt; \
+	        cmp -s out/.songtext.c.txt out/.songtext.py.txt || { \
+	            echo "FAIL: C and Python disagree on $$f $$m"; \
+	            diff out/.songtext.py.txt out/.songtext.c.txt | head; \
+	            exit 1; }; \
+	        n=$$((n+1)); \
+	    done; \
+	done; \
+	rm -f out/.songtext.c.txt out/.songtext.py.txt; \
+	echo "PASS: C matches tools/songtext.py on $$n dumps"
 
 # ---------------------------------------------------------------------------
 # Assets the engine and its tests read
