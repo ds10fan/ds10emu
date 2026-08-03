@@ -9,7 +9,7 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: fonttest test-uiknob test-uiaffine test-uilive test-tables test-webedit test-websong test-cell test-obj test-page web serve ds10view sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -179,15 +179,6 @@ tests/vectors/uiknob.bin: extract tools/oracle.py tools/emu.py
 
 # The same function against a running machine's own widgets, at their real
 # addresses, with Unicorn seeded from a melonDS RAM dump. Needs the ROM.
-test-uilive: out/test_uiknob tests/vectors/uilive.bin
-	@./out/test_uiknob tests/vectors/uilive.bin
-
-out/snapui/synedit/script.txt: tools/snapui.py out/ndsref
-	@$(PY) tools/snapui.py synedit
-
-tests/vectors/uilive.bin: out/snapui/synedit/script.txt tools/oracle.py \
-                          tools/emu.py tools/snap.py
-	@$(PY) tools/oracle.py ui-live $$(ls out/snapui/synedit/*.snap | tail -1)
 
 # The sprite affine matrix, against the original's own builder.
 test-uiaffine: out/test_uiaffine tests/vectors/uiaffine.bin
@@ -376,96 +367,20 @@ out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
 	$(CC) $(CFLAGS) -o $@ tests/test_2d.c src/gfx/nds2d.c
 
 # ---------------------------------------------------------------------------
-# Browser build
+# Assets the engine and its tests read
 # ---------------------------------------------------------------------------
 
-# Needs the Emscripten SDK; source its emsdk_env.sh, or point EMCC at emcc.
-EMCC ?= emcc
-WEB_SRC = src/web/main.c src/app/ui.c src/app/obj.c src/app/cell.c \
-          src/app/widget.c \
-          src/app/editor.c \
-          src/gfx/nds2d.c src/gfx/nitro.c \
-          src/core/voice.c src/core/vco.c src/core/vcf.c src/core/env.c \
-          src/core/lfo.c src/core/pitch.c src/core/amp.c src/core/fx.c \
-          src/core/mixer.c src/core/patch.c src/core/event.c \
-          src/core/voice_state.c src/core/mixer_state.c \
-          src/core/seq.c src/core/song.c src/core/md5.c src/core/drum.c \
-          $(TBL_SRC)
-WEB_FLAGS = -O2 -std=c99 -Wall -lm \
-            --preload-file data/nitrofs@/data/nitrofs \
-            --preload-file data/saves@/data/saves \
-            --preload-file data/pages.bin@/data/pages.bin \
-            -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8","FS"]' \
-            -s INITIAL_MEMORY=64MB -s EXIT_RUNTIME=0
-
-# The engine again, for the AudioWorklet: no preloaded files at all - the
-# tables are compiled in and a song arrives over the port - and one file,
-# because a worklet has no fetch. DSP then runs on the audio thread, where a
-# slow frame cannot stall it.
-AUDIO_FLAGS = -O2 -std=c99 -Wall -lm \
-              -s EXPORTED_RUNTIME_METHODS='["cwrap","HEAPU8"]' \
-              -s INITIAL_MEMORY=32MB -s EXIT_RUNTIME=0 \
-              -s SINGLE_FILE=1 -s MODULARIZE=1 -s EXPORT_ES6=1 \
-              -s EXPORT_NAME=DS10Audio -s ENVIRONMENT=worker
-
-web/build/ds10audio.js: $(WEB_SRC)
-	@mkdir -p web/build
-	$(EMCC) $(AUDIO_FLAGS) -o web/build/ds10audio.js $(WEB_SRC)
-
-# The songs in songs/*.SAV, so your own saves are in the picker too.
+# The songs in songs/*.SAV, extracted so they can be loaded by name.
 data/saves: tools/savex.py $(wildcard songs/*.SAV)
 	@rm -rf data/saves && $(PY) tools/savex.py data/saves songs/*.SAV \
 	    | tail -1
-	@$(PY) tools/mksaveindex.py data/saves web/saves.js
 
 # Both files come out of one run; the header is what the engine includes.
 src/core/tables_data.c src/core/tables_data.h: data/tables.bin tools/mktables.py
 	@$(PY) tools/mktables.py data/tables.bin src/core/tables_data.c
 
-web: web/build/ds10.js web/build/ds10audio.js
-web/build/ds10.js: $(WEB_SRC) src/app/ui.h src/gfx/nds2d.h src/gfx/nitro.h \
-                   data/pages.bin data/tables.bin web/index.html \
-                   web/app.js web/panel.js web/worklet.js web/saves.js
-	@mkdir -p web/build
-	$(EMCC) $(WEB_FLAGS) -o web/build/ds10.js $(WEB_SRC)
-	@cp web/index.html web/app.js web/worklet.js web/panel.js \
-	    web/saves.js web/build/
-
-# Serve it. The page is static, so anything that serves files will do.
-serve: web
-	@echo "http://0.0.0.0:$(PORT)/"
-	@cd web/build && $(PY) -m http.server $(PORT) --bind 0.0.0.0
-PORT ?= 8537
-
-# Render a page natively, as a check that the browser build is not the odd one
-# out. ds10view writes PPMs; the wasm build produces the same pixels.
-ds10view: out/ds10view
-out/ds10view: src/app/ds10view.c src/app/ui.c src/app/obj.c src/app/cell.c \
-              src/app/widget.c src/app/widget.h $(TBL_SRC) \
-              src/gfx/nds2d.c src/gfx/nitro.c
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ src/app/ds10view.c src/app/ui.c src/app/obj.c \
-	    src/app/widget.c $(TBL_SRC) \
-	    src/app/cell.c src/gfx/nds2d.c src/gfx/nitro.c -lm
-
-# The browser build against songplay, sample for sample. Needs node and the
-# wasm build; both run the same engine, so this catches setup mistakes rather
-# than DSP ones.
-test-webedit: web out/songplay
-	@node tools/webedit.js
-	@node tools/webboot.js
-	@node tools/webaudio.js
-
-test-websong: web out/songplay
-	@./out/songplay -b 3 -o out/ref_demo.wav \
-	    data/nitrofs/demo/ds10demo01.dat >/dev/null
-	@node tools/websong.js
-
-# Render each page with the reimplementation and diff it against the captured
-# frame for the same page. Needs `make sweep` first.
 # The sprite widget: our OAM builder against the game's own setter, run under
-# Unicorn. This is the piece that turns widget state into what the screen
-# shows, so it is the seam between the UI and the hardware model.
+# Unicorn. This is the seam between a widget's state and what the screen shows.
 test-obj: out/test_obj tests/vectors/obj.bin
 	@./out/test_obj
 
@@ -488,12 +403,7 @@ out/test_cell: tests/test_cell.c src/app/cell.c src/app/cell.h
 tests/vectors/cell.bin: extract tools/oracle.py
 	@$(PY) tools/oracle.py cell-vectors
 
-test-page: out/ds10view
-	@$(PY) tools/pagecheck.py out/sweep out/sweep2 out/sweep3
-
 # The captured sprite layer per page, until the widget constructors are read.
-data/pages.bin: tools/pages.py
-	@$(PY) tools/pages.py out/sweep out/sweep2 out/sweep3 $@
 
 # Render a string with one of the ROM's fonts, as an eye check on the reader.
 fonttest: out/fonttest
