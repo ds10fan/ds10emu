@@ -534,8 +534,16 @@ def parse_auto(tokens, pat, track):
         pat[P_PARAMS + 1 + track * 12 + AUTO_BYTE] = v & 0xFF
 
 
+# The pad's own list of what an axis can target, 27 entries at 0x02084BD0: knobs
+# 0..25 - everything but the five modulation-source knobs - and 31, which the
+# caption table at 0x020852DC calls OFF.
+LANE_OFF = 31
+LANE_AXIS = "xy"
+
+
 def lane_text(pat, track, lane):
-    """One automation lane: its knob, then only the steps that have a value.
+    """One automation lane - one axis of the KAOSS pad - its target, then only the
+    steps that have a value.
     -1 means "no automation here", which is most of them.
 
     The knob id is stored on every step, but the machine is only ever set up from
@@ -548,8 +556,9 @@ def lane_text(pat, track, lane):
     knob = [pat[base + s * 4 + 2 + lane] for s in range(STEPS)]
     if all(r == NO_NOTE for r in raw) and knob[0] == (11 + lane):
         return None
-    name = KNOB[knob[0]][0] if knob[0] < KNOBS else str(knob[0])
-    out = ["%s lane%d knob=%s" % (TRACK_NAME[track], lane + 1, name)]
+    name = ("off" if knob[0] == LANE_OFF else
+            KNOB[knob[0]][0] if knob[0] < KNOBS else str(knob[0]))
+    out = ["%s lane%s knob=%s" % (TRACK_NAME[track], LANE_AXIS[lane], name)]
     for s in range(STEPS):
         if raw[s] != NO_NOTE:
             out.append("%d=%d" % (s, raw[s]))
@@ -562,8 +571,11 @@ def parse_lane(tokens, pat, track, lane):
     for t in tokens:
         name, _, val = t.partition("=")
         if name == "knob":
-            knob = KNOB_BY_NAME.get(val, None)
-            knob = knob if knob is not None else int(val)
+            if val == "off":
+                knob = LANE_OFF
+            else:
+                knob = KNOB_BY_NAME.get(val, None)
+                knob = knob if knob is not None else int(val)
     for s in range(STEPS):
         pat[base + s * 4 + 2 + lane] = knob
     for t in tokens:
@@ -925,9 +937,9 @@ def apply_pattern_line(p, i, key, rest, line, track):
         pat = bytearray(p[o:o + PAT_SIZE])
         parse_auto(rest[1:], pat, t)
         p[o:o + PAT_SIZE] = pat
-    elif what.startswith("lane"):
+    elif what in ("lanex", "laney"):
         pat = bytearray(p[o:o + PAT_SIZE])
-        parse_lane(rest[1:], pat, t, int(what[4:]) - 1)
+        parse_lane(rest[1:], pat, t, LANE_AXIS.index(what[4:]))
         p[o:o + PAT_SIZE] = pat
     elif what in GRID_KINDS:
         pat = bytearray(p[o:o + PAT_SIZE])

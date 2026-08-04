@@ -32,7 +32,7 @@ syn1  note D5   D6   C3   -    | -    .    .    .    | .    .    .    .
       gate 25%  25%  .    .    | 100% .    .    .    | .    .    .    .
       vel  .    .    92   .    | .    .    .    .    | .    .    .    .
 drum1 note x    .    x    .    | x    .    x    .    | x    .    x    .
-syn1  lane1 knob=cutoff 0=69 1=62
+syn1  lanex knob=cutoff 0=69 1=62
 mix route=drums vol=105,105,104,105,66,105
 ```
 
@@ -50,7 +50,7 @@ mix route=drums vol=105,105,104,105,66,105
 | `syn1 patch …` | pattern `+0x004`, knobs 0..30 | knob 11 cutoff=57, 12 peak=51, 13 filter=1 (bp), 6 wave1=2 (square) |
 | `syn1 mod cutoff=sine:+7` | knobs 29 and 15 | source 1 (sine), intensity 7 |
 | `syn1 name "XLEAD"` | payload `+0x2BFC` + pattern*48 | `58 4c 45 41 44 00` |
-| `syn1 lane1 knob=cutoff 0=69 1=62` | pattern `+0x1C2` | raw 69, 62, then -1 for the rest; knob 11 on every step |
+| `syn1 lanex knob=cutoff 0=69 1=62` | pattern `+0x1C2` | raw 69, 62, then -1 for the rest; knob 11 on every step |
 | `mix route=drums vol=…` | pattern `+0x242`, 25 knobs | knob 0=3 (drums), 17..22=105,105,104,105,66,105 |
 | `syn1 auto interp=hld` | pattern `+0x25C + track*12 + 6` | 1 |
 
@@ -111,11 +111,11 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `<track> name "…"` | payload `+0x2BFC + N*48 + track*8` |
 | `<track> note/gate/vel/pan …` | `+0x042 + track*64 + step*4` |
 | `<track> auto interp=…` | `+0x25C + track*12 + 6`, the automation path |
-| `<track> laneL knob=K [shown=K] S=V …` | `+0x1C2 + track*64 + step*4`, and the record's copy of the target at `+0x25C + track*12 + 2`; `S=V` per step that has a value |
+| `<track> lanex/laney knob=K S=V …` | `+0x1C2 + track*64 + step*4`; `S=V` per step that has a value |
 | `mix …` / `fx …` | `+0x242`, 25 knobs |
 
-Tracks are `syn1`, `syn2`, `drum1`..`drum4`. Lanes are `lane1`, `lane2`, on synth
-tracks only.
+Tracks are `syn1`, `syn2`, `drum1`..`drum4`. Lanes are `lanex` and `laney`, the two
+axes of the KAOSS pad, on synth tracks only.
 
 ## Step rows
 
@@ -146,10 +146,21 @@ hits, `x - -` would be one held sample.
 
 ## Automation — `lane`, `auto`, and two copies of the target
 
+The two lanes are the KAOSS pad's two axes, `lanex` and `laney`:
+
 ```
-syn1 lane1 knob=cutoff 0=69 1=62     # the target, then the steps that have a value
+syn1 lanex knob=cutoff 0=69 1=62     # the target, then the steps that have a value
+syn1 laney knob=peak 0=81
 syn1 auto interp=hld                 # the path, when it is not the default
 ```
+
+A target comes from the pad's own list, 27 entries at `0x02084BD0`: knobs 0..25 —
+everything except the five modulation-source knobs — and 31, which the caption table
+at `0x020852DC` calls **`OFF`**, so `knob=off` is an axis assigned to nothing. Which
+axis is which is not captioned anywhere I could find: the pad page draws no target
+names, and changing the stored id moves no pixel on it. `lanex` is lane 0, whose
+default target is `CUTOFF`, and `laney` is lane 1, defaulting to `PEAK` — the usual
+KAOSS pairing, and the interface calls them X and Y.
 
 A lane's target is stored more than once, and the copies can disagree:
 
@@ -159,14 +170,15 @@ A lane's target is stored more than once, and the copies can disagree:
 | `+0x25C + track*12 + 2 + lane` | one more copy per track | the KAOSS page: `0x0203CD5C` loads it into the page's own slots, `0x020445D0` writes it back |
 
 `knob=` is the first one, the one that plays. The second is a KAOSS-page echo with no
-line of its own; it rides in `[raw]` with the rest of the editor record.
+line of its own; it rides in `[raw]` with the rest of the editor record. The page
+turns it into an index into that 27-entry list (`0x0203CD5C` walks the list looking
+for a match), which is why an id outside the list leaves the page showing nothing.
 
 - The disagreements are real, not a decoding error: they differ in 443 of 7176 lane
   slots, 103 of them on lanes that have recorded values. `new_16` pattern 2 has the
-  array saying `peak` and the record saying `cutoff`, and 23 records hold `31` in the
-  copy, which is not a knob id at all (the synth has 31 knobs, 0..30). The editor
-  updates the two on different occasions; playback is unaffected, since it only ever
-  reads step 0 of the array.
+  array saying `peak` and the record saying `cutoff`, and 23 records hold 31, the
+  list's `OFF`. The editor updates the two on different occasions; playback is
+  unaffected, since it only ever reads step 0 of the array.
 - In 31 lane slots the array disagrees *with itself* — a later step carrying a
   different id from step 0, which the engine cannot act on. Those come back as `raw`
   lines rather than as syntax for something the hardware ignores.
@@ -199,7 +211,7 @@ field index is a byte index):
 |---|---|---|---|
 | 0 | piano-roll scroll, counting upward | `0x02050108`, the sequencer page | 0..84 |
 | 1 | keyboard octave — the six dots over the keys | `0x0204BFF8`, the keyboard | 0..5 |
-| 2, 3 | the KAOSS page's copy of the two lanes' targets, which is *not* what plays | `0x02049150` | |
+| 2, 3 | the KAOSS page's copy of the two axes' targets, which is *not* what plays | `0x02049150` | |
 | 4 | KAOSS pad scale, an index into the table below | `0x0204AB00` | 0..29 |
 | 5 | KAOSS pad key, 0 = C .. 11 = B | `0x0204AB00` | 0..11 |
 | 6 | **the automation path** — 1 `HLD`, 2 `SMT`, 0 off | `0x02052864` → `0x0206DD4C`, into the sequencer | 0..2 |
@@ -291,8 +303,9 @@ values are the ones never written.
 
 Knobs 26..30 take `none sine saw square sh eg vco2`. A routed slot and its
 intensity are written as one `mod <dest>=<source>:<intensity>` token instead of
-two `patch` tokens, and an unrouted one is not written at all. Any of the 31 can
-be an automation lane's target: `syn1 lane1 knob=cutoff`.
+two `patch` tokens, and an unrouted one is not written at all. Knobs 0..25 can be a
+pad axis's target — `syn1 lanex knob=cutoff` — but 26..30 cannot: they are not in the
+pad's own 27-entry list, whose last entry is `off`.
 
 ## Mixer knobs
 
