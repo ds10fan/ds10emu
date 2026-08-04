@@ -44,6 +44,11 @@ patterns, 165888 steps) - a field is written only when it differs:
   patch knobs         the ROM's own INIT patch, ds10synth00.dat (mean 10 of 31
                       knobs differ, so a patch line is short)
   lanes               75% of the 6912 lane slots have no automation at all
+  interp smt / hld    the automation path: smt on a synth track (3158 of its 3488
+                      records), hld on a drum one, which has no lanes at all
+  lane shown=         the editor record's own copy of a lane's target, written
+                      only when it differs from the id the lane array carries -
+                      443 of 7176 slots, and playback reads the array
   modulation          82% of the 5 mod slots per patch are source `none`
   names               most of the six name fields in a pattern are empty
 
@@ -456,9 +461,17 @@ def parse_grid(kind, tokens, pat, track):
 #
 # docs/songtext.md has how each of these was measured. Each is written only when
 # it differs from the default below, which is the value a fresh pattern carries.
-VIEW_FIELDS = (("scroll", 0, 0), ("oct", 1, 0), ("lane1", 2, 0), ("lane2", 3, 0),
-               ("scale", 4, 0), ("key", 5, 0), ("interp", 6, 1), ("slot", 7, 0),
-               ("lock", 9, 0))
+# Bytes 2, 3 and 6 are not here: they are automation, not viewport, so they live
+# with the lanes - `<track> auto interp=` for byte 6 and `shown=` on a lane line
+# for that lane's copy of its target.
+VIEW_FIELDS = (("scroll", 0, 0), ("oct", 1, 0), ("scale", 4, 0), ("key", 5, 0),
+               ("slot", 7, 0), ("lock", 9, 0))
+
+# Record byte 6, the automation path, and what a track carries when nothing says
+# otherwise: `smt` on a synth track and `hld` on a drum one, which have no lanes at
+# all. 3158 of the 3488 synth records here are smt and every drum record is hld.
+AUTO_BYTE = 6
+AUTO_DEFAULT = (2, 1)
 
 # The pad's scales, the 31 names of 16 bytes at 0x02084E54, and its keys, the
 # twelve of 8 bytes at 0x02084B70. Spelled as the screen spells them, because
@@ -524,14 +537,10 @@ def view_text(pat, track):
         v = pat[base + byte]
         if v == dflt:
             continue
-        if name in ("lane1", "lane2"):
-            out.append("%s=%s" % (name, KNOB[v][0] if v < KNOBS else v))
-        elif name == "scale":
+        if name == "scale":
             out.append("scale=%s" % (SCALE[v] if v < len(SCALE) else v))
         elif name == "key":
             out.append("key=%s" % (KEY[v] if v < len(KEY) else v))
-        elif name == "interp":
-            out.append("interp=%s" % INTERP.get(v, v))
         elif name == "lock":
             out.append("lock=%d" % (v - 256 if v > 127 else v))
         else:
@@ -550,17 +559,31 @@ def parse_view(tokens, pat, track):
         name, _, val = t.partition("=")
         if name not in byte:
             continue
-        if name in ("lane1", "lane2"):
-            v = KNOB_BY_NAME[val] if val in KNOB_BY_NAME else int(val)
-        elif name == "scale":
+        if name == "scale":
             v = SCALE.index(val) if val in SCALE else int(val)
         elif name == "key":
             v = KEY.index(val) if val in KEY else int(val)
-        elif name == "interp":
-            v = INTERP_VAL[val] if val in INTERP_VAL else int(val)
         else:
             v = int(val)
         pat[base + byte[name]] = v & 0xFF
+
+
+def auto_text(pat, track):
+    """`<track> auto interp=…` - the record's byte 6, the path the automation
+    processor takes for this track. Written only when it is not the default."""
+    v = pat[P_PARAMS + 1 + track * 12 + AUTO_BYTE]
+    if v == AUTO_DEFAULT[1 if track >= LANES else 0]:
+        return None
+    return "%s auto interp=%s" % (TRACK_NAME[track], INTERP.get(v, v))
+
+
+def parse_auto(tokens, pat, track):
+    for t in tokens:
+        name, _, val = t.partition("=")
+        if name != "interp":
+            continue
+        v = INTERP_VAL[val] if val in INTERP_VAL else int(val)
+        pat[P_PARAMS + 1 + track * 12 + AUTO_BYTE] = v & 0xFF
 
 
 def lane_text(pat, track, lane):
@@ -571,14 +594,23 @@ def lane_text(pat, track, lane):
     step 0 (0x0206DEE4, and songplay does the same), so a lane cannot retarget
     mid-pattern. 31 of the 6912 lane slots in the saves do hold a second id on
     their later steps - what the editor left when the target was changed - and
-    those come back as `raw` lines rather than as syntax nobody needs."""
+    those come back as `raw` lines rather than as syntax nobody needs.
+
+    `shown=` is the editor record's own copy of the target, byte 2 or 3, which the
+    KAOSS page displays and playback ignores. It matches the lane's id in 6533 of
+    the 7176 lane slots here, so it is written only when it does not."""
     base = P_LANE + track * 64
+    rbase = P_PARAMS + 1 + track * 12 + 2 + lane
     raw = [pat[base + s * 4 + lane] for s in range(STEPS)]
     knob = [pat[base + s * 4 + 2 + lane] for s in range(STEPS)]
-    if all(r == NO_NOTE for r in raw) and knob[0] == (11 + lane):
+    shown = pat[rbase]
+    if (all(r == NO_NOTE for r in raw) and knob[0] == (11 + lane)
+            and shown == knob[0]):
         return None
     name = KNOB[knob[0]][0] if knob[0] < KNOBS else str(knob[0])
     out = ["%s lane%d knob=%s" % (TRACK_NAME[track], lane + 1, name)]
+    if shown != knob[0]:
+        out.append("shown=%s" % (KNOB[shown][0] if shown < KNOBS else shown))
     for s in range(STEPS):
         if raw[s] != NO_NOTE:
             out.append("%d=%d" % (s, raw[s]))
@@ -587,14 +619,22 @@ def lane_text(pat, track, lane):
 
 def parse_lane(tokens, pat, track, lane):
     base = P_LANE + track * 64
+    rbase = P_PARAMS + 1 + track * 12 + 2 + lane
     knob = 11 + lane
+    shown = None
     for t in tokens:
         name, _, val = t.partition("=")
-        if name == "knob":
-            knob = KNOB_BY_NAME.get(val, None)
-            knob = knob if knob is not None else int(val)
+        if name in ("knob", "shown"):
+            v = KNOB_BY_NAME.get(val, None)
+            v = v if v is not None else int(val)
+            if name == "knob":
+                knob = v
+            else:
+                shown = v
     for s in range(STEPS):
         pat[base + s * 4 + 2 + lane] = knob
+    # The record's copy follows the lane unless the line says otherwise.
+    pat[rbase] = knob if shown is None else shown
     for t in tokens:
         if "=" in t and t.split("=")[0].isdigit():
             s, _, v = t.partition("=")
@@ -639,6 +679,12 @@ def blank(payload_len):
                 q = o + P_LANE + t * 64 + s * 4
                 p[q], p[q + 1] = NO_NOTE, NO_NOTE
                 p[q + 2], p[q + 3] = 11, 12
+        for t in range(TRACKS):
+            base = o + P_PARAMS + 1 + t * 12
+            p[base + AUTO_BYTE] = AUTO_DEFAULT[1 if t >= LANES else 0]
+            if t < LANES:
+                # A lane's own id is the default for the record's copy of it.
+                p[base + 2], p[base + 3] = 11, 12
         p[o + P_MIX:o + P_MIX + MIX_KNOBS] = INIT_MIX
     if payload_len >= DRUM_KNOBS + DRUMS * KNOBS:
         for d in range(DRUMS):
@@ -766,7 +812,12 @@ def dumps(payload, clean=False, source=None):
                 body.append("%-5s %-4s %s"
                             % (TRACK_NAME[t] if n == 0 else "", kind,
                                fmt_grid(rows[kind], width)))
-        for t in range(LANES):
+        for t in range(TRACKS):
+            line = auto_text(pat, t)
+            if line:
+                body.append(line)
+            if t >= LANES:
+                continue
             for l in range(LANES):
                 line = lane_text(pat, t, l)
                 if line:
@@ -933,6 +984,10 @@ def apply_pattern_line(p, i, key, rest, line, track):
     elif what == "view":
         pat = bytearray(p[o:o + PAT_SIZE])
         parse_view(rest[1:], pat, t)
+        p[o:o + PAT_SIZE] = pat
+    elif what == "auto":
+        pat = bytearray(p[o:o + PAT_SIZE])
+        parse_auto(rest[1:], pat, t)
         p[o:o + PAT_SIZE] = pat
     elif what.startswith("lane"):
         pat = bytearray(p[o:o + PAT_SIZE])
