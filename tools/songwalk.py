@@ -66,8 +66,12 @@ def capture(song, bars):
         return path, chain, tempo, bars
     print("capturing %d frames (%d bars of %s) from the ROM..."
           % (frames, bars, os.path.basename(song)))
+    import songtext as st
+    masks = [st.mute_get(payload, st.MUTE_A - 0, b) if len(payload) > st.MUTE_A + 84
+             else 0 for b in range(len(chain))]
     r = oracle.capture_songrender(blob, chain[0], frames, chain=chain,
-                                  drumbufs=our_drumbufs(song))
+                                  drumbufs=our_drumbufs(song),
+                                  mute=masks if any(masks) else None)
     out = r[-1]
     with open(path, "wb") as f:
         # All eight buffers: the six machine outputs the ROM's own voices wrote,

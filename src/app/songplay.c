@@ -87,6 +87,7 @@ typedef struct {
     const ds10_seq_track *trk;  /* for the velocity latch a volume push folds in */
     int muted;                  /* the mask applied now */
     int bar;                    /* the bar the player last answered for */
+    int pending;                /* a bar has started; apply its mute after the tick */
 } song_player;
 
 /* The song page's per-bar mute, as 0x020330AC and 0x02079D58 apply it: a muted
@@ -117,23 +118,27 @@ static void apply_mute(song_player *sp, int bar)
 {
     int mask = ds10_song_mute(sp->song, 0, bar);
     const ds10_song_pattern *q;
-    int changed, t;
+    int t;
 
     if (sp->last < 0)
         return;
-    changed = mask ^ sp->muted;
     sp->muted = mask;
     q = &sp->song->pattern[sp->last];
     for (t = 0; t < NTRK; t++) {
         int vol = (mask >> t) & 1 ? 0 : q->mixer[CHAN_VOL_KNOB + t];
 
         sp->chan[CHAN_VOL_KNOB + t] = (int8_t)vol;
-        if (changed & (1 << t))
-            ds10_mixer_set_knob(sp->mix, CHAN_VOL_KNOB + t,
-                                vol * (sp->trk ? sp->trk[t].vel : 0) / 127);
+        /* 0x0206E084 does not stop at the array: for a volume id it runs the
+         * applier, which posts velocity * volume / 127 straight away. Without
+         * that a mute would not bite until the track's next step, and a drum
+         * whose sample is still ringing would ring on at the old volume. Every
+         * channel, because the pattern install has just put the unmuted values
+         * back - the note in tools/oracle.py has why. */
+        ds10_mixer_set_knob(sp->mix, CHAN_VOL_KNOB + t,
+                            vol * (sp->trk ? sp->trk[t].vel : 0) / 127);
     }
     if (getenv("DS10_TRACE"))
-        fprintf(stderr, "[mute] bar %d mask %02x -> vol %d,%d,%d,%d,%d,%d\n",
+        fprintf(stderr, "[mute] bar %d mask %02x -> chan vol %d,%d,%d,%d,%d,%d\n",
                 bar, mask, sp->chan[17], sp->chan[18], sp->chan[19],
                 sp->chan[20], sp->chan[21], sp->chan[22]);
 }
@@ -160,8 +165,10 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
         ds10_mixer_set_knob(sp->mix, t, q->mixer[t]);
     /* The sequencer reads per-channel volume and pan out of this same array. */
     memcpy(sp->chan, q->mixer, DS10_MIX_KNOBS);
-    /* ...which has just overwritten any mute, so re-apply this bar's. */
-    apply_mute(sp, sp->bar);
+    /* This has just put the pattern's own volumes back over any mute; the mute is
+     * re-applied after the tick returns, which is when the transport's own frame
+     * update does it. */
+    sp->muted = -1;
 
     for (t = 0; t < NSYN; t++) {
         memset(&c->autom[t], 0, sizeof c->autom[t]);
@@ -225,7 +232,11 @@ static void player_handle(ds10_song_player *p, ds10_seq *s)
     }
     p->answer = &sp->rt[sp->chain[bar]];
     sp->bar = bar;
-    apply_mute(sp, bar);
+    /* The mute cannot go in here: the transport applies it from its frame update,
+     * after the tick, when the new step's velocity latch is already in place.
+     * Applying it inside the tick pushes a volume scaled by the previous step's
+     * latch - or by nothing at all on the very first frame. */
+    sp->pending = 1;
 }
 
 static void put16(FILE *f, unsigned v)
@@ -463,6 +474,7 @@ int main(int argc, char **argv)
     sp.last = -1;
     sp.muted = 0;
     sp.bar = 0;
+    sp.pending = 0;
     sp.trk = trk;
     sp.voice = voice;
     sp.mix = &mix;
@@ -582,6 +594,13 @@ int main(int argc, char **argv)
                                      (int32_t)ev[k].payload);
                 }
             }
+        }
+
+        /* The per-bar mute, where the transport applies it: after the tick, from
+         * the frame update (0x02032E94 -> 0x020330AC), not inside the tick. */
+        if (sp.pending) {
+            apply_mute(&sp, sp.bar);
+            sp.pending = 0;
         }
 
         for (i = 0; i < NSYN; i++)

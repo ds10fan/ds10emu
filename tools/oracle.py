@@ -459,6 +459,8 @@ SEQ_SET_SWING = 0x0206DB14 # (seq, swing_percent)
 SEQ_TICK = 0x0206E5AC
 MSG_BAR = 0x73747074           # "stpt", the ask-for-a-pattern message
 SEQ_TEMPO = 0x0206DA80         # (seq, bpm) - sets it and broadcasts opcode 4
+KNOB_PUSH = 0x0206E084         # (seq, knob id, value) - what 0x02079D58 mutes with
+MIX_KNOBS_PUSH = 0x0206EC10    # (seq) - every mixer knob from seq+0x60
                                # to target 0x70. Note the entry is DA80; the
                                # DA90 in recon.md and seq.h is 16 bytes in.
 DIVIDE = 0x0200C158        # (a, b) -> a/b in r0
@@ -1160,7 +1162,8 @@ def _song_pattern(o, payload, idx):
     return _rt_pattern(o, song_pat, NMACH, steps, 2, dflt), song_pat, steps
 
 
-def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None):
+def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None,
+                       mute=None):
     """One pattern looped, or - with `chain` - the arrangement walked the way the
     transport walks it: the sequencer asks its player for a pattern once a bar and
     the original's own installer takes it from there."""
@@ -1257,9 +1260,13 @@ def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None):
     o.w32(player + 0x00, pvt)
     asked = []
 
+    started = []            # bars whose mute has still to be applied
+
     def answer(uc, address, size, data):
         """What the transport does: on the bar message, hand back the pattern the
-        chain names for the next bar, or NULL to stop."""
+        chain names for the next bar, or NULL to stop. The mute cannot go in here -
+        it needs to call into the image, and this is running inside it - so the bar
+        is noted and the loop applies it once the tick has returned."""
         msg = o.u32(player + 0x04)
         if msg != MSG_BAR:
             return
@@ -1267,6 +1274,16 @@ def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None):
         idx = chain[bar] if chain and bar < len(chain) else None
         asked.append(idx)
         o.w32(player + 0x08, rt[idx] if idx is not None and idx in rt else 0)
+        started.append(bar)
+        # The live knob array, before the install that is about to read it: the
+        # original's set_pattern (0x0206DBE4) calls 0x0206EC10 itself, inside this
+        # same tick and ahead of the new step's own volume and pan posts. Writing
+        # memory from a hook is fine; calling into the image is not, which is why
+        # the mute below waits for the tick to return.
+        if idx is not None and idx in rt:
+            o.uc.mem_write(chan_arr,
+                           bytes(payload[0xEC + idx * 676 + 0x242:
+                                         0xEC + idx * 676 + 0x242 + 25]))
 
     if chain:
         o.uc.hook_add(UC_HOOK_CODE, answer, begin=handler, end=handler)
@@ -1330,7 +1347,7 @@ def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None):
               for off, sz in MX_FIELDS]
     fstate = [_rdf(bytes(o.uc.mem_read(mfx, 0xB0)), off, sz)
               for off, sz in FXS_FIELDS]
-    out, acc = [], 0
+    out, acc, muted = [], 0, [0]
     for _ in range(frames):
         acc += TICK_NUM
         while acc >= TICK_DEN:
@@ -1339,6 +1356,32 @@ def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None):
             if not chain and o.u32(seq + 0x40) == 0:
                 o.w32(seq + 0x40, pat)
                 o.uc.mem_write(seq + 0x2C, bytes([steps]))
+            while started:
+                bar = started.pop(0)
+                idx = chain[bar] if bar < len(chain) else None
+                if idx is None or idx not in rt:
+                    continue
+                knobs = payload[0xEC + idx * 676 + 0x242:
+                                0xEC + idx * 676 + 0x242 + 25]
+                if mute is None:
+                    continue
+                # Then the transport's per-bar mute, through the original's own
+                # knob push: zero for a muted channel, the pattern's own value for
+                # one that is not.
+                #
+                # Every channel, every bar, because the install above has just put
+                # the pattern's unmuted values back. 0x02079D58 tests each channel
+                # for a change before pushing, but it also has a latch path that
+                # forces the comparison to miss, and something must use it: a mask
+                # that holds across a section audibly keeps those tracks muted on
+                # hardware, which pushing only on change cannot do. Which of the
+                # two the transport picks per frame is not traced - this is the
+                # behaviour, not the mechanism.
+                mask = mute[bar] if bar < len(mute) else 0
+                muted[0] = mask
+                for ch in range(6):
+                    val = 0 if (mask >> ch) & 1 else _sb(knobs[17 + ch])
+                    o.call(KNOB_PUSH, seq, 17 + ch, val & 0xFF)
         # The drum and bus stand-ins have no render to drain their queues, so
         # empty them by hand or the router walks off the end of the buffer.
         for m in stub:
@@ -1365,6 +1408,7 @@ def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None):
         # but the queue would eventually run off the end of the buffer.
         o.call(MIXER_RENDER, mixer)
         o.uc.mem_write(mixer + 0x08, b"\0")
+
         for p in (mixl, mixr):
             raw = bytes(o.uc.mem_read(p, FRAME * 2))
             frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
