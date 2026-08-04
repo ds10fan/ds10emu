@@ -258,6 +258,25 @@ static void wav_header(FILE *f, unsigned long frames)
     put32(f, data);
 }
 
+/* Per-channel raw output, for tools/songwalk.py: the six machine buffers before
+ * the mixer, one file each, so a divergence can be pinned on a track. */
+static FILE *chdump[NTRK];
+
+static void open_chdump(const char *prefix)
+{
+    char path[512];
+    int i;
+
+    for (i = 0; i < NTRK; i++) {
+        snprintf(path, sizeof path, "%s.ch%d.raw", prefix, i);
+        chdump[i] = fopen(path, "wb");
+        if (!chdump[i]) {
+            fprintf(stderr, "cannot write %s\n", path);
+            exit(2);
+        }
+    }
+}
+
 static void usage(void)
 {
     fprintf(stderr,
@@ -310,6 +329,8 @@ int main(int argc, char **argv)
             bars = atoi(argv[++i]);
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
             only = atoi(argv[++i]);
+        else if (strcmp(argv[i], "-C") == 0 && i + 1 < argc)
+            open_chdump(argv[++i]);
         else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc)
             chmask = (int)strtol(argv[++i], 0, 0);
         else if (strcmp(argv[i], "-a") == 0 && i + 1 < argc)
@@ -536,6 +557,9 @@ int main(int argc, char **argv)
         for (i = 0; i < NTRK; i++)
             if (!(chmask & (1 << i)))
                 memset(buf[i], 0, sizeof buf[i]);
+        for (i = 0; i < NTRK; i++)
+            if (chdump[i])
+                fwrite(buf[i], 2, FRAME, chdump[i]);
         ds10_mixer_render(&mix, chp, l, r, FRAME);
         for (k = 0; k < FRAME; k++) {
             put16(f, (unsigned)(uint16_t)l[k]);

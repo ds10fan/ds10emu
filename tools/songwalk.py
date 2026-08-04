@@ -1,0 +1,166 @@
+#!/usr/bin/env python3
+"""songwalk - a whole arrangement, the ROM's own render against ours, sample exact.
+
+    python3 tools/songwalk.py check data/saves/new_00.ds10song [bars]
+
+The ROM's side is `tools/oracle.py`, which runs the original's sequencer, voices,
+mixer and router out of the extracted image and reads the mixer's own stereo pair -
+the mix bus, not a speaker. Given the song's chain it walks the arrangement the way
+the transport does: the sequencer asks its player for a pattern once a bar and the
+original's own installer takes it from there.
+
+Our side is `out/songplay` itself, run as it ships and its WAV read back. That is
+deliberate: tests/test_songrender.c rebuilds the engine inside the test, which means
+a bug in how songplay wires things up cannot fail it. Here the thing under test is
+the program.
+
+What this covers that test-songrender does not: the bar boundary, the pattern
+change, the chain walk, and whatever the original does per bar that we have not
+thought of. That is where every bug this project has shipped has been.
+"""
+import os
+import struct
+import subprocess
+import sys
+import wave
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+RATE = 32768
+FRAME = 64
+OUT = "out/songwalk"
+
+
+def song_chain(payload):
+    chain = list(struct.unpack_from("<100H", payload, 0x24))
+    if 0xFFFF in chain:
+        chain = chain[:chain.index(0xFFFF)]
+    return chain
+
+
+def capture(song, bars):
+    """The ROM's mix bus for `bars` bars, cached because it takes a few seconds."""
+    import oracle
+    blob = open(song, "rb").read()
+    payload = blob[16:]
+    chain = song_chain(payload)
+    tempo = struct.unpack_from("<I", payload, 4)[0]
+    bars = min(bars, len(chain))
+    frames = int(bars * 4 * 60.0 / tempo * RATE / FRAME)
+    os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, "%s.%dbar.bin"
+                        % (os.path.splitext(os.path.basename(song))[0], bars))
+    if os.path.exists(path):
+        return path, chain, tempo, bars
+    print("capturing %d frames (%d bars of %s) from the ROM..."
+          % (frames, bars, os.path.basename(song)))
+    r = oracle.capture_songrender(blob, chain[0], frames, chain=chain)
+    out = r[-1]
+    with open(path, "wb") as f:
+        # All eight buffers: the six machine outputs the ROM's own voices wrote,
+        # then the mixer's stereo pair. Per-channel is what localises a
+        # divergence to a track instead of leaving it in the mix.
+        f.write(b"SWLK" + struct.pack("<II", len(out), FRAME))
+        for frame in out:
+            for ch in range(8):
+                f.write(struct.pack("<%dh" % FRAME, *frame[ch]))
+    return path, chain, tempo, bars
+
+
+def read_vector(path):
+    """The eight buffers, each as one flat list of samples."""
+    d = open(path, "rb").read()
+    if d[:4] != b"SWLK":
+        raise SystemExit("%s: bad vector - delete it and re-capture" % path)
+    n, frame = struct.unpack_from("<II", d, 4)
+    chans = [[] for _ in range(8)]
+    off = 12
+    for _ in range(n):
+        for ch in range(8):
+            chans[ch] += struct.unpack_from("<%dh" % frame, d, off)
+            off += frame * 2
+    return chans
+
+
+def ours_channels(song, bars):
+    """songplay's own six machine buffers, via -C."""
+    prefix = os.path.join(OUT, os.path.splitext(os.path.basename(song))[0])
+    subprocess.run(["./out/songplay", "-b", str(bars), "-C", prefix,
+                    "-o", prefix + ".ours.wav", song],
+                   check=True, stdout=subprocess.DEVNULL)
+    out = []
+    for ch in range(6):
+        d = open("%s.ch%d.raw" % (prefix, ch), "rb").read()
+        out.append(list(struct.unpack("<%dh" % (len(d) // 2), d)))
+    return out
+
+
+def ours(song, bars):
+    os.makedirs(OUT, exist_ok=True)
+    path = os.path.join(OUT, "%s.ours.wav"
+                        % os.path.splitext(os.path.basename(song))[0])
+    subprocess.run(["./out/songplay", "-b", str(bars), "-o", path, song],
+                   check=True, stdout=subprocess.DEVNULL)
+    w = wave.open(path)
+    n = w.getnframes()
+    s = struct.unpack("<%dh" % (n * 2), w.readframes(n))
+    return list(s[0::2]), list(s[1::2])
+
+
+TRACK = ("syn1", "syn2", "drum1", "drum2", "drum3", "drum4", "mixL", "mixR")
+
+
+def check(song, bars=8):
+    path, chain, tempo, bars = capture(song, bars)
+    rom = read_vector(path)
+    hl, hr = rom[6], rom[7]
+    ours_ch = ours_channels(song, bars)
+    ol, orr = ours(song, bars)
+    n = min(len(hl), len(ol))
+    print("%s: %d BPM, chain %s" % (os.path.basename(song), tempo,
+                                    " ".join(str(c) for c in chain[:bars])))
+    print("  ROM %d samples, ours %d, comparing %d (%.2f s)"
+          % (len(hl), len(ol), n, n / float(RATE)))
+    bad = first = 0
+    worst = 0
+    for i in range(n):
+        d = abs(hl[i] - ol[i]) + abs(hr[i] - orr[i])
+        if d:
+            bad += 1
+            if not first:
+                first = i
+            if d > worst:
+                worst = d
+    # Per channel, so a divergence lands on a track rather than in the mix.
+    print("\n  channel   ROM rms   ours rms   first differing sample")
+    for ch in range(6):
+        a, b = rom[ch], ours_ch[ch]
+        m = min(len(a), len(b))
+        at = next((i for i in range(m) if a[i] != b[i]), -1)
+        ra = (sum(v * v for v in a[:m]) / m) ** 0.5
+        rb = (sum(v * v for v in b[:m]) / m) ** 0.5
+        print("  %-8s %9.0f %10.0f   %s"
+              % (TRACK[ch], ra, rb, "identical" if at < 0 else str(at)))
+    if not bad:
+        print("  PASS: identical")
+        return 0
+    print("  FAIL: %d of %d samples differ (%.1f%%), first at %d (frame %d,"
+          " bar %.2f), worst %d"
+          % (bad, n, 100.0 * bad / n, first, first // FRAME,
+             first / (4 * 60.0 / tempo * RATE), worst))
+    for i in range(first, min(first + 6, n)):
+        print("    %6d  ROM %7d %7d   ours %7d %7d" % (i, hl[i], hr[i],
+                                                       ol[i], orr[i]))
+    return 1
+
+
+def main():
+    if len(sys.argv) < 3 or sys.argv[1] != "check":
+        print(__doc__)
+        return 1
+    bars = int(sys.argv[3]) if len(sys.argv) > 3 else 8
+    return check(sys.argv[2], bars)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

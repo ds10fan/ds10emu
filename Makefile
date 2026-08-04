@@ -9,7 +9,7 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: test-songhw test-songtext test-drumfx test-drumbuf fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: test-songwalk test-songhw test-songtext test-drumfx test-drumbuf fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
 
 # Differential tests: our C against the original ARM code, bit-exact.
 test: test-drumfx test-drumbuf test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
@@ -416,6 +416,13 @@ TEXT_SONGS = $(wildcard data/saves/*.ds10song) \
 # more than it caught. `tools/songtext.py` is the format.
 test-songtext:
 	@$(PY) tools/songtext.py check $(TEXT_SONGS)
+
+# songwalk - a whole arrangement, the ROM's own mix bus against out/songplay,
+# sample for sample. The ROM side is the oracle, so this needs the ROM and
+# unicorn; a capture is a few seconds and is cached under out/songwalk.
+SONGWALK ?= data/saves/new_00.ds10song
+test-songwalk: songplay
+	@$(PY) tools/songwalk.py check $(SONGWALK) 8
 
 # songhw - a whole song played by the ROM under melonDS, against our own render.
 # Needs the ROM and a melonDS build (see ndsref). One song is about two minutes of
