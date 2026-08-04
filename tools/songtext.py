@@ -759,10 +759,10 @@ def dumps(payload, clean=False, source=None):
     bars = next((i for i, v in enumerate(chain) if v == NO_PATTERN), CHAIN)
     if bars:
         out.append("chain " + " ".join(str(c) for c in chain[:bars]))
-    for tag, base in (("a", MUTE_A), ("b", MUTE_B)):
+    for tag, base in (("", MUTE_A), ("b ", MUTE_B)):
         line = mute_text(payload, base)
         if line:
-            out.append("mute %s %s" % (tag, line))
+            out.append("mute %s%s" % (tag, line))
     line = trs_text(payload)
     if line:
         out.append("trs %s" % line)
@@ -900,8 +900,11 @@ def loads(text, _raw=True):
             for i, v in enumerate(rest):
                 struct.pack_into("<H", p, 0x24 + i * 2, int(v))
         elif key == "mute":
-            base = MUTE_A if rest[0] == "a" else MUTE_B
-            for bar, val in parse_bar_pairs(rest[1:]):
+            # A bare `mute` is deck A, the only one a DS-mode build ever fills.
+            deck = rest[0] if rest and rest[0] in ("a", "b") else "a"
+            rest = rest[1:] if rest and rest[0] in ("a", "b") else rest
+            base = MUTE_A if deck == "a" else MUTE_B
+            for bar, val in parse_bar_pairs(rest):
                 mute_set(p, base, bar, mute_mask_value(val))
         elif key == "trs":
             for bar, value in parse_bar_pairs(rest):

@@ -95,7 +95,7 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `swing N` | `+0x0A` percent |
 | `name "…"` | `+0x14`, 16 bytes |
 | `chain A B C …` | `+0x24`, one u16 per bar |
-| `mute a bar[-bar]=tracks …` | `+0x2EFC`, six bits of track per bar, five bars to a word |
+| `mute bar[-bar]=tracks …` | `+0x2EFC`, six bits of track per bar, five bars to a word |
 | `mute b bar[-bar]=tracks …` | `+0x2F50`, the same for the second deck |
 | `trs bar[-bar]=semitones …` | `+0x2FA8`, one signed byte per bar |
 | `drumN patch …` | `+0x2B2C + (N-1)*31`, knobs 0..30 |
@@ -394,7 +394,7 @@ the `31_SONG` page, which has three modes — `PATTERN`, `MUTE` and `TRS`.
 
 | line | at | shape |
 |---|---|---|
-| `mute a` | `+0x2EFC`, 84 bytes | which tracks that bar mutes, 6 bits per bar, 5 bars to a word, 105 slots. `DECK-A` |
+| `mute` | `+0x2EFC`, 84 bytes | which tracks that bar mutes, 6 bits per bar, 5 bars to a word, 105 slots. `DECK-A` |
 | `mute b` | `+0x2F50`, 84 bytes | the same, `DECK-B` |
 | — | `+0x2FA4`, 4 bytes | five more 6-bit slots; only the page's "clear song" ever writes them, nothing reads them, zero in the whole corpus |
 | `trs` | `+0x2FA8`, 52 bytes | one signed byte of semitones per bar |
@@ -403,14 +403,17 @@ the `31_SONG` page, which has three modes — `PATTERN`, `MUTE` and `TRS`.
   drums, concatenated, and a run of bars holding the same value collapses to
   `first-last=`. So `mute a 0-1=d1d2d3d4 2-31=d1d3` is all four drums muted for two
   bars, then the first and third for thirty — 32 tokens down to 2. `trs` collapses
-  the same way. Across the corpus that is 481 written bars in 203 tokens. Bit 0 is `s1` and bit 5 is `d4`, the order of the twelve row
+  the same way. Across the corpus that is 481 written bars in 203 tokens.
+- A bare `mute` is deck A. The second deck needs saying — `mute b 3=s1` — and never
+  comes up in practice: it is all-zero in every one of the 97 saved songs, because it
+  belongs to the DSi build's second instance. `mute a` is accepted as a synonym for
+  the bare form. There is only one `trs`, shared by both decks, which is the file's
+  own asymmetry rather than this format's. Bit 0 is `s1` and bit 5 is `d4`, the order of the twelve row
   labels at `0x0207E668` — `SYN1 SYN2 DRUM1..DRUM4`, once per deck — so all six bits
   have a name and nothing about the byte goes unwritten. A plain number is accepted
   on the way in, for hand-editing.
 - A `mute` bit set is a track muted in that bar: 78 of the 97 saved songs have both
-  masks all-zero, and the page draws a marker where a bit is set. `mute b` is
-  all-zero in every one of them — deck B is the DSi build's second instance, which
-  §6 of recon.md puts out of reach.
+  masks all-zero, and the page draws a marker where a bit is set.
 - Both are indexed by bar 0..99 — the same 100 bars as `chain`. A mask array has
   room for 105, but `trs` runs out at the end of the payload after 52, so bars
   52..99 of a transpose cannot survive a save. The ROM's own accessors write all
