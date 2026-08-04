@@ -112,8 +112,9 @@ typedef struct {
     /* 0x2B2C to the end of the payload. The 160 is the four drum patches and
      * their nine extra bytes each (both read by 0x0206B9DC); the 48 and the 768
      * are name fields, six per row at an 8-byte stride, one row for the running
-     * machines and then one row per pattern. The PLUS-only 224 is unnamed.
-     * Round-tripped verbatim either way. */
+     * machines and then one row per pattern. The PLUS-only 224 at 0x2EFC is the
+     * song page's two per-bar lanes - the mute masks below, and a per-bar
+     * transpose nothing here reads yet. Round-tripped verbatim either way. */
     uint8_t tail[DS10_SONG_TAIL_MAX];
     uint32_t payload_len;   /* file length minus the 16-byte hash */
 } ds10_song;
@@ -145,5 +146,20 @@ int ds10_song_bars(const ds10_song *s);
 
 const int8_t *ds10_song_drum_knobs(const ds10_song *s, int drum);
 const int8_t *ds10_song_drum_extra(const ds10_song *s, int drum);
+
+/* Which tracks a bar mutes, six bits packed five bars to a word: bit 0 is the
+ * first synth and bit 5 the last drum. One array per deck, PLUS payloads only.
+ *
+ * The transport reads both of them every bar (0x020330AC) and hands them to
+ * 0x02079D58, which for each channel whose state changed pushes the channel's
+ * volume knob - 17 + channel for deck A, 42 + channel for deck B - to 0 when the
+ * track is muted and back to the pattern's own value when it is not
+ * (0x0206E084, landing in the live knob array at seq +0x60). So a muted track
+ * still plays its notes into a channel whose volume is zero.
+ *
+ * Returns 0 for a bar or deck the payload has no room for. */
+#define DS10_SONG_MUTE_DECKS 2
+#define DS10_SONG_MUTE_BARS 100
+int ds10_song_mute(const ds10_song *s, int deck, int bar);
 
 #endif /* DS10_SONG_H */

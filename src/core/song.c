@@ -175,3 +175,23 @@ const int8_t *ds10_song_drum_extra(const ds10_song *s, int drum)
     return (const int8_t *)s->tail + DS10_SONG_DRUM_EXTRA_OFF +
            drum * DS10_SONG_DRUM_EXTRA;
 }
+
+/* Deck A's masks at payload 0x2EFC and deck B's at 0x2F50, 84 bytes each: 21
+ * words of five 6-bit fields, low bar first. Only a PLUS payload has them. */
+#define MUTE_A_OFF (0x2EFC - DS10_SONG_TAIL_OFF)
+#define MUTE_DECK_LEN 84
+
+int ds10_song_mute(const ds10_song *s, int deck, int bar)
+{
+    size_t off = (size_t)MUTE_A_OFF + (size_t)deck * MUTE_DECK_LEN +
+                 (size_t)(bar / 5) * 4;
+    uint32_t word;
+
+    if (deck < 0 || deck >= DS10_SONG_MUTE_DECKS || bar < 0 ||
+        bar >= DS10_SONG_MUTE_BARS ||
+        off + 4 > (size_t)s->payload_len - DS10_SONG_TAIL_OFF)
+        return 0;
+    word = (uint32_t)s->tail[off] | (uint32_t)s->tail[off + 1] << 8 |
+           (uint32_t)s->tail[off + 2] << 16 | (uint32_t)s->tail[off + 3] << 24;
+    return (int)((word >> (bar % 5) * 6) & 0x3F);
+}

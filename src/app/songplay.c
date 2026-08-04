@@ -84,7 +84,59 @@ typedef struct {
     int8_t *chan;
     int8_t *lane_raw;
     const int8_t **dflt;
+    const ds10_seq_track *trk;  /* for the velocity latch a volume push folds in */
+    int muted;                  /* the mask applied now */
+    int bar;                    /* the bar the player last answered for */
 } song_player;
+
+/* The song page's per-bar mute, as 0x020330AC and 0x02079D58 apply it: a muted
+ * track's channel volume knob goes to zero, and an unmuted one goes back to the
+ * pattern's own value. The notes still play - it is the channel that is silent,
+ * which is what makes this different from a track's MUTE play mode.
+ *
+ * Deck A only: deck B is the DSi build's second instance, and its 42..47 knobs
+ * are not a space this mixer has. */
+#define CHAN_VOL_KNOB 17        /* 17 + channel, the ids at 0x02088080 */
+
+/* The song page's per-bar mute, the way 0x020330AC and 0x02079D58 apply it: a
+ * muted track's channel volume goes to zero and an unmuted one goes back to the
+ * pattern's own value. The notes still play - it is the channel that falls silent,
+ * which is why this is not a track's MUTE play mode.
+ *
+ * Two halves, because the original's are two halves. The live knob array is
+ * written for every channel, since a pattern change has just overwritten it with
+ * the pattern's values (0x0206EC10 does the same); the mixer is pushed only for a
+ * channel whose state actually changed, which is what 0x02079D58 tests. Pushing
+ * every channel every bar would fold in a velocity latch that is stale at a bar
+ * boundary and briefly silence tracks nothing muted.
+ *
+ * Deck A only: deck B is the DSi build's second instance, and its 42..47 knobs are
+ * not a space this mixer has.
+ */
+static void apply_mute(song_player *sp, int bar)
+{
+    int mask = ds10_song_mute(sp->song, 0, bar);
+    const ds10_song_pattern *q;
+    int changed, t;
+
+    if (sp->last < 0)
+        return;
+    changed = mask ^ sp->muted;
+    sp->muted = mask;
+    q = &sp->song->pattern[sp->last];
+    for (t = 0; t < NTRK; t++) {
+        int vol = (mask >> t) & 1 ? 0 : q->mixer[CHAN_VOL_KNOB + t];
+
+        sp->chan[CHAN_VOL_KNOB + t] = (int8_t)vol;
+        if (changed & (1 << t))
+            ds10_mixer_set_knob(sp->mix, CHAN_VOL_KNOB + t,
+                                vol * (sp->trk ? sp->trk[t].vel : 0) / 127);
+    }
+    if (getenv("DS10_TRACE"))
+        fprintf(stderr, "[mute] bar %d mask %02x -> vol %d,%d,%d,%d,%d,%d\n",
+                bar, mask, sp->chan[17], sp->chan[18], sp->chan[19],
+                sp->chan[20], sp->chan[21], sp->chan[22]);
+}
 
 /* Everything a pattern change re-initialises, in the order and at the moment the
  * original does it - inside the tick, before the new pattern's first step is
@@ -108,6 +160,8 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
         ds10_mixer_set_knob(sp->mix, t, q->mixer[t]);
     /* The sequencer reads per-channel volume and pan out of this same array. */
     memcpy(sp->chan, q->mixer, DS10_MIX_KNOBS);
+    /* ...which has just overwritten any mute, so re-apply this bar's. */
+    apply_mute(sp, sp->bar);
 
     for (t = 0; t < NSYN; t++) {
         memset(&c->autom[t], 0, sizeof c->autom[t]);
@@ -170,6 +224,8 @@ static void player_handle(ds10_song_player *p, ds10_seq *s)
         return;
     }
     p->answer = &sp->rt[sp->chain[bar]];
+    sp->bar = bar;
+    apply_mute(sp, bar);
 }
 
 static void put16(FILE *f, unsigned v)
@@ -359,6 +415,9 @@ int main(int argc, char **argv)
     sp.song = &song;
     sp.rt = rt;
     sp.last = -1;
+    sp.muted = 0;
+    sp.bar = 0;
+    sp.trk = trk;
     sp.voice = voice;
     sp.mix = &mix;
     sp.chan = chan;

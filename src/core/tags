@@ -1,0 +1,703 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_OUTPUT_EXCMD	mixed	/number, pattern, mixed, or combineV2/
+!_TAG_OUTPUT_FILESEP	slash	/slash or backslash/
+!_TAG_OUTPUT_MODE	u-ctags	/u-ctags or e-ctags/
+!_TAG_PATTERN_LENGTH_LIMIT	96	/0 for no limit/
+!_TAG_PROC_CWD	/home/ai/p/ds10/.claude/worktrees/fileformat/src/core/	//
+!_TAG_PROGRAM_AUTHOR	Universal Ctags Team	//
+!_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/
+!_TAG_PROGRAM_URL	https://ctags.io/	/official site/
+!_TAG_PROGRAM_VERSION	5.9.0	//
+AMP_FULL	amp.c	/^#define AMP_FULL /;"	d	file:
+AMP_HALF_HI	amp.c	/^#define AMP_HALF_HI /;"	d	file:
+AMP_HALF_LO	amp.c	/^#define AMP_HALF_LO /;"	d	file:
+AMP_HI	amp.c	/^#define AMP_HI /;"	d	file:
+AMP_LEVEL_STEP	patch.c	/^#define AMP_LEVEL_STEP /;"	d	file:
+AMP_LO	amp.c	/^#define AMP_LO /;"	d	file:
+AMP_UNITY	amp.c	/^#define AMP_UNITY /;"	d	file:
+BAL_GAIN	patch.c	/^#define BAL_GAIN /;"	d	file:
+BAL_ONE	patch.c	/^#define BAL_ONE /;"	d	file:
+BAL_STEP	patch.c	/^#define BAL_STEP /;"	d	file:
+CHORUS_TIME	fx.c	/^#define CHORUS_TIME /;"	d	file:
+CH_VOL	drumbuf.c	/^#define CH_VOL /;"	d	file:
+DELAY_TIME_SCALE	fx.c	/^#define DELAY_TIME_SCALE /;"	d	file:
+DEPTH_SCALE	fx.c	/^#define DEPTH_SCALE /;"	d	file:
+DRIVE_BASE	patch.c	/^#define DRIVE_BASE /;"	d	file:
+DRIVE_SLOPE	patch.c	/^#define DRIVE_SLOPE /;"	d	file:
+DRIVE_STEP	patch.c	/^#define DRIVE_STEP /;"	d	file:
+DRUM_ATTACK_RATE	drum.c	/^#define DRUM_ATTACK_RATE /;"	d	file:
+DRUM_RELEASE	drum.c	/^#define DRUM_RELEASE /;"	d	file:
+DRUM_VOL_MAX	drum.c	/^#define DRUM_VOL_MAX /;"	d	file:
+DRYWET_ONE	fx.c	/^#define DRYWET_ONE /;"	d	file:
+DRYWET_STEP	fx.c	/^#define DRYWET_STEP /;"	d	file:
+DS10_AMP_H	amp.h	/^#define DS10_AMP_H$/;"	d
+DS10_BUS1	seq.h	/^#define DS10_BUS1(/;"	d
+DS10_BUS2	seq.h	/^#define DS10_BUS2(/;"	d
+DS10_DRUMBUF_H	drumbuf.h	/^#define DS10_DRUMBUF_H$/;"	d
+DS10_DRUMBUF_LEN	drumbuf.h	/^#define DS10_DRUMBUF_LEN /;"	d
+DS10_DRUMBUF_NOTE	drumbuf.h	/^#define DS10_DRUMBUF_NOTE /;"	d
+DS10_DRUM_ATTACK	drum.h	/^    DS10_DRUM_ATTACK = 0,$/;"	e	enum:ds10_drum_stage
+DS10_DRUM_H	drum.h	/^#define DS10_DRUM_H$/;"	d
+DS10_DRUM_RELEASE	drum.h	/^    DS10_DRUM_RELEASE = 1,$/;"	e	enum:ds10_drum_stage
+DS10_ENV_ATTACK	env.h	/^    DS10_ENV_ATTACK = 0,$/;"	e	enum:ds10_env_stage
+DS10_ENV_DECAY	env.h	/^    DS10_ENV_DECAY = 1,$/;"	e	enum:ds10_env_stage
+DS10_ENV_H	env.h	/^#define DS10_ENV_H$/;"	d
+DS10_ENV_RELEASE	env.h	/^    DS10_ENV_RELEASE = 3,$/;"	e	enum:ds10_env_stage
+DS10_ENV_SUSTAIN	env.h	/^    DS10_ENV_SUSTAIN = 2,$/;"	e	enum:ds10_env_stage
+DS10_EVENT_H	event.h	/^#define DS10_EVENT_H$/;"	d
+DS10_EV_BAR_START	event.h	/^    DS10_EV_BAR_START = 0x1C,$/;"	e	enum:ds10_event
+DS10_EV_DRUM_SHAPE	event.h	/^    DS10_EV_DRUM_SHAPE = 0x1E,$/;"	e	enum:ds10_event
+DS10_EV_NOTE_OFF	event.h	/^    DS10_EV_NOTE_OFF = 1,$/;"	e	enum:ds10_event
+DS10_EV_NOTE_ON	event.h	/^    DS10_EV_NOTE_ON = 2,$/;"	e	enum:ds10_event
+DS10_EV_PATTERN_CHANGE	event.h	/^    DS10_EV_PATTERN_CHANGE = 0x1D,$/;"	e	enum:ds10_event
+DS10_EV_PLAY	event.h	/^    DS10_EV_PLAY = 0x18,$/;"	e	enum:ds10_event
+DS10_EV_SET_BPM	event.h	/^    DS10_EV_SET_BPM = 4,$/;"	e	enum:ds10_event
+DS10_EV_STOP_ABRUPT	event.h	/^    DS10_EV_STOP_ABRUPT = 5,$/;"	e	enum:ds10_event
+DS10_FIXED_H	fixed.h	/^#define DS10_FIXED_H$/;"	d
+DS10_FRAME	voice.h	/^#define DS10_FRAME /;"	d
+DS10_FX_BUFLEN	fx.h	/^#define DS10_FX_BUFLEN /;"	d
+DS10_FX_CHORUS	fx.h	/^    DS10_FX_CHORUS = 1,$/;"	e	enum:ds10_fx_type
+DS10_FX_DELAY	fx.h	/^    DS10_FX_DELAY = 0,$/;"	e	enum:ds10_fx_type
+DS10_FX_FLANGER	fx.h	/^    DS10_FX_FLANGER = 2,$/;"	e	enum:ds10_fx_type
+DS10_FX_H	fx.h	/^#define DS10_FX_H$/;"	d
+DS10_FX_MASK	fx.h	/^#define DS10_FX_MASK /;"	d
+DS10_FX_P_DEPTH	fx.h	/^    DS10_FX_P_DEPTH = 5,$/;"	e	enum:ds10_fx_param
+DS10_FX_P_DRYWET	fx.h	/^    DS10_FX_P_DRYWET = 8,$/;"	e	enum:ds10_fx_param
+DS10_FX_P_FEEDBACK	fx.h	/^    DS10_FX_P_FEEDBACK = 7,$/;"	e	enum:ds10_fx_param
+DS10_FX_P_LFO_RATE	fx.h	/^    DS10_FX_P_LFO_RATE = 4,$/;"	e	enum:ds10_fx_param
+DS10_FX_P_LR_RATIO	fx.h	/^    DS10_FX_P_LR_RATIO = 3,$/;"	e	enum:ds10_fx_param
+DS10_FX_P_SYNC	fx.h	/^    DS10_FX_P_SYNC = 6,$/;"	e	enum:ds10_fx_param
+DS10_FX_P_TIME	fx.h	/^    DS10_FX_P_TIME = 2,$/;"	e	enum:ds10_fx_param
+DS10_FX_P_TYPE	fx.h	/^    DS10_FX_P_TYPE = 1,$/;"	e	enum:ds10_fx_param
+DS10_FX_STATE_FIELDS	mixer_state.h	/^#define DS10_FX_STATE_FIELDS /;"	d
+DS10_GATE_FULL	seq.h	/^#define DS10_GATE_FULL /;"	d
+DS10_GATE_HOLD	seq.h	/^#define DS10_GATE_HOLD /;"	d
+DS10_GATE_RETRIG	seq.h	/^#define DS10_GATE_RETRIG /;"	d
+DS10_GATE_TIE	seq.h	/^#define DS10_GATE_TIE /;"	d
+DS10_KNOB_CHAN_PAN	seq.h	/^#define DS10_KNOB_CHAN_PAN /;"	d
+DS10_KNOB_CHAN_VOL	seq.h	/^#define DS10_KNOB_CHAN_VOL /;"	d
+DS10_LANE_OFF	seq.h	/^#define DS10_LANE_OFF /;"	d
+DS10_LFO_H	lfo.h	/^#define DS10_LFO_H$/;"	d
+DS10_LFO_SAMPLE_HOLD	lfo.h	/^    DS10_LFO_SAMPLE_HOLD = 0, \/* +0x00 mod source 4 *\/$/;"	e	enum:ds10_lfo_shape
+DS10_LFO_SAW	lfo.h	/^    DS10_LFO_SAW = 1,         \/* +0x04 mod source 2 *\/$/;"	e	enum:ds10_lfo_shape
+DS10_LFO_SQUARE	lfo.h	/^    DS10_LFO_SQUARE = 3,      \/* +0x0C mod source 3 *\/$/;"	e	enum:ds10_lfo_shape
+DS10_LFO_TRIANGLE	lfo.h	/^    DS10_LFO_TRIANGLE = 2,    \/* +0x08 mod source 1, panel "sine" *\/$/;"	e	enum:ds10_lfo_shape
+DS10_MAX_Q24	fixed.h	/^#define DS10_MAX_Q24 /;"	d
+DS10_MD5_H	md5.h	/^#define DS10_MD5_H$/;"	d
+DS10_MIXER_H	mixer.h	/^#define DS10_MIXER_H$/;"	d
+DS10_MIXER_STATE_H	mixer_state.h	/^#define DS10_MIXER_STATE_H$/;"	d
+DS10_MIX_CHANNELS	mixer.h	/^#define DS10_MIX_CHANNELS /;"	d
+DS10_MIX_EVK_PAN	mixer.h	/^#define DS10_MIX_EVK_PAN /;"	d
+DS10_MIX_EVK_VOL	mixer.h	/^#define DS10_MIX_EVK_VOL /;"	d
+DS10_MIX_EV_KNOB	mixer.h	/^#define DS10_MIX_EV_KNOB /;"	d
+DS10_MIX_EV_MUTE_OFF	mixer.h	/^#define DS10_MIX_EV_MUTE_OFF /;"	d
+DS10_MIX_EV_MUTE_ON	mixer.h	/^#define DS10_MIX_EV_MUTE_ON /;"	d
+DS10_MIX_EV_TEMPO	mixer.h	/^#define DS10_MIX_EV_TEMPO /;"	d
+DS10_MIX_KNOBS	mixer.h	/^#define DS10_MIX_KNOBS /;"	d
+DS10_MIX_PAN_STEP	mixer.h	/^#define DS10_MIX_PAN_STEP /;"	d
+DS10_MIX_STATE_FIELDS	mixer_state.h	/^#define DS10_MIX_STATE_FIELDS /;"	d
+DS10_MIX_VOL_SCALE	mixer.h	/^#define DS10_MIX_VOL_SCALE /;"	d
+DS10_MSG_BAR	seq.h	/^#define DS10_MSG_BAR /;"	d
+DS10_MSG_ENDPAT	seq.h	/^#define DS10_MSG_ENDPAT /;"	d
+DS10_MSG_RUN	seq.h	/^#define DS10_MSG_RUN /;"	d
+DS10_MSG_STEP	seq.h	/^#define DS10_MSG_STEP /;"	d
+DS10_NKNOBS	patch.h	/^#define DS10_NKNOBS /;"	d
+DS10_NOTE_NONE	seq.h	/^    DS10_NOTE_NONE = 0,$/;"	e	enum:ds10_note_ev
+DS10_NOTE_OFF	seq.h	/^    DS10_NOTE_OFF = 1,$/;"	e	enum:ds10_note_ev
+DS10_NOTE_ON	seq.h	/^    DS10_NOTE_ON = 2,$/;"	e	enum:ds10_note_ev
+DS10_NOTE_RETRIG	seq.h	/^    DS10_NOTE_RETRIG = 3,$/;"	e	enum:ds10_note_ev
+DS10_ONE_Q24	fixed.h	/^#define DS10_ONE_Q24 /;"	d
+DS10_PATCH_H	patch.h	/^#define DS10_PATCH_H$/;"	d
+DS10_PITCH_H	pitch.h	/^#define DS10_PITCH_H$/;"	d
+DS10_PLAY_MUTE	seq.h	/^    DS10_PLAY_MUTE = 1,$/;"	e	enum:ds10_play_mode
+DS10_PLAY_PATTERN	seq.h	/^    DS10_PLAY_PATTERN = 0,$/;"	e	enum:ds10_play_mode
+DS10_PLAY_RECORD	seq.h	/^    DS10_PLAY_RECORD = 3,        \/* write the live note back into the pattern *\/$/;"	e	enum:ds10_play_mode
+DS10_PLAY_UNLESS_LIVE	seq.h	/^    DS10_PLAY_UNLESS_LIVE = 2,   \/* play the step only if no live note is held *\/$/;"	e	enum:ds10_play_mode
+DS10_Q24	fixed.h	/^#define DS10_Q24 /;"	d
+DS10_RATE	voice.h	/^#define DS10_RATE /;"	d
+DS10_ROUTE_ALL	mixer.h	/^    DS10_ROUTE_ALL = 4,$/;"	e	enum:ds10_fx_route
+DS10_ROUTE_DRUMS	mixer.h	/^    DS10_ROUTE_DRUMS = 3,$/;"	e	enum:ds10_fx_route
+DS10_ROUTE_OFF	mixer.h	/^    DS10_ROUTE_OFF = 5,$/;"	e	enum:ds10_fx_route
+DS10_ROUTE_SYN1	mixer.h	/^    DS10_ROUTE_SYN1 = 0,$/;"	e	enum:ds10_fx_route
+DS10_ROUTE_SYN12	mixer.h	/^    DS10_ROUTE_SYN12 = 2,$/;"	e	enum:ds10_fx_route
+DS10_ROUTE_SYN2	mixer.h	/^    DS10_ROUTE_SYN2 = 1,$/;"	e	enum:ds10_fx_route
+DS10_SEQ_H	seq.h	/^#define DS10_SEQ_H$/;"	d
+DS10_SEQ_INCR	seq.h	/^#define DS10_SEQ_INCR /;"	d
+DS10_SEQ_LANES	seq.h	/^#define DS10_SEQ_LANES /;"	d
+DS10_SEQ_MAXTRACKS	seq.h	/^#define DS10_SEQ_MAXTRACKS /;"	d
+DS10_SEQ_STEPS	seq.h	/^#define DS10_SEQ_STEPS /;"	d
+DS10_SEQ_SUBTICKS	seq.h	/^#define DS10_SEQ_SUBTICKS /;"	d
+DS10_SEQ_TEMPO_MAX	seq.h	/^#define DS10_SEQ_TEMPO_MAX /;"	d
+DS10_SEQ_TEMPO_MIN	seq.h	/^#define DS10_SEQ_TEMPO_MIN /;"	d
+DS10_SEQ_TEMPO_NUM	seq.h	/^#define DS10_SEQ_TEMPO_NUM /;"	d
+DS10_SONG_BAD_HASH	song.h	/^    DS10_SONG_BAD_HASH,     \/* MD5 header does not match the payload *\/$/;"	e	enum:ds10_song_status
+DS10_SONG_BAD_SIZE	song.h	/^    DS10_SONG_BAD_SIZE,     \/* not one of the four known payload lengths *\/$/;"	e	enum:ds10_song_status
+DS10_SONG_CHAIN	song.h	/^#define DS10_SONG_CHAIN /;"	d
+DS10_SONG_DRUMS	song.h	/^#define DS10_SONG_DRUMS /;"	d
+DS10_SONG_DRUM_EXTRA	song.h	/^#define DS10_SONG_DRUM_EXTRA /;"	d
+DS10_SONG_DRUM_EXTRA_OFF	song.h	/^#define DS10_SONG_DRUM_EXTRA_OFF /;"	d
+DS10_SONG_DRUM_OFF	song.h	/^#define DS10_SONG_DRUM_OFF /;"	d
+DS10_SONG_H	song.h	/^#define DS10_SONG_H$/;"	d
+DS10_SONG_KNOBS	song.h	/^#define DS10_SONG_KNOBS /;"	d
+DS10_SONG_LANES	song.h	/^#define DS10_SONG_LANES /;"	d
+DS10_SONG_MIX_KNOBS	song.h	/^#define DS10_SONG_MIX_KNOBS /;"	d
+DS10_SONG_NO_PATTERN	song.h	/^#define DS10_SONG_NO_PATTERN /;"	d
+DS10_SONG_OK	song.h	/^    DS10_SONG_OK = 0,$/;"	e	enum:ds10_song_status
+DS10_SONG_PATTERNS	song.h	/^#define DS10_SONG_PATTERNS /;"	d
+DS10_SONG_PATTERN_OFF	song.h	/^#define DS10_SONG_PATTERN_OFF /;"	d
+DS10_SONG_PATTERN_SIZE	song.h	/^#define DS10_SONG_PATTERN_SIZE /;"	d
+DS10_SONG_STEPS	song.h	/^#define DS10_SONG_STEPS /;"	d
+DS10_SONG_TAIL_MAX	song.h	/^#define DS10_SONG_TAIL_MAX /;"	d
+DS10_SONG_TAIL_OFF	song.h	/^#define DS10_SONG_TAIL_OFF /;"	d
+DS10_SONG_TRACKS	song.h	/^#define DS10_SONG_TRACKS /;"	d
+DS10_TABLES_DATA_H	tables_data.h	/^#define DS10_TABLES_DATA_H$/;"	d
+DS10_TABLES_H	tables.h	/^#define DS10_TABLES_H$/;"	d
+DS10_VCF_BANDPASS	vcf.h	/^    DS10_VCF_BANDPASS = 2,  \/* output = band integrator *\/$/;"	e	enum:ds10_vcf_type
+DS10_VCF_H	vcf.h	/^#define DS10_VCF_H$/;"	d
+DS10_VCF_HIGHPASS	vcf.h	/^    DS10_VCF_HIGHPASS = 1,  \/* output = the hp node     *\/$/;"	e	enum:ds10_vcf_type
+DS10_VCF_LOWPASS	vcf.h	/^    DS10_VCF_LOWPASS = 0,   \/* output = low integrator  *\/$/;"	e	enum:ds10_vcf_type
+DS10_VCO_H	vco.h	/^#define DS10_VCO_H$/;"	d
+DS10_VOICE_H	voice.h	/^#define DS10_VOICE_H$/;"	d
+DS10_VOICE_STATE_FIELDS	voice_state.h	/^#define DS10_VOICE_STATE_FIELDS /;"	d
+DS10_VOICE_STATE_H	voice_state.h	/^#define DS10_VOICE_STATE_H$/;"	d
+DS10_WAVE_NOISE	vco.h	/^    DS10_WAVE_NOISE = 3,$/;"	e	enum:ds10_wave
+DS10_WAVE_SAW	vco.h	/^    DS10_WAVE_SAW = 1,$/;"	e	enum:ds10_wave
+DS10_WAVE_SQUARE	vco.h	/^    DS10_WAVE_SQUARE = 2,$/;"	e	enum:ds10_wave
+DS10_WAVE_TRIANGLE	vco.h	/^    DS10_WAVE_TRIANGLE = 0,$/;"	e	enum:ds10_wave
+ENV_ATTACK_TARGET	env.c	/^#define ENV_ATTACK_TARGET /;"	d	file:
+ENV_AUX_MAX	env.c	/^#define ENV_AUX_MAX /;"	d	file:
+ENV_AUX_RATE	env.c	/^#define ENV_AUX_RATE /;"	d	file:
+ENV_AUX_RELEASE	env.c	/^#define ENV_AUX_RELEASE /;"	d	file:
+ENV_MAX	env.c	/^#define ENV_MAX /;"	d	file:
+FADE_AT	drumbuf.c	/^#define FADE_AT /;"	d	file:
+FB_STEP	fx.c	/^#define FB_STEP /;"	d	file:
+FLANGER_TIME	fx.c	/^#define FLANGER_TIME /;"	d	file:
+FX_MIN_DELAY	fx.c	/^#define FX_MIN_DELAY /;"	d	file:
+FX_ONE	fx.c	/^#define FX_ONE /;"	d	file:
+FX_SETTLE	drumbuf.c	/^#define FX_SETTLE /;"	d	file:
+GAIN_KEEP	drumbuf.c	/^#define GAIN_KEEP /;"	d	file:
+GAIN_KEEP	mixer.c	/^#define GAIN_KEEP /;"	d	file:
+GAIN_STEP	mixer.c	/^#define GAIN_STEP /;"	d	file:
+GAIN_UNITY	drumbuf.c	/^#define GAIN_UNITY /;"	d	file:
+HASH	song.c	/^#define HASH /;"	d	file:
+K	md5.c	/^static const uint32_t K[64] = {$/;"	v	typeref:typename:const uint32_t[64]	file:
+LFO_MAX	lfo.c	/^#define LFO_MAX /;"	d	file:
+LFO_ONE	lfo.c	/^#define LFO_ONE /;"	d	file:
+LFO_RESET_PHASE	event.c	/^#define LFO_RESET_PHASE /;"	d	file:
+LFSR_POLY	lfo.c	/^#define LFSR_POLY /;"	d	file:
+LFSR_POLY	vco.c	/^#define LFSR_POLY /;"	d	file:
+MIX_ONE	drumbuf.c	/^#define MIX_ONE /;"	d	file:
+MIX_ONE	mixer.c	/^#define MIX_ONE /;"	d	file:
+MOD_ROUTE	patch.c	/^} MOD_ROUTE[7] = {$/;"	v	typeref:typename:const struct __anon9be9bb860108[7]
+MOD_SCALE	pitch.c	/^#define MOD_SCALE /;"	d	file:
+OSC_HI	vco.c	/^#define OSC_HI /;"	d	file:
+OSC_LO	vco.c	/^#define OSC_LO /;"	d	file:
+OSC_RESET_PHASE2	event.c	/^#define OSC_RESET_PHASE2 /;"	d	file:
+PAYLOAD_HI	seq.c	/^#define PAYLOAD_HI /;"	d	file:
+PITCH_FRAC_MASK	pitch.c	/^#define PITCH_FRAC_MASK /;"	d	file:
+PITCH_MAX	pitch.c	/^#define PITCH_MAX /;"	d	file:
+PITCH_SHIFT	pitch.c	/^#define PITCH_SHIFT /;"	d	file:
+PRE_FRAME	drumbuf.c	/^#define PRE_FRAME /;"	d	file:
+RATIO_STEP	fx.c	/^#define RATIO_STEP /;"	d	file:
+S	md5.c	/^static const uint8_t S[64] = {$/;"	v	typeref:typename:const uint8_t[64]	file:
+SIZES	song.c	/^static const uint32_t SIZES[] = {11212, 11260, 12028, 12252};$/;"	v	typeref:typename:const uint32_t[]	file:
+SMOOTH_ADD	fx.c	/^#define SMOOTH_ADD /;"	d	file:
+SMOOTH_KEEP	fx.c	/^#define SMOOTH_KEEP /;"	d	file:
+TARGET_OFF	seq.c	/^#define TARGET_OFF /;"	d	file:
+TARGET_ON	seq.c	/^#define TARGET_ON /;"	d	file:
+TRI_TILT	vco.c	/^#define TRI_TILT /;"	d	file:
+T_COEF	tables.c	/^    T_MOD_A, T_MOD_B, T_COEF,$/;"	e	enum:__anona0cdfaf10103	file:
+T_COUNT	tables.c	/^    T_COUNT$/;"	e	enum:__anona0cdfaf10103	file:
+T_DEPTH	tables.c	/^    T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,$/;"	e	enum:__anona0cdfaf10103	file:
+T_DRUM_PITCH	tables.c	/^    T_DRUM_PITCH, T_SINCOS,$/;"	e	enum:__anona0cdfaf10103	file:
+T_ENV_RATE	tables.c	/^    T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,$/;"	e	enum:__anona0cdfaf10103	file:
+T_FX_DELAY_DIV	tables.c	/^    T_FX_PHASE, T_FX_FLANGER_FB, T_FX_DEPTH, T_FX_DELAY_DIV, T_FX_LFO_RATE,$/;"	e	enum:__anona0cdfaf10103	file:
+T_FX_DEPTH	tables.c	/^    T_FX_PHASE, T_FX_FLANGER_FB, T_FX_DEPTH, T_FX_DELAY_DIV, T_FX_LFO_RATE,$/;"	e	enum:__anona0cdfaf10103	file:
+T_FX_FLANGER_FB	tables.c	/^    T_FX_PHASE, T_FX_FLANGER_FB, T_FX_DEPTH, T_FX_DELAY_DIV, T_FX_LFO_RATE,$/;"	e	enum:__anona0cdfaf10103	file:
+T_FX_LFO_RATE	tables.c	/^    T_FX_PHASE, T_FX_FLANGER_FB, T_FX_DEPTH, T_FX_DELAY_DIV, T_FX_LFO_RATE,$/;"	e	enum:__anona0cdfaf10103	file:
+T_FX_PHASE	tables.c	/^    T_FX_PHASE, T_FX_FLANGER_FB, T_FX_DEPTH, T_FX_DELAY_DIV, T_FX_LFO_RATE,$/;"	e	enum:__anona0cdfaf10103	file:
+T_LFO_BPM	tables.c	/^    T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,$/;"	e	enum:__anona0cdfaf10103	file:
+T_LFO_FREE	tables.c	/^    T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,$/;"	e	enum:__anona0cdfaf10103	file:
+T_MOD_A	tables.c	/^    T_MOD_A, T_MOD_B, T_COEF,$/;"	e	enum:__anona0cdfaf10103	file:
+T_MOD_B	tables.c	/^    T_MOD_A, T_MOD_B, T_COEF,$/;"	e	enum:__anona0cdfaf10103	file:
+T_PEAK	tables.c	/^    T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,$/;"	e	enum:__anona0cdfaf10103	file:
+T_PITCH	tables.c	/^    T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,$/;"	e	enum:__anona0cdfaf10103	file:
+T_PORTA	tables.c	/^    T_ENV_RATE, T_LFO_BPM, T_LFO_FREE, T_PORTA, T_PEAK, T_PITCH, T_DEPTH,$/;"	e	enum:__anona0cdfaf10103	file:
+T_SINCOS	tables.c	/^    T_DRUM_PITCH, T_SINCOS,$/;"	e	enum:__anona0cdfaf10103	file:
+VCA_IN_STEP	patch.c	/^#define VCA_IN_STEP /;"	d	file:
+VCA_WET_STEP	patch.c	/^#define VCA_WET_STEP /;"	d	file:
+VCF_BIAS	vcf.c	/^#define VCF_BIAS /;"	d	file:
+VCF_CLAMP_HI	vcf.c	/^#define VCF_CLAMP_HI /;"	d	file:
+VCF_CLAMP_LO	vcf.c	/^#define VCF_CLAMP_LO /;"	d	file:
+VCF_FRAC_MASK	vcf.c	/^#define VCF_FRAC_MASK /;"	d	file:
+VCF_MOD_SCALE	vcf.c	/^#define VCF_MOD_SCALE /;"	d	file:
+VCF_ONE	vcf.c	/^#define VCF_ONE /;"	d	file:
+VCF_RES_BIAS	vcf.c	/^#define VCF_RES_BIAS /;"	d	file:
+VCF_RES_SCALE	vcf.c	/^#define VCF_RES_SCALE /;"	d	file:
+VCO_RECIP_MIN	vco.c	/^#define VCO_RECIP_MIN /;"	d	file:
+VCO_RECIP_NUM	vco.c	/^#define VCO_RECIP_NUM /;"	d	file:
+VCO_RECIP_SAT	vco.c	/^#define VCO_RECIP_SAT /;"	d	file:
+WIDE	tables.c	/^static const int WIDE[T_COUNT] = {$/;"	v	typeref:typename:const int[]	file:
+__anon0f17f1190108	amp.h	/^typedef struct {$/;"	s
+__anon0f60f9040108	env.h	/^typedef struct {$/;"	s
+__anon0f60f9040208	env.h	/^typedef struct {$/;"	s
+__anon0fdb23bc0108	lfo.h	/^typedef struct {$/;"	s
+__anon10594b640108	seq.h	/^typedef struct {$/;"	s
+__anon10594b640208	seq.h	/^typedef struct {$/;"	s
+__anon10594b640308	seq.h	/^typedef struct {$/;"	s
+__anon10594b640408	seq.h	/^typedef struct {$/;"	s
+__anon10594b640508	seq.h	/^typedef struct {$/;"	s
+__anon10594b640608	seq.h	/^typedef struct {$/;"	s
+__anon108e4d5a0108	vcf.h	/^typedef struct {$/;"	s
+__anon108e73a30108	vco.h	/^typedef struct {$/;"	s
+__anon1c36f3320108	song.h	/^typedef struct {$/;"	s
+__anon1c36f3320208	song.h	/^typedef struct {$/;"	s
+__anon1c36f3320308	song.h	/^typedef struct {$/;"	s
+__anon1c36f3320408	song.h	/^typedef struct {$/;"	s
+__anon7c9702f90108	fx.h	/^typedef struct {$/;"	s
+__anon7c9702f90208	fx.h	/^typedef struct {$/;"	s
+__anon89a846910108	voice.h	/^typedef struct {$/;"	s
+__anon9be9bb860108	patch.c	/^static const struct {$/;"	s	file:
+__anon9be9bb8b0108	patch.h	/^typedef struct {$/;"	s
+__anona0cdfaf10103	tables.c	/^enum {$/;"	g	file:
+__anona0cdfaf60108	tables.h	/^typedef struct {$/;"	s
+__anonae9300930108	pitch.h	/^typedef struct {$/;"	s
+__anonae9300930208	pitch.h	/^typedef struct {$/;"	s
+__anonc7edefa00108	mixer.h	/^typedef struct {$/;"	s
+__anonf973cb730108	drum.h	/^typedef struct {$/;"	s
+__anonf973cb730208	drum.h	/^typedef struct {$/;"	s
+accum	seq.h	/^    int32_t accum;       \/* +0x18 *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+amp	voice.h	/^    ds10_amp amp;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_amp
+answer	seq.h	/^    ds10_rt_pattern *answer;        \/* the argument and the answer; split here *\/$/;"	m	struct:ds10_song_player	typeref:typename:ds10_rt_pattern *
+arg	seq.h	/^    int32_t arg;                    \/* +0x08 in the original this word is both *\/$/;"	m	struct:ds10_song_player	typeref:typename:int32_t
+attack	env.h	/^    int32_t attack;    \/* +0x00 *\/$/;"	m	struct:__anon0f60f9040108	typeref:typename:int32_t
+auto_sub	seq.h	/^    uint8_t auto_sub;    \/* +0x33 automation sub-step *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+autom	seq.h	/^    ds10_seq_auto *autom;$/;"	m	struct:ds10_seq_ctx	typeref:typename:ds10_seq_auto *
+automation	seq.c	/^static void automation(ds10_seq_ctx *c)$/;"	f	typeref:typename:void	file:
+aux	env.h	/^    int32_t aux;       \/* +0x0C *\/$/;"	m	struct:__anon0f60f9040208	typeref:typename:int32_t
+balance	vco.h	/^    int32_t balance;     \/* +0x34 kept for readback; vol1\/vol2 are derived *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+band	vcf.h	/^    int32_t band;        \/* bandpass integrator state *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+bar	seq.h	/^    int32_t bar;         \/* +0x48 bar counter *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+bar_env	voice.h	/^    int16_t bar_env;    \/* +0x52 *\/$/;"	m	struct:__anon89a846910108	typeref:typename:int16_t
+bar_lfo	voice.h	/^    int16_t bar_lfo;    \/* +0x50 *\/$/;"	m	struct:__anon89a846910108	typeref:typename:int16_t
+blob	tables.h	/^    void *blob;          \/* owns everything the views point at *\/$/;"	m	struct:__anona0cdfaf60108	typeref:typename:void *
+block	md5.c	/^static void block(uint32_t h[4], const uint8_t *p)$/;"	f	typeref:typename:void	file:
+bpm	lfo.h	/^    int32_t bpm;         \/* +0x2C set by a tempo event, not by a knob *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:int32_t
+bpm	voice.h	/^    int32_t bpm;        \/* +0x2C *\/$/;"	m	struct:__anon89a846910108	typeref:typename:int32_t
+bpm_sync	lfo.h	/^    uint8_t bpm_sync;    \/* +0x28 *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:uint8_t
+buf_l	fx.h	/^    int16_t *buf_l;     \/* +0x20  DS10_FX_BUFLEN samples *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t *
+buf_r	fx.h	/^    int16_t *buf_r;     \/* +0x24 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t *
+chain	song.h	/^    uint16_t chain[DS10_SONG_CHAIN];                          \/* +0x24 *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint16_t[]
+chan	seq.h	/^    const int8_t *chan;             \/* the byte array at seq +0x60 *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:const int8_t *
+chan_idx	seq.h	/^    const uint8_t *chan_idx;        \/* two per track: volume then pan *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:const uint8_t *
+channel	seq.h	/^    uint8_t channel;  \/* byte 1, written by the router *\/$/;"	m	struct:__anon10594b640308	typeref:typename:uint8_t
+clamp16	fx.c	/^static int32_t clamp16(int32_t v)$/;"	f	typeref:typename:int32_t	file:
+clamp_one	drumbuf.c	/^static int32_t clamp_one(int32_t v)$/;"	f	typeref:typename:int32_t	file:
+clamp_one	mixer.c	/^static int32_t clamp_one(int32_t v)$/;"	f	typeref:typename:int32_t	file:
+clipped	amp.h	/^    int32_t clipped;     \/* +0x34 written by the stage; also a mod source *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+coef	patch.h	/^    const int32_t *coef;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const int32_t *
+coef	vcf.h	/^    int32_t coef;        \/* +0x28 cutoff coefficient from the table *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+cur	seq.h	/^    int16_t cur;     \/* result, held as value<<8 *\/$/;"	m	struct:__anon10594b640408	typeref:typename:int16_t
+current	pitch.h	/^    int32_t current;  \/* +0x04 glides toward target *\/$/;"	m	struct:__anonae9300930108	typeref:typename:int32_t
+cutoff	vcf.h	/^    int32_t cutoff;      \/* +0x1C knob << 15 *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+damp	vcf.h	/^    int32_t damp;        \/* damping coefficient, ramped *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+damp_delta	vcf.h	/^    int32_t damp_delta;$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+damp_target	vcf.h	/^    int32_t damp_target; \/* +0x58 ramp target for damp *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+decay	env.h	/^    int32_t decay;     \/* +0x04 *\/$/;"	m	struct:__anon0f60f9040108	typeref:typename:int32_t
+defaults	seq.h	/^    const int8_t *const *defaults;  \/* per-track knob array, for a raw of -1 *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:const int8_t * const *
+delay_div	fx.h	/^    const uint32_t *delay_div;$/;"	m	struct:__anon7c9702f90108	typeref:typename:const uint32_t *
+delta	seq.h	/^    int16_t delta;$/;"	m	struct:__anon10594b640408	typeref:typename:int16_t
+depth	fx.h	/^    const int16_t *depth;$/;"	m	struct:__anon7c9702f90108	typeref:typename:const int16_t *
+depth	fx.h	/^    int32_t depth;      \/* +0x48 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+depth	patch.h	/^    const int32_t *depth;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const int32_t *
+depth_sel	pitch.h	/^    int32_t depth_sel[3];  \/* +0x24 common, +0x28 VCO1, +0x2C VCO2 *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int32_t[3]
+dest	seq.h	/^    uint8_t dest;     \/* machine index, or DS10_BUS1 \/ DS10_BUS2 *\/$/;"	m	struct:__anon10594b640308	typeref:typename:uint8_t
+dir	pitch.h	/^    uint8_t dir;      \/* +0x10 0 = gliding down, else up *\/$/;"	m	struct:__anonae9300930108	typeref:typename:uint8_t
+dist	amp.h	/^    int32_t dist;        \/* +0x0C nonzero enables the extra distortion path *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+div127	seq.c	/^static int div127(int32_t v)$/;"	f	typeref:typename:int	file:
+drive1	amp.h	/^    int32_t drive1;      \/* +0x38 (knob*0x102)^2 >> 15 *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+drive2	amp.h	/^    int32_t drive2;      \/* +0x3C 0x7FFF - knob*0xE8; 0x7FFF is fully clean *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+drum_pitch	tables.h	/^    const uint32_t *drum_pitch;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:const uint32_t *
+dry	fx.h	/^    int32_t dry;        \/* +0x8C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+drywet	mixer.h	/^    int32_t drywet;                     \/* +0x34 stored so route 5 can restore it *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:int32_t
+ds10_amp	amp.h	/^} ds10_amp;$/;"	t	typeref:struct:__anon0f17f1190108
+ds10_amp_step	amp.c	/^int16_t ds10_amp_step(ds10_amp *a, int32_t in, int32_t vco2)$/;"	f	typeref:typename:int16_t
+ds10_amp_update	amp.c	/^void ds10_amp_update(ds10_amp *a, const int32_t *env_out,$/;"	f	typeref:typename:void
+ds10_clamp24	fixed.h	/^static inline int32_t ds10_clamp24(int32_t v)$/;"	f	typeref:typename:int32_t
+ds10_drum	drum.h	/^} ds10_drum;$/;"	t	typeref:struct:__anonf973cb730208
+ds10_drum_env	drum.h	/^} ds10_drum_env;$/;"	t	typeref:struct:__anonf973cb730108
+ds10_drum_note_off	drum.c	/^void ds10_drum_note_off(ds10_drum *d)$/;"	f	typeref:typename:void
+ds10_drum_note_on	drum.c	/^void ds10_drum_note_on(ds10_drum *d, int note, const uint32_t *pitch)$/;"	f	typeref:typename:void
+ds10_drum_render	drum.c	/^void ds10_drum_render(ds10_drum *d, int16_t *out, int n)$/;"	f	typeref:typename:void
+ds10_drum_set_sample	drum.c	/^void ds10_drum_set_sample(ds10_drum *d, const int16_t *sample, int32_t length,$/;"	f	typeref:typename:void
+ds10_drum_stage	drum.h	/^enum ds10_drum_stage {$/;"	g
+ds10_drumbuf_render	drumbuf.c	/^void ds10_drumbuf_render(const int8_t *knobs, const int8_t *extra,$/;"	f	typeref:typename:void
+ds10_drumbuf_render_with	drumbuf.c	/^void ds10_drumbuf_render_with(ds10_voice *vp, const int8_t *knobs,$/;"	f	typeref:typename:void
+ds10_env	env.h	/^} ds10_env;$/;"	t	typeref:struct:__anon0f60f9040208
+ds10_env_params	env.h	/^} ds10_env_params;$/;"	t	typeref:struct:__anon0f60f9040108
+ds10_env_stage	env.h	/^enum ds10_env_stage {$/;"	g
+ds10_env_step	env.c	/^void ds10_env_step(ds10_env *e, const ds10_env_params *p)$/;"	f	typeref:typename:void
+ds10_event	event.h	/^enum ds10_event {$/;"	g
+ds10_fx	fx.h	/^} ds10_fx;$/;"	t	typeref:struct:__anon7c9702f90208
+ds10_fx_param	fx.h	/^enum ds10_fx_param {$/;"	g
+ds10_fx_route	mixer.h	/^enum ds10_fx_route {$/;"	g
+ds10_fx_set	fx.c	/^void ds10_fx_set(ds10_fx *fx, int param, int value)$/;"	f	typeref:typename:void
+ds10_fx_state_load	mixer_state.c	/^void ds10_fx_state_load(ds10_fx *fx, const int32_t *f)$/;"	f	typeref:typename:void
+ds10_fx_step	fx.c	/^void ds10_fx_step(ds10_fx *fx, int32_t in_l, int32_t in_r,$/;"	f	typeref:typename:void
+ds10_fx_tables	fx.h	/^} ds10_fx_tables;$/;"	t	typeref:struct:__anon7c9702f90108
+ds10_fx_type	fx.h	/^enum ds10_fx_type {$/;"	g
+ds10_fx_update	fx.c	/^void ds10_fx_update(ds10_fx *fx)$/;"	f	typeref:typename:void
+ds10_lane	seq.h	/^} ds10_lane;$/;"	t	typeref:struct:__anon10594b640408
+ds10_lane_hold	seq.c	/^void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults)$/;"	f	typeref:typename:void
+ds10_lane_map	seq.c	/^int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults)$/;"	f	typeref:typename:int32_t
+ds10_lane_smooth	seq.c	/^void ds10_lane_smooth(ds10_lane *l, int raw, int next, int subticks,$/;"	f	typeref:typename:void
+ds10_lfo	lfo.h	/^} ds10_lfo;$/;"	t	typeref:struct:__anon0fdb23bc0108
+ds10_lfo_shape	lfo.h	/^enum ds10_lfo_shape {$/;"	g
+ds10_lfo_step	lfo.c	/^void ds10_lfo_step(ds10_lfo *l)$/;"	f	typeref:typename:void
+ds10_md5	md5.c	/^void ds10_md5(const void *data, size_t len, uint8_t out[16])$/;"	f	typeref:typename:void
+ds10_mixer	mixer.h	/^} ds10_mixer;$/;"	t	typeref:struct:__anonc7edefa00108
+ds10_mixer_event	mixer.c	/^void ds10_mixer_event(ds10_mixer *m, int opcode, int channel, uint16_t payload,$/;"	f	typeref:typename:void
+ds10_mixer_render	mixer.c	/^void ds10_mixer_render(ds10_mixer *m, const int16_t *const *in,$/;"	f	typeref:typename:void
+ds10_mixer_set_knob	mixer.c	/^void ds10_mixer_set_knob(ds10_mixer *m, int knob, int value)$/;"	f	typeref:typename:void
+ds10_mixer_state_load	mixer_state.c	/^void ds10_mixer_state_load(ds10_mixer *m, const int32_t *f)$/;"	f	typeref:typename:void
+ds10_mul15	fixed.h	/^static inline int32_t ds10_mul15(int32_t a, int32_t b)$/;"	f	typeref:typename:int32_t
+ds10_mul23	fixed.h	/^static inline int32_t ds10_mul23(int32_t a, int32_t b)$/;"	f	typeref:typename:int32_t
+ds10_mul24	fixed.h	/^static inline int32_t ds10_mul24(int32_t a, int32_t b)$/;"	f	typeref:typename:int32_t
+ds10_mul32	fixed.h	/^static inline int32_t ds10_mul32(int32_t a, int32_t b)$/;"	f	typeref:typename:int32_t
+ds10_note_ev	seq.h	/^enum ds10_note_ev {$/;"	g
+ds10_notectrl	pitch.h	/^} ds10_notectrl;$/;"	t	typeref:struct:__anonae9300930108
+ds10_notectrl_step	pitch.c	/^void ds10_notectrl_step(ds10_notectrl *n)$/;"	f	typeref:typename:void
+ds10_patch_load	patch.c	/^void ds10_patch_load(ds10_voice *v, const int8_t *knobs)$/;"	f	typeref:typename:void
+ds10_patch_set_knob	patch.c	/^void ds10_patch_set_knob(ds10_voice *v, int knob, int value)$/;"	f	typeref:typename:void
+ds10_pitchctrl	pitch.h	/^} ds10_pitchctrl;$/;"	t	typeref:struct:__anonae9300930208
+ds10_pitchctrl_step	pitch.c	/^void ds10_pitchctrl_step(ds10_pitchctrl *p, const ds10_notectrl *n,$/;"	f	typeref:typename:void
+ds10_play_mode	seq.h	/^enum ds10_play_mode {$/;"	g
+ds10_rt_pattern	seq.h	/^} ds10_rt_pattern;$/;"	t	typeref:struct:__anon10594b640508
+ds10_seq	seq.h	/^} ds10_seq;$/;"	t	typeref:struct:__anon10594b640108
+ds10_seq_auto	seq.h	/^} ds10_seq_auto;$/;"	t	typeref:struct:__anon10594b640608
+ds10_seq_ctx	seq.h	/^struct ds10_seq_ctx {$/;"	s
+ds10_seq_ctx	seq.h	/^typedef struct ds10_seq_ctx ds10_seq_ctx;$/;"	t	typeref:struct:ds10_seq_ctx
+ds10_seq_emit	seq.c	/^int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out)$/;"	f	typeref:typename:int
+ds10_seq_gate	seq.c	/^int ds10_seq_gate(ds10_seq_track *t)$/;"	f	typeref:typename:int
+ds10_seq_posted	seq.h	/^} ds10_seq_posted;$/;"	t	typeref:struct:__anon10594b640308
+ds10_seq_run	seq.c	/^int ds10_seq_run(ds10_seq_ctx *c)$/;"	f	typeref:typename:int
+ds10_seq_set_swing	seq.c	/^void ds10_seq_set_swing(ds10_seq *s, int swing)$/;"	f	typeref:typename:void
+ds10_seq_set_tempo	seq.c	/^void ds10_seq_set_tempo(ds10_seq *s, int tempo)$/;"	f	typeref:typename:void
+ds10_seq_step_track	seq.c	/^void ds10_seq_step_track(ds10_seq_track *t, int note, int gate, int subticks)$/;"	f	typeref:typename:void
+ds10_seq_tempo	seq.c	/^int ds10_seq_tempo(ds10_seq_ctx *c, int tempo)$/;"	f	typeref:typename:int
+ds10_seq_tick	seq.c	/^void ds10_seq_tick(ds10_seq *s)$/;"	f	typeref:typename:void
+ds10_seq_track	seq.h	/^} ds10_seq_track;$/;"	t	typeref:struct:__anon10594b640208
+ds10_shl	fixed.h	/^static inline int32_t ds10_shl(int32_t v, unsigned n)$/;"	f	typeref:typename:int32_t
+ds10_song	song.h	/^} ds10_song;$/;"	t	typeref:struct:__anon1c36f3320408
+ds10_song_auto	song.h	/^} ds10_song_auto;$/;"	t	typeref:struct:__anon1c36f3320208
+ds10_song_bars	song.c	/^int ds10_song_bars(const ds10_song *s)$/;"	f	typeref:typename:int
+ds10_song_drum_extra	song.c	/^const int8_t *ds10_song_drum_extra(const ds10_song *s, int drum)$/;"	f	typeref:typename:const int8_t *
+ds10_song_drum_knobs	song.c	/^const int8_t *ds10_song_drum_knobs(const ds10_song *s, int drum)$/;"	f	typeref:typename:const int8_t *
+ds10_song_parse	song.c	/^int ds10_song_parse(ds10_song *s, const uint8_t *file, size_t len)$/;"	f	typeref:typename:int
+ds10_song_pattern	song.h	/^} ds10_song_pattern;$/;"	t	typeref:struct:__anon1c36f3320308
+ds10_song_player	seq.h	/^struct ds10_song_player {$/;"	s
+ds10_song_player	seq.h	/^typedef struct ds10_song_player ds10_song_player;$/;"	t	typeref:struct:ds10_song_player
+ds10_song_status	song.h	/^enum ds10_song_status {$/;"	g
+ds10_song_step	song.h	/^} ds10_song_step;$/;"	t	typeref:struct:__anon1c36f3320108
+ds10_song_write	song.c	/^size_t ds10_song_write(const ds10_song *s, uint8_t *out)$/;"	f	typeref:typename:size_t
+ds10_table_set	tables.h	/^} ds10_table_set;$/;"	t	typeref:struct:__anona0cdfaf60108
+ds10_tables	patch.h	/^} ds10_tables;$/;"	t	typeref:struct:__anon9be9bb8b0108
+ds10_tables_free	tables.c	/^void ds10_tables_free(ds10_table_set *s)$/;"	f	typeref:typename:void
+ds10_tables_load	tables.c	/^int ds10_tables_load(ds10_table_set *s, const char *path)$/;"	f	typeref:typename:int
+ds10_tables_parse	tables.c	/^int ds10_tables_parse(ds10_table_set *s, const unsigned char *data, size_t len)$/;"	f	typeref:typename:int
+ds10_tbl_coef	tables_data.c	/^const int32_t ds10_tbl_coef[152] = {$/;"	v	typeref:typename:const int32_t[152]
+ds10_tbl_depth	tables_data.c	/^const int32_t ds10_tbl_depth[128] = {$/;"	v	typeref:typename:const int32_t[128]
+ds10_tbl_drum_pitch	tables_data.c	/^const uint32_t ds10_tbl_drum_pitch[128] = {$/;"	v	typeref:typename:const uint32_t[128]
+ds10_tbl_env_rate	tables_data.c	/^const uint32_t ds10_tbl_env_rate[128] = {$/;"	v	typeref:typename:const uint32_t[128]
+ds10_tbl_fx_delay_div	tables_data.c	/^const uint32_t ds10_tbl_fx_delay_div[12] = {$/;"	v	typeref:typename:const uint32_t[12]
+ds10_tbl_fx_depth	tables_data.c	/^const int16_t ds10_tbl_fx_depth[128] = {$/;"	v	typeref:typename:const int16_t[128]
+ds10_tbl_fx_flanger_fb	tables_data.c	/^const int16_t ds10_tbl_fx_flanger_fb[128] = {$/;"	v	typeref:typename:const int16_t[128]
+ds10_tbl_fx_init	tables_data.c	/^const int32_t ds10_tbl_fx_init[40] = {$/;"	v	typeref:typename:const int32_t[40]
+ds10_tbl_fx_lfo_phase	tables_data.c	/^const int32_t ds10_tbl_fx_lfo_phase[3] = {$/;"	v	typeref:typename:const int32_t[3]
+ds10_tbl_fx_lfo_rate	tables_data.c	/^const uint32_t ds10_tbl_fx_lfo_rate[128] = {$/;"	v	typeref:typename:const uint32_t[128]
+ds10_tbl_knob_min	tables_data.c	/^const int32_t ds10_tbl_knob_min[31] = {$/;"	v	typeref:typename:const int32_t[31]
+ds10_tbl_knob_range	tables_data.c	/^const int32_t ds10_tbl_knob_range[31] = {$/;"	v	typeref:typename:const int32_t[31]
+ds10_tbl_lfo_bpm	tables_data.c	/^const uint32_t ds10_tbl_lfo_bpm[16] = {$/;"	v	typeref:typename:const uint32_t[16]
+ds10_tbl_lfo_free	tables_data.c	/^const uint32_t ds10_tbl_lfo_free[128] = {$/;"	v	typeref:typename:const uint32_t[128]
+ds10_tbl_mixer_init	tables_data.c	/^const int32_t ds10_tbl_mixer_init[21] = {$/;"	v	typeref:typename:const int32_t[21]
+ds10_tbl_mod_a	tables_data.c	/^const int16_t ds10_tbl_mod_a[128] = {$/;"	v	typeref:typename:const int16_t[128]
+ds10_tbl_mod_b	tables_data.c	/^const int16_t ds10_tbl_mod_b[128] = {$/;"	v	typeref:typename:const int16_t[128]
+ds10_tbl_peak	tables_data.c	/^const uint32_t ds10_tbl_peak[128] = {$/;"	v	typeref:typename:const uint32_t[128]
+ds10_tbl_pitch	tables_data.c	/^const int32_t ds10_tbl_pitch[130] = {$/;"	v	typeref:typename:const int32_t[130]
+ds10_tbl_porta	tables_data.c	/^const uint32_t ds10_tbl_porta[128] = {$/;"	v	typeref:typename:const uint32_t[128]
+ds10_tbl_sincos	tables_data.c	/^const int16_t ds10_tbl_sincos[8192] = {$/;"	v	typeref:typename:const int16_t[8192]
+ds10_tbl_voice_init	tables_data.c	/^const int32_t ds10_tbl_voice_init[93] = {$/;"	v	typeref:typename:const int32_t[93]
+ds10_vcf	vcf.h	/^} ds10_vcf;$/;"	t	typeref:struct:__anon108e4d5a0108
+ds10_vcf_peak_to_q	vcf.c	/^int32_t ds10_vcf_peak_to_q(int peak)$/;"	f	typeref:typename:int32_t
+ds10_vcf_step	vcf.c	/^int32_t ds10_vcf_step(ds10_vcf *f, int32_t in)$/;"	f	typeref:typename:int32_t
+ds10_vcf_type	vcf.h	/^enum ds10_vcf_type {$/;"	g
+ds10_vcf_update	vcf.c	/^void ds10_vcf_update(ds10_vcf *f, const int32_t *env_out,$/;"	f	typeref:typename:void
+ds10_vco	vco.h	/^} ds10_vco;$/;"	t	typeref:struct:__anon108e73a30108
+ds10_vco_clock_noise	vco.c	/^void ds10_vco_clock_noise(ds10_vco *o, int n)$/;"	f	typeref:typename:void
+ds10_vco_step	vco.c	/^int32_t ds10_vco_step(ds10_vco *o)$/;"	f	typeref:typename:int32_t
+ds10_vco_update	vco.c	/^void ds10_vco_update(ds10_vco *o, int32_t inc1, int32_t inc2)$/;"	f	typeref:typename:void
+ds10_voice	voice.h	/^} ds10_voice;$/;"	t	typeref:struct:__anon89a846910108
+ds10_voice_event	event.c	/^void ds10_voice_event(ds10_voice *v, int opcode, int note, int32_t arg)$/;"	f	typeref:typename:void
+ds10_voice_note_off	event.c	/^void ds10_voice_note_off(ds10_voice *v)$/;"	f	typeref:typename:void
+ds10_voice_note_on	event.c	/^void ds10_voice_note_on(ds10_voice *v, int note)$/;"	f	typeref:typename:void
+ds10_voice_render	voice.c	/^void ds10_voice_render(ds10_voice *v, int16_t *out, int n)$/;"	f	typeref:typename:void
+ds10_voice_set_bpm	event.c	/^void ds10_voice_set_bpm(ds10_voice *v, int32_t bpm)$/;"	f	typeref:typename:void
+ds10_voice_state_load	voice_state.c	/^void ds10_voice_state_load(ds10_voice *v, const int32_t *f)$/;"	f	typeref:typename:void
+ds10_wave	vco.h	/^enum ds10_wave {$/;"	g
+eg_depth	pitch.h	/^    int32_t eg_depth;      \/* +0x20 depth index for the always-on EG term *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int32_t
+eg_depth	vcf.h	/^    int32_t eg_depth;    \/* +0x44 depth index for the always-on EG term *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+eg_sel	amp.h	/^    int32_t eg_sel;      \/* +0x24 vca EG source *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+enable	seq.h	/^    uint8_t enable;      \/* track state +0x20: 1 and 2 are two processor paths *\/$/;"	m	struct:__anon10594b640608	typeref:typename:uint8_t
+env	drum.h	/^    ds10_drum_env env;      \/* the 24-byte block at +0x30 *\/$/;"	m	struct:__anonf973cb730208	typeref:typename:ds10_drum_env
+env	patch.c	/^    int8_t env;$/;"	m	struct:__anon9be9bb860108	typeref:typename:int8_t	file:
+env	voice.h	/^    ds10_env env;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_env
+env_params	voice.h	/^    ds10_env_params env_params;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_env_params
+env_rate	patch.h	/^    const uint32_t *env_rate;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const uint32_t *
+env_sel	amp.h	/^    int32_t env_sel;     \/* +0x08 *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+env_sel	pitch.h	/^    int32_t env_sel[3];    \/* +0x4C common, +0x50 VCO1, +0x54 VCO2 *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int32_t[3]
+env_sel	vcf.h	/^    int32_t env_sel;     \/* +0x08 *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+f	vcf.h	/^    int32_t f;           \/* cutoff coefficient, ramped *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+f08	song.h	/^    uint16_t f08;           \/* +0x08  12 from v1 on, 16 before it *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint16_t
+f_delta	vcf.h	/^    int32_t f_delta;$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+f_target	vcf.h	/^    int32_t f_target;    \/* +0x4C ramp target for f *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+fb_enable	fx.h	/^    int16_t fb_enable;  \/* +0x1C 1 for delay and flanger, 0 for chorus *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+fb_l	fx.h	/^    int32_t fb_l, fb_l_target, fb_l_delta;         \/* +0x74 +0x78 +0x7C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+fb_l_delta	fx.h	/^    int32_t fb_l, fb_l_target, fb_l_delta;         \/* +0x74 +0x78 +0x7C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+fb_l_target	fx.h	/^    int32_t fb_l, fb_l_target, fb_l_delta;         \/* +0x74 +0x78 +0x7C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+fb_r	fx.h	/^    int32_t fb_r, fb_r_target, fb_r_delta;         \/* +0x80 +0x84 +0x88 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+fb_r_delta	fx.h	/^    int32_t fb_r, fb_r_target, fb_r_delta;         \/* +0x80 +0x84 +0x88 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+fb_r_target	fx.h	/^    int32_t fb_r, fb_r_target, fb_r_delta;         \/* +0x80 +0x84 +0x88 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+feedback	fx.h	/^    int32_t feedback;   \/* +0x4C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+flanger_fb	fx.h	/^    const int16_t *flanger_fb; \/* points at 0x0207EF44, i.e. index 0 *\/$/;"	m	struct:__anon7c9702f90108	typeref:typename:const int16_t *
+fx	mixer.h	/^    ds10_fx fx;                         \/* the object at +0x80 *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:ds10_fx
+fx	tables.h	/^    ds10_fx_tables fx;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:ds10_fx_tables
+fx_init	tables.h	/^    const int32_t *fx_init;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:const int32_t *
+gain	mixer.h	/^    int32_t gain;                       \/* +0x30 ramped master gain *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:int32_t
+gate	song.h	/^    int8_t gate;   \/* +0x00  4 = full step, 5 = one over, 6 = retrigger *\/$/;"	m	struct:__anon1c36f3320108	typeref:typename:int8_t
+gate_left	seq.h	/^    int8_t gate_left;   \/* +2 countdown in sub-ticks *\/$/;"	m	struct:__anon10594b640208	typeref:typename:int8_t
+gate_mode	seq.h	/^    int8_t gate_mode;   \/* +4 the raw gate value *\/$/;"	m	struct:__anon10594b640208	typeref:typename:int8_t
+handle	seq.h	/^    void (*handle)(ds10_song_player *p, ds10_seq *s);  \/* vtable slot 1 *\/$/;"	m	struct:ds10_song_player	typeref:typename:void (*)(ds10_song_player * p,ds10_seq * s)
+hold2	vco.h	/^    int32_t hold2;       \/* +0x50 sample-and-hold for VCO2 noise *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+in_depth	amp.h	/^    int32_t in_depth;    \/* +0x1C vca.in depth *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+in_depth	vcf.h	/^    int32_t in_depth;    \/* +0x48 depth index for the routed term *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+inc	lfo.h	/^    int32_t inc;         \/* +0x18 shared by both accumulators *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:int32_t
+inc1	pitch.h	/^    int32_t inc1;          \/* +0x38 output: VCO1 phase increment *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int32_t
+inc1	vco.h	/^    int32_t inc1;        \/* +0x1C phase increment (subtracted) *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+inc2	pitch.h	/^    int32_t inc2;          \/* +0x3C output: VCO2 phase increment *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int32_t
+inc2	vco.h	/^    int32_t inc2;        \/* +0x20 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+incr	seq.h	/^    int32_t incr;        \/* +0x1C *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+install	seq.h	/^    void (*install)(ds10_seq_ctx *c, ds10_rt_pattern *pat);$/;"	m	struct:ds10_seq_ctx	typeref:typename:void (*)(ds10_seq_ctx * c,ds10_rt_pattern * pat)
+k_depth	fx.h	/^    int16_t k_depth;    \/* +0x16 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+k_drywet	fx.h	/^    int16_t k_drywet;   \/* +0x1A *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+k_fb	fx.h	/^    int16_t k_fb;       \/* +0x18 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+k_lfo	fx.h	/^    int16_t k_lfo;      \/* +0x14 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+k_ratio	fx.h	/^    int16_t k_ratio;    \/* +0x12 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+k_time	fx.h	/^    int16_t k_time;     \/* +0x10 raw knobs, kept so a type change can reapply *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+knob	seq.h	/^    uint8_t knob;$/;"	m	struct:__anon10594b640408	typeref:typename:uint8_t
+knob	seq.h	/^    void (*knob)(void *machine, int knob, int value);$/;"	m	struct:ds10_seq_ctx	typeref:typename:void (*)(void * machine,int knob,int value)
+knob	song.h	/^    int8_t knob[DS10_SONG_LANES];$/;"	m	struct:__anon1c36f3320208	typeref:typename:int8_t[]
+knob_min	tables.h	/^    const int32_t *knob_min;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:const int32_t *
+knob_range	tables.h	/^    const int32_t *knob_range;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:const int32_t *
+knobs	song.h	/^    int8_t knobs[2][DS10_SONG_KNOBS];$/;"	m	struct:__anon1c36f3320308	typeref:typename:int8_t[2][]
+known_size	song.c	/^static int known_size(uint32_t n)$/;"	f	typeref:typename:int	file:
+lane	seq.h	/^    ds10_lane lane[DS10_SEQ_LANES];$/;"	m	struct:__anon10594b640608	typeref:typename:ds10_lane[]
+lane	song.h	/^    ds10_song_auto lane[DS10_SONG_LANES][DS10_SONG_STEPS];    \/* +0x1C2 *\/$/;"	m	struct:__anon1c36f3320308	typeref:typename:ds10_song_auto[][]
+lane_raw	seq.h	/^    const int8_t *lane_raw;         \/* two bytes per (track, step) *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:const int8_t *
+length	drum.h	/^    int32_t length;         \/* +0x40 sample count *\/$/;"	m	struct:__anonf973cb730208	typeref:typename:int32_t
+level	amp.h	/^    int32_t level;       \/* +0x2C ramped output level *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+level	env.h	/^    int32_t level;     \/* +0x08 *\/$/;"	m	struct:__anon0f60f9040208	typeref:typename:int32_t
+level_delta	amp.h	/^    int32_t level_delta; \/* +0x30 per-sample ramp increment *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+level_knob	amp.h	/^    int32_t level_knob;  \/* +0x18 knob * 0x20408 *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+lfo	patch.c	/^    int8_t lfo;$/;"	m	struct:__anon9be9bb860108	typeref:typename:int8_t	file:
+lfo	voice.h	/^    ds10_lfo lfo;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_lfo
+lfo_bpm	patch.h	/^    const uint32_t *lfo_bpm;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const uint32_t *
+lfo_free	patch.h	/^    const uint32_t *lfo_free;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const uint32_t *
+lfo_inc	fx.h	/^    int32_t lfo_inc;    \/* +0x44 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+lfo_l	fx.h	/^    int32_t lfo_l[3];   \/* +0x28 (always 0), +0x2C triangle, +0x30 cubed *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t[3]
+lfo_phase	fx.h	/^    int32_t lfo_phase;  \/* +0x40 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+lfo_phase_off	fx.h	/^    const int32_t *lfo_phase_off;$/;"	m	struct:__anon7c9702f90108	typeref:typename:const int32_t *
+lfo_r	fx.h	/^    int32_t lfo_r[3];   \/* +0x34 (always 0), +0x38, +0x3C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t[3]
+lfo_rate	fx.h	/^    const uint32_t *lfo_rate;$/;"	m	struct:__anon7c9702f90108	typeref:typename:const uint32_t *
+lfo_sel	amp.h	/^    int32_t lfo_sel;     \/* +0x04 *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+lfo_sel	pitch.h	/^    int16_t lfo_sel[3];    \/* +0x40 common, +0x44 VCO1, +0x48 VCO2 *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int16_t[3]
+lfo_sel	vcf.h	/^    int32_t lfo_sel;     \/* +0x04 *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+lfo_tap	fx.c	/^static void lfo_tap(int32_t phase, int32_t *tri, int32_t *cubed)$/;"	f	typeref:typename:void	file:
+lfsr	lfo.h	/^    int32_t lfsr;        \/* +0x24 noise register for sample-and-hold *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:int32_t
+lfsr1	vco.h	/^    int32_t lfsr1;       \/* +0x40 noise register for VCO1 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+lfsr2	vco.h	/^    int32_t lfsr2;       \/* +0x44 noise register for VCO2 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+lfsr_step	lfo.c	/^static inline int32_t lfsr_step(int32_t reg)$/;"	f	typeref:typename:int32_t	file:
+lfsr_step	vco.c	/^static inline int32_t lfsr_step(int32_t reg)$/;"	f	typeref:typename:int32_t	file:
+live_gate	seq.h	/^    uint8_t live_gate;  \/* +0x0C gate from live input, for record mode *\/$/;"	m	struct:__anon10594b640208	typeref:typename:uint8_t
+live_note	seq.h	/^    int8_t live_note;   \/* +0x0D note from live input, negative = none *\/$/;"	m	struct:__anon10594b640208	typeref:typename:int8_t
+low	vcf.h	/^    int32_t low;         \/* lowpass integrator state *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+machine	seq.h	/^    void *machine[DS10_SEQ_MAXTRACKS];$/;"	m	struct:ds10_seq_ctx	typeref:typename:void * []
+map_depth	fx.c	/^static void map_depth(ds10_fx *fx, int v)$/;"	f	typeref:typename:void	file:
+map_drywet	fx.c	/^static void map_drywet(ds10_fx *fx, int v)$/;"	f	typeref:typename:void	file:
+map_feedback	fx.c	/^static void map_feedback(ds10_fx *fx, int v)$/;"	f	typeref:typename:void	file:
+map_lr_ratio	fx.c	/^static void map_lr_ratio(ds10_fx *fx, int v)$/;"	f	typeref:typename:void	file:
+map_time	fx.c	/^static void map_time(ds10_fx *fx, int v)$/;"	f	typeref:typename:void	file:
+max	seq.h	/^    int max;$/;"	m	struct:ds10_seq_ctx	typeref:typename:int
+mixer	song.h	/^    int8_t mixer[DS10_SONG_MIX_KNOBS];$/;"	m	struct:__anon1c36f3320308	typeref:typename:int8_t[]
+mixer_init	tables.h	/^    const int32_t *mixer_init;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:const int32_t *
+mod_a	patch.h	/^    const int16_t *mod_a;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const int16_t *
+mod_b	patch.h	/^    const int16_t *mod_b;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const int16_t *
+mod_term	pitch.c	/^static inline int32_t mod_term(int32_t depth_sel, int32_t lfo_val,$/;"	f	typeref:typename:int32_t	file:
+mode	seq.h	/^    uint8_t mode;        \/* track state +0x21, 0..3 *\/$/;"	m	struct:__anon10594b640608	typeref:typename:uint8_t
+msg	seq.h	/^    uint32_t msg;                   \/* +0x04 *\/$/;"	m	struct:ds10_song_player	typeref:typename:uint32_t
+mute	mixer.h	/^    int16_t mute;                       \/* +0x88 *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:int16_t
+name	song.h	/^    char name[16];          \/* +0x14  6 shown, NUL padded *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:char[16]
+nauto	seq.h	/^    int nauto;$/;"	m	struct:ds10_seq_ctx	typeref:typename:int
+nc	voice.h	/^    ds10_notectrl nc;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_notectrl
+note	seq.h	/^    int8_t note;        \/* +5 *\/$/;"	m	struct:__anon10594b640208	typeref:typename:int8_t
+note	song.h	/^    int8_t note;   \/* +0x01  0xFF = no note on this step *\/$/;"	m	struct:__anon1c36f3320108	typeref:typename:int8_t
+nout	seq.h	/^    int nout;$/;"	m	struct:ds10_seq_ctx	typeref:typename:int
+ntracks	seq.h	/^    int32_t ntracks;     \/* +0x54 *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+octave12	pitch.h	/^    int32_t octave12;      \/* +0x30 octave knob * 12 *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int32_t
+offset	drum.h	/^    int32_t offset;         \/* +0x38 phase *\/$/;"	m	struct:__anonf973cb730208	typeref:typename:int32_t
+offset	seq.h	/^    int8_t offset;$/;"	m	struct:__anon10594b640408	typeref:typename:int8_t
+opcode	seq.h	/^    uint8_t opcode;$/;"	m	struct:__anon10594b640308	typeref:typename:uint8_t
+osc_depth	vcf.h	/^    int32_t osc_depth;   \/* +0x0C scales the oscillator-as-modulator term *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+out	lfo.h	/^    int32_t out[5];      \/* +0x00..+0x10 *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:int32_t[5]
+out	seq.h	/^    ds10_seq_posted *out;           \/* every routed event, in order *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:ds10_seq_posted *
+pan	mixer.h	/^    int32_t pan[DS10_MIX_CHANNELS];     \/* +0x38 + 4*ch *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:int32_t[]
+pan	seq.h	/^    int8_t pan;         \/* +7 and its pan *\/$/;"	m	struct:__anon10594b640208	typeref:typename:int8_t
+pan	song.h	/^    int8_t pan;    \/* +0x03  offsets this channel's mixer pan *\/$/;"	m	struct:__anon1c36f3320108	typeref:typename:int8_t
+params	song.h	/^    uint8_t params[0x62 - DS10_SONG_MIX_KNOBS];$/;"	m	struct:__anon1c36f3320308	typeref:typename:uint8_t[]
+parse_pattern	song.c	/^static void parse_pattern(ds10_song_pattern *q, const uint8_t *p)$/;"	f	typeref:typename:void	file:
+pat	seq.h	/^    ds10_rt_pattern *pat;           \/* seq +0x40, NULL = none *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:ds10_rt_pattern *
+pattern	seq.h	/^    int32_t pattern;     \/* +0x40 current pattern, 0 = none *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+pattern	song.h	/^    ds10_song_pattern pattern[DS10_SONG_PATTERNS];            \/* +0xEC *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:ds10_song_pattern[]
+payload	seq.h	/^    uint16_t payload; \/* note | 0x7F00 *\/$/;"	m	struct:__anon10594b640308	typeref:typename:uint16_t
+payload_len	song.h	/^    uint32_t payload_len;   \/* file length minus the 16-byte hash *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint32_t
+pc	voice.h	/^    ds10_pitchctrl pc;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_pitchctrl
+peak	patch.h	/^    const uint32_t *peak;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const uint32_t *
+peak_raw	vcf.h	/^    int32_t peak_raw;    \/* +0x20 raw peak-table value; drives the damping *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+pending	seq.h	/^    int8_t pending;     \/* +1 enum ds10_note_ev, consumed each sub-tick *\/$/;"	m	struct:__anon10594b640208	typeref:typename:int8_t
+period	seq.h	/^    int32_t period;      \/* +0x14 derived from tempo *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+phase1	vco.h	/^    int32_t phase1;      \/* +0x14 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+phase2	vco.h	/^    int32_t phase2;      \/* +0x18 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+phase_down	lfo.h	/^    int32_t phase_down;  \/* +0x14 counts down by inc *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:int32_t
+phase_up	lfo.h	/^    int32_t phase_up;    \/* +0x1C counts up by inc *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:int32_t
+pitch	patch.h	/^    const int32_t *pitch;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const int32_t *
+pitch1_in	vco.h	/^    int32_t pitch1_in;   \/* +0x58 knob 4 + 0x3F *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+pitch2_in	vco.h	/^    int32_t pitch2_in;   \/* +0x5C knob 5 + 0x3F *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+pitch_in	vco.h	/^    int32_t pitch_in;    \/* +0x54 knob 3 + 0x3F *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+pitch_lookup	pitch.c	/^static inline int32_t pitch_lookup(int32_t v)$/;"	f	typeref:typename:int32_t	file:
+play_mode	seq.h	/^    uint8_t play_mode;  \/* +0x22 enum ds10_play_mode *\/$/;"	m	struct:__anon10594b640208	typeref:typename:uint8_t
+player	seq.h	/^    ds10_song_player *player;       \/* seq +0x3C *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:ds10_song_player *
+playing	seq.h	/^    uint8_t playing;     \/* +0x0C 1 = running *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+porta	patch.h	/^    const uint32_t *porta;$/;"	m	struct:__anon9be9bb8b0108	typeref:typename:const uint32_t *
+post	seq.c	/^static void post(ds10_seq_ctx *c, int opcode, int target, uint16_t payload)$/;"	f	typeref:typename:void	file:
+post_chan	seq.c	/^static void post_chan(ds10_seq_ctx *c, int track)$/;"	f	typeref:typename:void	file:
+prev	seq.h	/^    ds10_rt_pattern *prev;          \/* seq +0x44 *\/$/;"	m	struct:ds10_seq_ctx	typeref:typename:ds10_rt_pattern *
+prev2	vco.h	/^    int32_t prev2;       \/* +0x4C previous VCO2 output << 9 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+prod	mixer.h	/^    int32_t prod[DS10_MIX_CHANNELS];    \/* +0x68 + 4*ch, recomputed per frame *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:int32_t[]
+q	vcf.h	/^    int32_t q;           \/* resonance, from the peak knob via 0x02075F58 *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+rate	pitch.h	/^    int32_t rate;     \/* +0x0C portamento rate *\/$/;"	m	struct:__anonae9300930108	typeref:typename:int32_t
+rate_knob	lfo.h	/^    int16_t rate_knob;   \/* +0x30 kept so BPM sync can re-derive `inc` *\/$/;"	m	struct:__anon0fdb23bc0108	typeref:typename:int16_t
+ratio_l	fx.h	/^    int32_t ratio_l;    \/* +0x98 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+ratio_r	fx.h	/^    int32_t ratio_r;    \/* +0x9C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+raw	song.h	/^    int8_t raw[DS10_SONG_LANES];$/;"	m	struct:__anon1c36f3320208	typeref:typename:int8_t[]
+rd16	song.c	/^static uint16_t rd16(const uint8_t *p)$/;"	f	typeref:typename:uint16_t	file:
+rd32	song.c	/^static uint32_t rd32(const uint8_t *p)$/;"	f	typeref:typename:uint32_t	file:
+read_l	fx.h	/^    int32_t read_l, read_l_target, read_l_delta;   \/* +0x5C +0x60 +0x64 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+read_l_delta	fx.h	/^    int32_t read_l, read_l_target, read_l_delta;   \/* +0x5C +0x60 +0x64 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+read_l_target	fx.h	/^    int32_t read_l, read_l_target, read_l_delta;   \/* +0x5C +0x60 +0x64 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+read_r	fx.h	/^    int32_t read_r, read_r_target, read_r_delta;   \/* +0x68 +0x6C +0x70 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+read_r_delta	fx.h	/^    int32_t read_r, read_r_target, read_r_delta;   \/* +0x68 +0x6C +0x70 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+read_r_target	fx.h	/^    int32_t read_r, read_r_target, read_r_delta;   \/* +0x68 +0x6C +0x70 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+reapply_all	fx.c	/^static void reapply_all(ds10_fx *fx)$/;"	f	typeref:typename:void	file:
+release	env.h	/^    int32_t release;   \/* +0x0C *\/$/;"	m	struct:__anon0f60f9040108	typeref:typename:int32_t
+reserved	song.h	/^    uint8_t reserved[8];    \/* +0x0C  zero in every file in the ROM *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint8_t[8]
+reset_lfo_phase	event.c	/^static void reset_lfo_phase(ds10_lfo *l)$/;"	f	typeref:typename:void	file:
+retrig	drum.h	/^    uint8_t retrig;$/;"	m	struct:__anonf973cb730108	typeref:typename:uint8_t
+retrig	env.h	/^    uint8_t retrig;$/;"	m	struct:__anon0f60f9040208	typeref:typename:uint8_t
+revision	song.h	/^    uint16_t revision;      \/* +0x02 *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint16_t
+rol	md5.c	/^static uint32_t rol(uint32_t v, int n)$/;"	f	typeref:typename:uint32_t	file:
+root	drum.h	/^    int32_t root;           \/* +0x3C note the buffer was rendered at *\/$/;"	m	struct:__anonf973cb730208	typeref:typename:int32_t
+route	mixer.h	/^    int32_t route;                      \/* +0x84 *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:int32_t
+route	seq.c	/^static int route(int nmach, int target, int opcode, uint16_t payload,$/;"	f	typeref:typename:int	file:
+routed_wet	drumbuf.c	/^static int routed_wet(int route)$/;"	f	typeref:typename:int	file:
+run_step	seq.c	/^static void run_step(ds10_seq_ctx *c)$/;"	f	typeref:typename:void	file:
+s	seq.h	/^    ds10_seq *s;$/;"	m	struct:ds10_seq_ctx	typeref:typename:ds10_seq *
+sample	drum.h	/^    const int16_t *sample;  \/* +0x44; NULL renders nothing *\/$/;"	m	struct:__anonf973cb730208	typeref:typename:const int16_t *
+say	seq.c	/^static void say(ds10_seq_ctx *c, uint32_t msg, int32_t arg)$/;"	f	typeref:typename:void	file:
+scale	seq.h	/^    uint8_t scale;$/;"	m	struct:__anon10594b640408	typeref:typename:uint8_t
+set_lfo_rate	patch.c	/^static void set_lfo_rate(ds10_voice *v, int knob)$/;"	f	typeref:typename:void	file:
+set_mod_source	patch.c	/^static void set_mod_source(ds10_voice *v, int dest, int src)$/;"	f	typeref:typename:void	file:
+set_note	event.c	/^static void set_note(ds10_notectrl *n, int note)$/;"	f	typeref:typename:void	file:
+shape	drumbuf.c	/^static int32_t shape(int32_t x)$/;"	f	typeref:typename:int32_t	file:
+shape	mixer.c	/^static int32_t shape(int32_t x)$/;"	f	typeref:typename:int32_t	file:
+shape1	vco.h	/^    int32_t shape1;      \/* +0x24 waveform shaping amount for VCO1 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+shape2	vco.h	/^    int32_t shape2;      \/* +0x28 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+shaping_recip	vco.c	/^static inline int32_t shaping_recip(int32_t inc)$/;"	f	typeref:typename:int32_t	file:
+sincos	tables.h	/^    const int16_t *sincos;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:const int16_t *
+smooth	fx.c	/^static int32_t smooth(int32_t cur, int32_t target)$/;"	f	typeref:typename:int32_t	file:
+smooth_l	fx.h	/^    int32_t smooth_l;   \/* +0x54 one-pole smoothed delay time *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+smooth_r	fx.h	/^    int32_t smooth_r;   \/* +0x58 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+sounding	seq.h	/^    uint8_t sounding;   \/* +0 *\/$/;"	m	struct:__anon10594b640208	typeref:typename:uint8_t
+speed	drum.h	/^    int32_t speed;          \/* +0x34 phase increment, 17.15 *\/$/;"	m	struct:__anonf973cb730208	typeref:typename:int32_t
+stage	drum.h	/^    uint8_t stage;          \/* volblock +0x10 *\/$/;"	m	struct:__anonf973cb730108	typeref:typename:uint8_t
+stage	env.h	/^    uint8_t stage;     \/* +0x04 low byte, enum ds10_env_stage *\/$/;"	m	struct:__anon0f60f9040208	typeref:typename:uint8_t
+starting	seq.h	/^    uint8_t starting;    \/* +0x0D set on start; first tick initialises counters *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+step	seq.h	/^    int8_t step;         \/* +0x2D current step *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int8_t
+step	seq.h	/^    int8_t step[DS10_SEQ_MAXTRACKS][DS10_SEQ_STEPS][4];$/;"	m	struct:__anon10594b640508	typeref:typename:int8_t[][][4]
+step	song.h	/^    ds10_song_step step[DS10_SONG_TRACKS][DS10_SONG_STEPS];   \/* +0x42 *\/$/;"	m	struct:__anon1c36f3320308	typeref:typename:ds10_song_step[][]
+step_count	seq.h	/^    int32_t step_count;  \/* +0x28 monotonic step counter *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+steps	seq.h	/^    uint8_t steps;                                  \/* +0x06 *\/$/;"	m	struct:__anon10594b640508	typeref:typename:uint8_t
+steps	seq.h	/^    uint8_t steps;       \/* +0x2C steps per pattern, 16 *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+steps	song.h	/^    uint32_t steps;         \/* +0x00  steps in this pattern; 6..16 in the demos *\/$/;"	m	struct:__anon1c36f3320308	typeref:typename:uint32_t
+sub_cur	seq.h	/^    uint8_t sub_cur;     \/* +0x32 the current step's count *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+sub_even	seq.h	/^    uint8_t sub_even;    \/* +0x30 sub-ticks for even steps *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+sub_odd	seq.h	/^    uint8_t sub_odd;     \/* +0x31 for odd steps *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+subtick	seq.h	/^    uint8_t subtick;     \/* +0x2E countdown to the next step *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+sustain	env.h	/^    int32_t sustain;   \/* +0x08 - a level, not a rate *\/$/;"	m	struct:__anon0f60f9040108	typeref:typename:int32_t
+swing	seq.h	/^    uint8_t swing;       \/* +0x24 percent; 50 is straight *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+swing	song.h	/^    uint16_t swing;         \/* +0x0A  percent; 50 is straight *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint16_t
+sync	fx.h	/^    int16_t sync;       \/* +0x0E tempo-sync divisor; 0 = free running *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+sync	vco.h	/^    int32_t sync;        \/* +0x48 1 = reset VCO2 when VCO1 wraps *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+t	tables.h	/^    ds10_tables t;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:ds10_tables
+tail	song.h	/^    uint8_t tail[DS10_SONG_TAIL_MAX];$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint8_t[]
+tap	fx.c	/^static int32_t tap(const int16_t *buf, int32_t widx, int32_t delay)$/;"	f	typeref:typename:int32_t	file:
+target	amp.h	/^    int32_t target;      \/* +0x28 ramp target for `level` *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+target	pitch.h	/^    int32_t target;   \/* +0x00 note << 15 *\/$/;"	m	struct:__anonae9300930108	typeref:typename:int32_t
+tempo	fx.h	/^    int32_t tempo;      \/* +0xA0 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+tempo	seq.h	/^    uint8_t tempo;       \/* +0x10 BPM *\/$/;"	m	struct:__anon10594b640108	typeref:typename:uint8_t
+tempo	song.h	/^    uint32_t tempo;         \/* +0x04  BPM *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint32_t
+tick	seq.h	/^    int32_t tick;        \/* +0x20 sub-tick counter *\/$/;"	m	struct:__anon10594b640108	typeref:typename:int32_t
+time	fx.h	/^    int32_t time;       \/* +0x50 delay time, 15.15 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+trk	seq.h	/^    ds10_seq_track *trk;$/;"	m	struct:ds10_seq_ctx	typeref:typename:ds10_seq_track *
+type	fx.h	/^    int16_t type;       \/* +0x0C *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int16_t
+type	vcf.h	/^    int32_t type;        \/* enum ds10_vcf_type - the ACTIVE type, +0x40 *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+type_req	vcf.h	/^    int32_t type_req;    \/* +0x3C requested type, copied to `type` on change *\/$/;"	m	struct:__anon108e4d5a0108	typeref:typename:int32_t
+user	seq.h	/^    void *user;$/;"	m	struct:ds10_seq_ctx	typeref:typename:void *
+value	seq.h	/^    int8_t value;$/;"	m	struct:__anon10594b640408	typeref:typename:int8_t
+vcf	voice.h	/^    ds10_vcf vcf;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_vcf
+vco	voice.h	/^    ds10_vco vco;$/;"	m	struct:__anon89a846910108	typeref:typename:ds10_vco
+vco2pitch	pitch.h	/^    int16_t vco2pitch;     \/* +0x34 depth index, VCO2 detune *\/$/;"	m	struct:__anonae9300930208	typeref:typename:int16_t
+vel	seq.h	/^    int8_t vel;         \/* +6 the step's velocity, copied on a note *\/$/;"	m	struct:__anon10594b640208	typeref:typename:int8_t
+vel	song.h	/^    int8_t vel;    \/* +0x02  scales this channel's mixer volume *\/$/;"	m	struct:__anon1c36f3320108	typeref:typename:int8_t
+version	song.h	/^    uint16_t version;       \/* +0x00  1 = DS-10, 2 = PLUS, 0\/0xFFFF = pre-release *\/$/;"	m	struct:__anon1c36f3320408	typeref:typename:uint16_t
+voice_init	tables.h	/^    const int32_t *voice_init;$/;"	m	struct:__anona0cdfaf60108	typeref:typename:const int32_t *
+vol	drum.h	/^    int32_t vol;            \/* volblock +0x14 *\/$/;"	m	struct:__anonf973cb730108	typeref:typename:int32_t
+vol	mixer.h	/^    int32_t vol[DS10_MIX_CHANNELS];     \/* +0x50 + 4*ch *\/$/;"	m	struct:__anonc7edefa00108	typeref:typename:int32_t[]
+vol1	vco.h	/^    int32_t vol1;        \/* +0x38 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+vol2	vco.h	/^    int32_t vol2;        \/* +0x3C *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+wave1	vco.h	/^    int32_t wave1;       \/* +0x2C enum ds10_wave *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+wave2	vco.h	/^    int32_t wave2;       \/* +0x30 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+wave_saw	vco.c	/^static inline int32_t wave_saw(int32_t phase, int32_t shape)$/;"	f	typeref:typename:int32_t	file:
+wave_square	vco.c	/^static inline int32_t wave_square(int32_t phase, int32_t shape)$/;"	f	typeref:typename:int32_t	file:
+wave_triangle	vco.c	/^static inline int32_t wave_triangle(int32_t phase)$/;"	f	typeref:typename:int32_t	file:
+wet	amp.h	/^    int32_t wet;         \/* +0x20 wet\/dry balance for that path *\/$/;"	m	struct:__anon0f17f1190108	typeref:typename:int32_t
+wet	fx.h	/^    int32_t wet;        \/* +0x90 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+widx	fx.h	/^    int32_t widx;       \/* +0x94 *\/$/;"	m	struct:__anon7c9702f90208	typeref:typename:int32_t
+wr16	song.c	/^static void wr16(uint8_t *p, uint16_t v)$/;"	f	typeref:typename:void	file:
+wr32	song.c	/^static void wr32(uint8_t *p, uint32_t v)$/;"	f	typeref:typename:void	file:
+write_pattern	song.c	/^static void write_pattern(const ds10_song_pattern *q, uint8_t *p)$/;"	f	typeref:typename:void	file:
+xm_60	vco.h	/^    int32_t xm_60;       \/* +0x60 cross-mod coefficients *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+xm_64	vco.h	/^    int32_t xm_64;       \/* +0x64 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+xm_68	vco.h	/^    int32_t xm_68;       \/* +0x68 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+xm_6c	vco.h	/^    int32_t xm_6c;       \/* +0x6C *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+xmod	vco.h	/^    int32_t xmod;        \/* +0x0C cross-modulation mode, 0..3 *\/$/;"	m	struct:__anon108e73a30108	typeref:typename:int32_t
+zero_env	event.c	/^static void zero_env(ds10_env *e)$/;"	f	typeref:typename:void	file:
