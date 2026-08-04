@@ -204,8 +204,18 @@ syn1  view scroll=54 oct=3 scale=IONIAN lock=1
 drum1 view scroll=43 lock=-1
 ```
 
+- **Nothing here reaches playback.** Every call site of the accessor for these six
+  bytes is in a screen: `0x02050108` (the sequencer page) for `scroll`, `0x0204BFF8`
+  (the keyboard) for `oct`, `0x02049150`/`0x0204AB00` (the KAOSS page) for `scale`,
+  `key` and `slot`, `0x0202E01C` (the pattern page) for `lock`. On this side, core
+  reads exactly one byte of the record — `params[1 + track*12 + 6]`, the automation
+  path — and carries the rest for exactness. What `oct`, `scale` and `key` do affect
+  is what the keyboard and the pad *produce when touched*: `0x0204AB00` loads fields
+  4 and 5 into the page's own state and the touch handler makes notes with them. So
+  they matter to an interactive build, and to what a player records, not to
+  rendering a song that is already recorded.
 - Bytes 2, 3 and 6 of the record are automation rather than viewport, so they are
-  written with the lanes instead — see below.
+  written with the lanes instead — see above.
 - Bytes 8, 10 and 11 are not in the line. Byte 8 has a jump-table case that nothing
   calls, 10 and 11 have none at all, and all three are zero in all 10464 records
   here — so they come back through `[raw]` if a song ever sets one.
