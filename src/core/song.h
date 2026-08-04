@@ -82,13 +82,19 @@ typedef struct {
     /* +0x242  the mixer's 25 knobs, pushed in on a pattern change by 0x0206EC10.
      * Signed, because that pusher reads them with ldrsb. */
     int8_t mixer[DS10_SONG_MIX_KNOBS];
-    /* +0x25B: a zero byte, then six 12-byte per-track editor records at
-     * +0x25C. The accessor family at 0x0206B100 reads bytes 0..7 and 9 of a
-     * record, one variant per displacement: byte 0 is how far that track's
-     * piano roll is scrolled (0..84, counting upward - see
-     * ds10_editor_get_scroll), bytes 2 and 3 are a copy of its two automation
-     * lanes' knob ids, and the rest are read but not named. Bytes 8, 10 and 11
-     * have no accessor and are zero in every pattern in data/saves. */
+    /* +0x25B: a zero byte, then six 12-byte per-track editor records at +0x25C.
+     * The accessor at 0x0206B0C0 takes a field 0..9 and reads record byte
+     * `field`:
+     *
+     *   0 piano-roll scroll (0..84, see ds10_editor_get_scroll)   1 keyboard
+     *   octave   2, 3 a copy of the two lanes' knob ids   4 KAOSS pad scale
+     *   5 pad key   6 automation path, 1 = HLD and 2 = SMT   7 pad slot
+     *   9 the pattern page's LOCK
+     *
+     * Byte 6 is the only one playback wants: it is ds10_seq_auto.enable, and
+     * `automation()` in seq.c runs a lane only when it is 1. Nothing installs it
+     * from here yet - TODO.md 5d. Bytes 8, 10 and 11 have no caller and are zero
+     * in every pattern in data/saves; docs/songtext.md has the measurements. */
     uint8_t params[0x62 - DS10_SONG_MIX_KNOBS];
 } ds10_song_pattern;
 

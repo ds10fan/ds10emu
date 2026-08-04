@@ -312,10 +312,16 @@ static void run_step(ds10_seq_ctx *c)
     s->auto_sub = 0;
 }
 
-/* The automation processor, 0x0206E1EC, for the path a recorded song plays back
- * through: enable 1 with mode 0, the per-step latch. The other paths - enable 2,
- * and modes 1..3, which consume a pending value from live knob input - are not
- * decompiled, and a track set to one of them is left alone here.
+/* The automation processor, 0x0206E1EC, for one of its paths: enable 1 with mode
+ * 0, the per-step latch the pad calls HLD. A track on another path is left alone
+ * here. Modes 1..3 consume a pending value from live knob input and are not
+ * decompiled; enable 2, the pad's SMT, is - it maps the next step's value too and
+ * adds (next - cur) / subticks every sub-tick, so a lane ramps into the next
+ * recorded value instead of stepping to it (recon.md section 13).
+ *
+ * Nothing here reaches that path, because nothing installs the song's own value:
+ * songplay.c sets enable to 1 for every pattern, so an SMT pattern - 30% of the
+ * records in data/saves - plays as HLD. TODO.md 5d.
  *
  * Runs on every sub-tick but latches only on a step's first one, then always
  * pushes both lanes' held values into the machine. */
