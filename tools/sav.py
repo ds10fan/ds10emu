@@ -5,7 +5,7 @@ Subcommands:
   list <save>...                    what each slot holds
   extract <outdir> <save>...        write every written slot out as a .ds10song
   pack <save> <slot> <song> <out>   put a .ds10song back into a slot
-  unpack <save> <dir> [--clean]     the whole save as editable text
+  unpack <save> <dir> [--clean] [--view]  the whole save as editable text
   repack <dir> <out.ds10save>       that text back into a save file
 
 A save is 512 KiB and everything in it is MD5-checked the same way the rest of
@@ -197,16 +197,17 @@ def cmd_pack(args):
 
 def cmd_unpack(args):
     clean = "--clean" in args
-    args = [a for a in args if a != "--clean"]
+    view = "--view" in args
+    args = [a for a in args if a not in ("--clean", "--view")]
     if len(args) != 2:
-        print("usage: sav.py unpack <save> <dir> [--clean]")
+        print("usage: sav.py unpack <save> <dir> [--clean] [--view]")
         return 1
     path, outdir = args
     blob = load(path)
     os.makedirs(outdir, exist_ok=True)
     n = 0
     for i, rec in slots(blob):
-        text = songtext.dumps(rec[16:], clean=clean,
+        text = songtext.dumps(rec[16:], clean=clean, view=view,
                               source="%s slot %d" % (os.path.basename(path), i))
         with open(os.path.join(outdir, "slot%02d.ds10song.txt" % i), "w") as f:
             f.write(text)

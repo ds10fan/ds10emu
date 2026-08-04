@@ -3,6 +3,11 @@
 
 Subcommands:
   dump <song> [out.txt]         a .ds10song -> text
+    --clean                     drop the bytes nothing plays: the gate, velocity
+                                and pan of a step with no note, and the editor
+                                records. Same music, different MD5
+    --view                      write the editor records as `view` lines instead
+                                of leaving them to `[raw]`
   load <song.txt> [out]         text -> a .ds10song, MD5 header and all
   check <song>...               dump, load, and compare with the original
 
@@ -18,6 +23,12 @@ a step is in the same column everywhere. In the note row `-` carries the previou
 note on, which implies a `tie` on the step before it - that is how a held note is
 written, and why a run of `x` on a drum track (gate `retrig`) is three hits while
 `x - -` would be one held sample.
+
+The editor records at pattern +0x25C are not written at all unless `--view` is
+passed: they are where a piano roll is scrolled, what the KAOSS page has selected
+and which of two buttons the pattern page last had down, none of which playback
+reads. A plain dump leaves them to `[raw]`, so it still round-trips; `--clean`
+drops them outright, like the dead step bytes.
 
 Exactness. The dumper writes the named fields, loads its own output back, and
 appends a `raw <offset> <hex>` line for every byte that did not survive. So a
@@ -46,9 +57,6 @@ patterns, 165888 steps) - a field is written only when it differs:
   lanes               75% of the 6912 lane slots have no automation at all
   interp smt / hld    the automation path: smt on a synth track (3158 of its 3488
                       records), hld on a drum one, which has no lanes at all
-  lane shown=         the editor record's own copy of a lane's target, written
-                      only when it differs from the id the lane array carries -
-                      443 of 7176 slots, and playback reads the array
   modulation          82% of the 5 mod slots per patch are source `none`
   names               most of the six name fields in a pattern are empty
 
@@ -461,11 +469,12 @@ def parse_grid(kind, tokens, pat, track):
 #
 # docs/songtext.md has how each of these was measured. Each is written only when
 # it differs from the default below, which is the value a fresh pattern carries.
-# Bytes 2, 3 and 6 are not here: they are automation, not viewport, so they live
-# with the lanes - `<track> auto interp=` for byte 6 and `shown=` on a lane line
-# for that lane's copy of its target.
-VIEW_FIELDS = (("scroll", 0, 0), ("oct", 1, 0), ("scale", 4, 0), ("key", 5, 0),
-               ("slot", 7, 0), ("lock", 9, 0))
+# Byte 6 is not here: it is the automation path, which playback reads, so it lives
+# with the lanes as `<track> auto interp=`. Bytes 2 and 3 are, even though they name
+# the two lanes' targets: they are the editor's own copy of them, a KAOSS-page echo
+# of the ids the lane array carries, and the array is what plays.
+VIEW_FIELDS = (("scroll", 0, 0), ("oct", 1, 0), ("lane1", 2, 0), ("lane2", 3, 0),
+               ("scale", 4, 0), ("key", 5, 0), ("slot", 7, 0), ("lock", 9, 0))
 
 # Record byte 6, the automation path, and what a track carries when nothing says
 # otherwise: `smt` on a synth track and `hld` on a drum one, which have no lanes at
@@ -537,7 +546,9 @@ def view_text(pat, track):
         v = pat[base + byte]
         if v == dflt:
             continue
-        if name == "scale":
+        if name in ("lane1", "lane2"):
+            out.append("%s=%s" % (name, KNOB[v][0] if v < KNOBS else v))
+        elif name == "scale":
             out.append("scale=%s" % (SCALE[v] if v < len(SCALE) else v))
         elif name == "key":
             out.append("key=%s" % (KEY[v] if v < len(KEY) else v))
@@ -559,7 +570,9 @@ def parse_view(tokens, pat, track):
         name, _, val = t.partition("=")
         if name not in byte:
             continue
-        if name == "scale":
+        if name in ("lane1", "lane2"):
+            v = KNOB_BY_NAME[val] if val in KNOB_BY_NAME else int(val)
+        elif name == "scale":
             v = SCALE.index(val) if val in SCALE else int(val)
         elif name == "key":
             v = KEY.index(val) if val in KEY else int(val)
@@ -594,23 +607,14 @@ def lane_text(pat, track, lane):
     step 0 (0x0206DEE4, and songplay does the same), so a lane cannot retarget
     mid-pattern. 31 of the 6912 lane slots in the saves do hold a second id on
     their later steps - what the editor left when the target was changed - and
-    those come back as `raw` lines rather than as syntax nobody needs.
-
-    `shown=` is the editor record's own copy of the target, byte 2 or 3, which the
-    KAOSS page displays and playback ignores. It matches the lane's id in 6533 of
-    the 7176 lane slots here, so it is written only when it does not."""
+    those come back as `raw` lines rather than as syntax nobody needs."""
     base = P_LANE + track * 64
-    rbase = P_PARAMS + 1 + track * 12 + 2 + lane
     raw = [pat[base + s * 4 + lane] for s in range(STEPS)]
     knob = [pat[base + s * 4 + 2 + lane] for s in range(STEPS)]
-    shown = pat[rbase]
-    if (all(r == NO_NOTE for r in raw) and knob[0] == (11 + lane)
-            and shown == knob[0]):
+    if all(r == NO_NOTE for r in raw) and knob[0] == (11 + lane):
         return None
     name = KNOB[knob[0]][0] if knob[0] < KNOBS else str(knob[0])
     out = ["%s lane%d knob=%s" % (TRACK_NAME[track], lane + 1, name)]
-    if shown != knob[0]:
-        out.append("shown=%s" % (KNOB[shown][0] if shown < KNOBS else shown))
     for s in range(STEPS):
         if raw[s] != NO_NOTE:
             out.append("%d=%d" % (s, raw[s]))
@@ -619,22 +623,14 @@ def lane_text(pat, track, lane):
 
 def parse_lane(tokens, pat, track, lane):
     base = P_LANE + track * 64
-    rbase = P_PARAMS + 1 + track * 12 + 2 + lane
     knob = 11 + lane
-    shown = None
     for t in tokens:
         name, _, val = t.partition("=")
-        if name in ("knob", "shown"):
-            v = KNOB_BY_NAME.get(val, None)
-            v = v if v is not None else int(val)
-            if name == "knob":
-                knob = v
-            else:
-                shown = v
+        if name == "knob":
+            knob = KNOB_BY_NAME.get(val, None)
+            knob = knob if knob is not None else int(val)
     for s in range(STEPS):
         pat[base + s * 4 + 2 + lane] = knob
-    # The record's copy follows the lane unless the line says otherwise.
-    pat[rbase] = knob if shown is None else shown
     for t in tokens:
         if "=" in t and t.split("=")[0].isdigit():
             s, _, v = t.partition("=")
@@ -682,9 +678,6 @@ def blank(payload_len):
         for t in range(TRACKS):
             base = o + P_PARAMS + 1 + t * 12
             p[base + AUTO_BYTE] = AUTO_DEFAULT[1 if t >= LANES else 0]
-            if t < LANES:
-                # A lane's own id is the default for the record's copy of it.
-                p[base + 2], p[base + 3] = 11, 12
         p[o + P_MIX:o + P_MIX + MIX_KNOBS] = INIT_MIX
     if payload_len >= DRUM_KNOBS + DRUMS * KNOBS:
         for d in range(DRUMS):
@@ -734,7 +727,24 @@ def dead_bytes(payload):
     return out
 
 
-def dumps(payload, clean=False, source=None):
+def view_bytes(payload):
+    """Every byte of every editor record except the automation path. Editor state:
+    where a piano roll is scrolled, what the KAOSS page has selected, which of two
+    buttons the pattern page last had down. Nothing playback reads - see
+    docs/songtext.md - so `clean` drops them and a plain dump leaves them to `raw`
+    unless `view` is asked for."""
+    out = set()
+    for i in range(PATTERNS):
+        o = PAT_OFF + i * PAT_SIZE
+        if o + PAT_SIZE > len(payload):
+            break
+        for t in range(TRACKS):
+            base = o + P_PARAMS + 1 + t * 12
+            out |= {base + b for b in range(12) if b != AUTO_BYTE}
+    return out
+
+
+def dumps(payload, clean=False, source=None, view=False):
     """A song payload (no MD5 header) as text."""
     out = []
     if source:
@@ -825,10 +835,11 @@ def dumps(payload, clean=False, source=None):
         mix = pat[P_MIX:P_MIX + MIX_KNOBS]
         if bytes(mix) != INIT_MIX:
             body += mix_text(mix)
-        for t in range(TRACKS):
-            rec = view_text(pat, t)
-            if rec:
-                body.append(rec)
+        if view:
+            for t in range(TRACKS):
+                rec = view_text(pat, t)
+                if rec:
+                    body.append(rec)
         if body:
             out.append("")
             out.append("[pattern %d]" % i)
@@ -836,7 +847,7 @@ def dumps(payload, clean=False, source=None):
 
     text = "\n".join(out) + "\n"
     rebuilt = loads(text, _raw=False)
-    skip = dead_bytes(payload) if clean else set()
+    skip = (dead_bytes(payload) | view_bytes(payload)) if clean else set()
     extra = spans(payload, rebuilt, skip)
     if extra:
         out.append("")
@@ -1083,12 +1094,14 @@ def write_song(path, payload):
 
 def cmd_dump(args):
     clean = "--clean" in args
-    args = [a for a in args if a != "--clean"]
+    view = "--view" in args
+    args = [a for a in args if a not in ("--clean", "--view")]
     if not args:
-        print("usage: songtext.py dump [--clean] <song> [out.ds10song.txt]")
+        print("usage: songtext.py dump [--clean] [--view] <song> [out.ds10song.txt]")
         return 1
     payload = read_song(args[0])
-    text = dumps(payload, clean=clean, source=os.path.basename(args[0]))
+    text = dumps(payload, clean=clean, view=view,
+                 source=os.path.basename(args[0]))
     if len(args) > 1:
         open(args[1], "w").write(text)
         print("%s: %d lines" % (args[1], text.count("\n")))
@@ -1112,16 +1125,17 @@ def cmd_check(args):
     bad = 0
     for path in args:
         payload = read_song(path)
-        for clean in (False, True):
-            back = loads(dumps(payload, clean=clean))
+        # Exact both ways round - with the editor records left to `raw` and with
+        # them written as `view` lines - then clean, which drops what nothing plays.
+        for clean, view, tag in ((False, False, "exact"), (False, True, "view"),
+                                 (True, False, "clean")):
+            back = loads(dumps(payload, clean=clean, view=view))
             if clean:
-                skip = dead_bytes(payload)
+                skip = dead_bytes(payload) | view_bytes(payload)
                 diff = [i for i in range(len(payload))
                         if payload[i] != back[i] and i not in skip]
-                tag = "clean"
             else:
                 diff = [i for i in range(len(payload)) if payload[i] != back[i]]
-                tag = "exact"
             if diff or len(back) != len(payload):
                 bad += 1
                 print("FAIL %-24s %s: %d bytes differ, first at %#x"

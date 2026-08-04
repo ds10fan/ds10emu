@@ -7,7 +7,7 @@ two in step cost more than it caught. Nothing about the format below depends on
 that — exactness is checked the same way either way.)
 
 ```sh
-python3 tools/songtext.py dump [--clean] x.ds10song [x.ds10song.txt]   # load, check
+python3 tools/songtext.py dump [--clean] [--view] x.ds10song [out.txt]  # load, check
 python3 tools/sav.py unpack x.ds10save dir/   # slotNN.ds10song.txt + bank.ds10patch.txt
 ```
 
@@ -34,8 +34,6 @@ syn1  note D5   D6   C3   -    | -    .    .    .    | .    .    .    .
 drum1 note x    .    x    .    | x    .    x    .    | x    .    x    .
 syn1  lane1 knob=cutoff 0=69 1=62
 mix route=drums vol=105,105,104,105,66,105
-syn1  view scroll=46 oct=3 scale=IONIAN
-drum1 view scroll=36
 ```
 
 ## What it compiles to
@@ -54,7 +52,7 @@ drum1 view scroll=36
 | `syn1 name "XLEAD"` | payload `+0x2BFC` + pattern*48 | `58 4c 45 41 44 00` |
 | `syn1 lane1 knob=cutoff 0=69 1=62` | pattern `+0x1C2` | raw 69, 62, then -1 for the rest; knob 11 on every step |
 | `mix route=drums vol=…` | pattern `+0x242`, 25 knobs | knob 0=3 (drums), 17..22=105,105,104,105,66,105 |
-| `syn1 view scroll=46 …` | pattern `+0x25C + track*12`, 12 bytes | `2e 03 0b 0c 01 00 02 00 00 00 00 00` — bytes 2, 3 and 6 come from the lane and `auto` lines |
+| `syn1 auto interp=hld` | pattern `+0x25C + track*12 + 6` | 1 |
 
 The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + step*4`:
 
@@ -149,26 +147,26 @@ hits, `x - -` would be one held sample.
 
 ## Automation — `lane`, `auto`, and two copies of the target
 
-A lane's target is stored more than once, and the copies can disagree.
+```
+syn1 lane1 knob=cutoff 0=69 1=62     # the target, then the steps that have a value
+syn1 auto interp=hld                 # the path, when it is not the default
+```
+
+A lane's target is stored more than once, and the copies can disagree:
 
 | where | what | who reads it |
 |---|---|---|
 | `+0x1C2 + track*64 + step*4 + 2 + lane` | a knob id on **every one of the 16 steps** | the lane initialiser `0x0206DEE4` reads step 0 and nothing else |
 | `+0x25C + track*12 + 2 + lane` | one more copy per track | the KAOSS page: `0x0203CD5C` loads it into the page's own slots, `0x020445D0` writes it back |
 
-So the format writes what plays as `knob=` and the record's copy as `shown=`, and
-only when the two differ:
+`knob=` is the first one, the one that plays. The second is a KAOSS-page echo, so it
+stays with the rest of the editor record under `view` — where it is `lane1=` /
+`lane2=` — rather than cluttering the lane line.
 
-```
-syn1 lane1 knob=cutoff 0=69 1=62            # both agree - 6533 of 7176 lane slots
-syn2 lane2 knob=peak shown=cutoff 0=81      # they do not - 443 slots, 103 of them
-                                            # on a lane that has recorded values
-syn1 auto interp=hld                        # the path, when it is not the default
-```
-
-- The disagreements are real, not a decoding error: `new_16` pattern 2 has the array
-  saying `peak` and the record saying `cutoff`, and 23 records hold `31` in the copy,
-  which is not a knob id at all (the synth has 31 knobs, 0..30). The editor evidently
+- The disagreements are real, not a decoding error: they differ in 443 of 7176 lane
+  slots, 103 of them on lanes that have recorded values. `new_16` pattern 2 has the
+  array saying `peak` and the record saying `cutoff`, and 23 records hold `31` in the
+  copy, which is not a knob id at all (the synth has 31 knobs, 0..30). The editor
   updates the two on different occasions; playback is unaffected, since it only ever
   reads step 0 of the array.
 - In 31 lane slots the array disagrees *with itself* — a later step carrying a
@@ -183,29 +181,40 @@ syn1 auto interp=hld                        # the path, when it is not the defau
   records here are `smt`, and every drum record is `hld`, drums having no lanes at
   all. That leaves 394 `auto` lines in the whole corpus.
 
-## `view` — the editor records
+## `view` — the editor records, off by default
 
-One line per track per pattern, only when something on it is off default. The
-record is 12 bytes at `+0x25C + track*12`, and the game reads nine of them through
-one accessor (`0x0206B0C0`, `cmp field,#9` then a ten-case jump table where case
-*i* is `ldrb [record + i]`, so a field index is a byte index).
+**A dump does not write these unless you ask for them** (`dump --view`). They are
+editor state, nothing playback reads, and they are the noisiest thing in the file —
+one line per track per pattern. Without `--view` they come back through `[raw]`, so
+a plain dump still reloads byte for byte; `--clean` drops them outright, the way it
+drops the dead bytes of a step with no note.
+
+The record is 12 bytes at `+0x25C + track*12`, and the game reads nine of them
+through one accessor (`0x0206B0C0`, `cmp field,#9` then a ten-case jump table where
+case *i* is `ldrb [record + i]`, so a field index is a byte index).
 
 | field | byte | default | value | seen |
 |---|---|---|---|---|
 | `scroll` | 0 | 0 | piano-roll scroll, counting upward | 0..84 |
 | `oct` | 1 | 0 | keyboard octave — the row of six dots over the keys | 0..5 |
+| `lane1` | 2 | 0 | the KAOSS page's copy of lane 1's target, a knob name | |
+| `lane2` | 3 | 0 | the same for lane 2 | |
 | `scale` | 4 | 0 = `CHROMA` | KAOSS pad scale, a name from the table below | 0..29 |
 | `key` | 5 | 0 = `C` | KAOSS pad key, `C`..`B` | 0..11 |
 | `slot` | 7 | 0 | KAOSS pad slot the `1`/`2`/`3` buttons select | 0..2 |
 | `lock` | 9 | 0 | pattern page `LOCK`: `1` engaged, `-1` neither it nor `COPY` | 0, 1, -1 |
 
 ```
-syn1  view scroll=54 oct=3 scale=IONIAN lock=1
+syn1  view scroll=54 oct=3 lane1=cutoff lane2=peak scale=IONIAN lock=1
 drum1 view scroll=43 lock=-1
 ```
 
-- **Nothing here reaches playback.** Every call site of the accessor for these six
-  bytes is in a screen: `0x02050108` (the sequencer page) for `scroll`, `0x0204BFF8`
+- Byte 6, the automation path, is the one byte of the record playback reads, so it
+  is not here — it is `<track> auto interp=` above, and it is written whether or not
+  `--view` is on. `lane1` and `lane2` are the KAOSS page's copy of the lanes'
+  targets, not what plays; the automation section has how far they drift.
+- **Nothing here reaches playback.** Every call site of the accessor for these eight
+  fields is in a screen: `0x02050108` (the sequencer page) for `scroll`, `0x0204BFF8`
   (the keyboard) for `oct`, `0x02049150`/`0x0204AB00` (the KAOSS page) for `scale`,
   `key` and `slot`, `0x0202E01C` (the pattern page) for `lock`. On this side, core
   reads exactly one byte of the record — `params[1 + track*12 + 6]`, the automation
@@ -219,9 +228,9 @@ drum1 view scroll=43 lock=-1
 - Bytes 8, 10 and 11 are not in the line. Byte 8 has a jump-table case that nothing
   calls, 10 and 11 have none at all, and all three are zero in all 10464 records
   here — so they come back through `[raw]` if a song ever sets one.
-- Naming these costs about 80 lines a song over the positional form this replaced,
-  all of it editor state. `--clean` does not drop them: they are live bytes, and
-  dropping them would change the song's MD5 for no musical difference.
+- Cost of the four modes on one 32-bar song (`xfer2_10`): plain 539 lines of which
+  272 are `raw`; `--view` 586 with 223 `raw`; `--clean` 268 with one; `--clean
+  --view` 364. `make test-songtext` round-trips all three that claim to be exact.
 
 Pad scales, `0x02084E54`, 16 bytes each:
 
