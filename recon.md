@@ -2157,8 +2157,13 @@ KAOSS, keyboard - and a pair is the synth 1 and synth 2 variants of one page.
 So the low bit of the index is which synth the box selects, which is what
 makes SYN2 EDIT open synth 2's patch.
 
-MENU and SONG are drawn on the map but are in neither table, and `31_SONG` is
-not in the twenty-entry screen table at all, so nothing on the map opens it.
+MENU and SONG are drawn on the map but are in neither table, and `31_SONG` is not
+in the twenty-entry screen table at all - **which does not mean nothing opens it**.
+Tapping the map's SONG box at (229,128) opens `31_SONG` on the hardware, so its
+dispatch is somewhere other than that table; `tools/songhw.py` walks there to start
+an arrangement playing. The claim that used to stand here, that nothing on the map
+opens it, was wrong, and it cost an afternoon: playing from any other page loops the
+current pattern instead of walking the chain.
 
 
 `0x02062914` builds 90_MAP out of two tables of 0x44-byte entries. Each carries

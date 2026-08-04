@@ -18,7 +18,14 @@ nothing but the reimplementation: the oscillator, filter, envelope, LFO,
 portamento and amp; the 31-knob patch format; the drum voice and the one-second
 buffer a drum patch is rendered into; the mixer's 25 knobs and the effect's
 eight; the sequencer's transport, gating, note emission and event routing; the
-song file format; automation lanes.
+song file format; both automation paths the KAOSS pad offers, `HLD` and `SMT`;
+and the song page's per-bar track mute.
+
+Verified over **whole arrangements**, not just one looping pattern: `make
+test-songwalk` walks a song's chain in the original's own code and compares its
+mix bus with `out/songplay` sample for sample. `new_00` (eight patterns, no
+repeats, a cutoff lane in every one) and `fresh10_02` (a mute lane over both
+synths and three drums) are bit-identical, 381248 and 393216 samples.
 
 **Graphics.** The DS 2D hardware is modelled in C and is pixel-exact against
 melonDS over 29 screens. The interface's pages are drawn from the game's own
@@ -38,10 +45,20 @@ editable; the pattern page selects patterns; the map's per-synth boxes pick
 the track.
 
 What is *not* done: CLR and the transport buttons on each page's top bar are
-not wired, so the browser page drives those from HTML controls instead;
-`31_SONG` draws but is not interactive, and nothing on the map opens it.
-Captions still come from the captured frame rather than being rasterised. See
-[`TODO.md`](TODO.md) §6.
+not wired, so the browser page drives those from HTML controls instead, and
+`31_SONG` draws but is not interactive. (On the hardware it *is* reachable, which
+this project had recorded the wrong way round: `L` puts the map on the touch
+screen and its `SONG` box opens the page.) Captions still come from the captured
+frame rather than being rasterised. See [`TODO.md`](TODO.md) §6.
+
+**Formats.** The three the game uses have names and suffixes here: `.ds10song`,
+`.ds10patch` and `.ds10save`. `tools/sav.py` is the one tool for a save — list,
+extract, pack a slot, or unpack the whole 512 KiB to text and back. `songtext` is
+that text: a song as `note`/`gate`/`vel`/`pan` rows, named patch and mixer knobs,
+automation lanes on the pad's two axes, the song page's `mute` and `trs` lanes, and
+a `[raw]` block for whatever is still unnamed, so a dump reloads byte for byte —
+109 of 109 songs and all six saves do. [`docs/songtext.md`](docs/songtext.md) is the
+reference.
 
 - [`recon.md`](recon.md) — what the ROM actually contains: container layout, the
   ARM9/ARM7 memory map, NitroFS inventory, the song and patch formats, the
@@ -57,17 +74,20 @@ Every claim above is a test, not an impression.
 
 | target | what it compares | scale |
 |---|---|---|
-| `make test` | the audio engine against the original under Unicorn | 17 suites |
+| `make test` | the audio engine against the original under Unicorn | 25 suites |
 | `make test-obj` | the sprite widget's OAM against the game's own setter | 171 checks |
 | `make test-2d` | the 2D hardware against melonDS, pixel for pixel | 72 frames |
 | `make test-page` | each page rebuilt from assets, against melonDS | 22 screens |
 | `make test-editor` | an edited song round-tripped through the file format | hash and all |
-| `make test-drumbuf` | a drum buffer against one a running DS rendered | 3 drums, 9216 samples |
+| `make test-drumbuf` | a drum buffer against one a running DS rendered | 4 drums, 12288 samples |
+| `make test-songwalk` | a whole arrangement, the ROM's own mix bus against `songplay` | 6 channels, 381248 samples |
 | `make test-songtext` | every song through the text format and back | 109 songs |
 | `make test-webedit` | a song entered in the browser build, then rendered by `songplay` | sample-exact |
 
-Read `TODO.md` §1 before trusting the audio number — those suites are strong on
-DSP and blind on the wiring around it, which is where all four known bugs were.
+`make test` is strong on DSP and was blind on the wiring around it, which is
+where every bug found by ear had been; `test-songwalk` is what closed that, and
+found five more on the way — three of them in the test harness rather than in the
+engine. `TODO.md` §1 has what it still does not reach.
 
 ### Prior art
 
@@ -100,7 +120,9 @@ make serve                  # build for the browser and serve it on :8537
 make test                   # the audio engine, against the original
 make test-2d                # the 2D hardware, against melonDS
 make songplay               # out/songplay song.dat -o out.wav
+make test-songwalk          # a whole arrangement, the ROM's own render against ours
 python3 tools/songtext.py   # dump|load|check, the text format
+python3 tools/songhw.py     # play a song on the ROM in melonDS and capture the audio
 
 make recon                  # extract everything from the ROM into out/
 make sweep                  # walk the whole interface, snapshotting each screen
@@ -115,11 +137,14 @@ make sweep                  # walk the whole interface, snapshotting each screen
 | `tools/ndsx.py` | NDS header, NitroFS walk, BLZ decode, extraction, autoload memory map, patch dump, register classification |
 | `tools/emu.py` | per-CPU Unicorn image and function-call harness — the oracle the audio verification depends on |
 | `tools/oracle.py` | renders real DS-10 audio by executing the original ARM9 code, and writes the test vectors |
-| `tools/ndsref/` | headless melonDS: dumps the whole 2D state and the framebuffers it produced |
+| `tools/ndsref/` | headless melonDS: dumps the whole 2D state and the framebuffers it produced, and with `-a` the SPU's output |
 | `tools/snap.py` | reads those dumps; `tools/sweep.py` drives the interface to produce them |
 | `tools/nitro.py` | the NITRO asset containers, and a background composed the way the hardware would |
 | `tools/sav.py` | a `.ds10save`: list, extract or pack a song slot, unpack the whole thing to text and back |
 | `tools/songtext.py` | a song as editable text and back, byte for byte — [`docs/songtext.md`](docs/songtext.md) |
+| `tools/songwalk.py` | a whole arrangement rendered twice, by the ROM's own code and by `out/songplay`, compared sample for sample |
+| `tools/songhw.py` | plays a song on the ROM under melonDS and captures it, for listening rather than diffing |
+| `tools/uibyte.py` | what one byte of a song does: change it, boot twice, diff the framebuffers |
 | `tools/widgets.py` | recovers sprite widgets from a captured frame by rebuilding their OAM |
 | `tools/probe.py` | branch-target validation, lookup-table detection, xrefs, multiply density |
 
