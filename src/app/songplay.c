@@ -175,10 +175,11 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
         ds10_mixer_set_knob(sp->mix, t, q->mixer[t]);
     /* The sequencer reads per-channel volume and pan out of this same array. */
     memcpy(sp->chan, q->mixer, DS10_MIX_KNOBS);
-    /* This has just put the pattern's own volumes back over any mute; the mute is
-     * re-applied after the tick returns, which is when the transport's own frame
-     * update does it. */
-    sp->muted = -1;
+    /* This has just put the pattern's own volumes back over any mute. If anything
+     * is muted, apply_mute puts it back after the tick returns, which is when the
+     * transport's own frame update does it; if nothing is, it leaves the mixer
+     * alone, because re-posting these volumes would scale them by each track's
+     * velocity latch - zero for a track that is not sounding. */
 
     for (t = 0; t < NSYN; t++) {
         memset(&c->autom[t], 0, sizeof c->autom[t]);
@@ -304,6 +305,9 @@ static void dump_state(const ds10_mixer *m)
         printf(" v%d=%ld", i, (long)m->vol[i]);
     for (i = 0; i < DS10_MIX_CHANNELS; i++)
         printf(" p%d=%ld", i, (long)m->pan[i]);
+    for (i = 0; i < DS10_MIX_CHANNELS; i++)
+        printf(" d%d=%ld", i, (long)m->prod[i]);
+    printf(" mute=%d gain=%ld", m->mute, (long)m->gain);
     printf("\nfx type=%d sync=%d time=%d ratio=%d lfo=%d depth=%d fb=%d"
            " drywet=%d fben=%d\n", fx->type, fx->sync, fx->k_time, fx->k_ratio,
            fx->k_lfo, fx->k_depth, fx->k_fb, fx->k_drywet, fx->fb_enable);
@@ -377,6 +381,7 @@ int main(int argc, char **argv)
     const char *out = "song.wav", *in = NULL;
     int bars = 0, only = -1, i, chmask = 0x3F, automin = 0;
     const char *drumdump = 0;
+    long state_at = -1;
     static uint16_t fill[2 * DS10_SONG_PATTERNS];
     static ds10_song song;
     static ds10_rt_pattern rt[DS10_SONG_PATTERNS];
@@ -606,6 +611,7 @@ int main(int argc, char **argv)
 
     if (getenv("DS10_STATE"))
         dump_state(&mix);
+    state_at = getenv("DS10_STATE") ? atol(getenv("DS10_STATE")) : -1;
 
     f = fopen(out, "wb");
     if (!f) {
@@ -651,6 +657,16 @@ int main(int argc, char **argv)
                                      (int32_t)ev[k].payload);
                 }
             }
+        }
+
+        if (state_at > 0 && (long)(nframes / FRAME) == state_at) {
+            printf("--- frame %ld\n", state_at);
+            dump_state(&mix);
+            printf("step=%d count=%d chan %d,%d,%d,%d,%d,%d"
+                   " vel %d,%d,%d,%d,%d,%d\n", seq.step, (int)seq.step_count,
+                   chan[17], chan[18], chan[19], chan[20], chan[21], chan[22],
+                   trk[0].vel, trk[1].vel, trk[2].vel, trk[3].vel, trk[4].vel,
+                   trk[5].vel);
         }
 
         /* The per-bar mute, where the transport applies it: after the tick, from

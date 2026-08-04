@@ -1408,7 +1408,6 @@ def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None,
         # but the queue would eventually run off the end of the buffer.
         o.call(MIXER_RENDER, mixer)
         o.uc.mem_write(mixer + 0x08, b"\0")
-
         for p in (mixl, mixr):
             raw = bytes(o.uc.mem_read(p, FRAME * 2))
             frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
