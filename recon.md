@@ -1118,7 +1118,7 @@ is the note in the low byte with `0x7F` above it.
 
 ### The tempo has to reach the machines
 
-`0x0206DA90` is the sequencer's tempo setter. It clamps to **10..250** and, when
+`0x0206DA80` is the sequencer's tempo setter. It clamps to **10..250** and, when
 the value changes, broadcasts **opcode 4 to target `0x70` - every machine and the
 mixer** - before deriving `period = 60000000 / tempo`.
 

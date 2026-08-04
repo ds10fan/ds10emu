@@ -252,7 +252,7 @@ struct ds10_seq_ctx {
  * the events appended to c->out. */
 int ds10_seq_run(ds10_seq_ctx *c);
 
-/* The sequencer's own tempo setter, 0x0206DA90: clamp to 10..250 and, if it
+/* The sequencer's own tempo setter, 0x0206DA80: clamp to 10..250 and, if it
  * changed, broadcast opcode 4 to target 0x70 - every machine AND the mixer.
  * That broadcast is the only thing that tells a voice the tempo, and a
  * BPM-synced LFO's rate is scaled by it, so without it every synced LFO runs at

@@ -24,7 +24,7 @@ The fix is to make the harness walk patterns:
   `set_pattern` (`0x0206DBE4`) rather than poking `seq[0x40]` — that puts the
   `0x1D` broadcast, the patch reload, the mixer knob push and the lane init under
   comparison;
-- drive the tempo through `0x0206DA90` instead of writing `seq +0x10` and
+- drive the tempo through `0x0206DA80` instead of writing `seq +0x10` and
   `seq +0x14` directly, so the opcode-4 broadcast is compared;
 - give the C side the same player and install hook `songplay` already uses, so
   what is tested is what actually renders.

@@ -458,6 +458,9 @@ SEQ_CONFIG = 0x0206D830    # (seq, nsynths, ndrums)
 SEQ_SET_SWING = 0x0206DB14 # (seq, swing_percent)
 SEQ_TICK = 0x0206E5AC
 MSG_BAR = 0x73747074           # "stpt", the ask-for-a-pattern message
+SEQ_TEMPO = 0x0206DA80         # (seq, bpm) - sets it and broadcasts opcode 4
+                               # to target 0x70. Note the entry is DA80; the
+                               # DA90 in recon.md and seq.h is 16 bytes in.
 DIVIDE = 0x0200C158        # (a, b) -> a/b in r0
 SEQ_SIZE = 0x214
 
@@ -1157,7 +1160,7 @@ def _song_pattern(o, payload, idx):
     return _rt_pattern(o, song_pat, NMACH, steps, 2, dflt), song_pat, steps
 
 
-def capture_songrender(blob, pattern_idx, frames, chain=None):
+def capture_songrender(blob, pattern_idx, frames, chain=None, drumbufs=None):
     """One pattern looped, or - with `chain` - the arrangement walked the way the
     transport walks it: the sequencer asks its player for a pattern once a bar and
     the original's own installer takes it from there."""
@@ -1203,7 +1206,13 @@ def capture_songrender(blob, pattern_idx, frames, chain=None):
 
     # Four real drum voices as machines 2..5, each over a buffer rendered from
     # the song's drum patch.
-    drumbufs = render_drum_buffers(o, payload)
+    # `drumbufs` supplied means the caller has buffers it wants held constant -
+    # tools/songwalk.py passes songplay's, whose content make test-drumbuf already
+    # holds to buffers read out of a running DS. Left out, this renders them the
+    # way render_drum_buffers does, which is an inference rather than the game's
+    # own recorder path and is about half the amplitude of the real thing.
+    if drumbufs is None:
+        drumbufs = render_drum_buffers(o, payload)
     drum, drumout = [], []
     for i in range(4):
         dv = o.call(DRUM_NEW)
@@ -1281,8 +1290,6 @@ def capture_songrender(blob, pattern_idx, frames, chain=None):
     o.w32(seq + 0x50, 4)
     o.w32(seq + 0x60, chan_arr)
     o.call(SEQ_SET_SWING, seq, swing)
-    o.uc.mem_write(seq + 0x10, bytes([tempo & 0xFF]))
-    o.w32(seq + 0x14, _s32(o.call(DIVIDE, DS10_SEQ_TEMPO_NUM, tempo)))
     o.w32(seq + 0x40, pat)
     o.w32(pat + 0x508, seq)
     o.uc.mem_write(seq + 0x2C, bytes([steps]))
@@ -1297,13 +1304,16 @@ def capture_songrender(blob, pattern_idx, frames, chain=None):
             o.call(SEQ_LANE_INIT, seq, t, lane)
     o.uc.mem_write(seq + 0x0C, bytes([1, 1]))
 
-    # Opcode 4 carries the BPM to the mixer's effect; nothing the sequencer
-    # broadcasts does, so the transport must and so must we.
-    mq = o.u32(mixer + 0x04)
-    o.uc.mem_write(mq, struct.pack("<Ii", 4, tempo))
-    o.uc.mem_write(mixer + 0x08, bytes([1]))
+    # The tempo, through the sequencer's own setter, which broadcasts opcode 4 to
+    # target 0x70 - every machine AND the mixer. Writing seq+0x10/+0x14 by hand and
+    # queueing the mixer event alone is what this used to do, and it left every
+    # voice's synced LFO at the constructor's 120 BPM: songwalk found it as the one
+    # channel of six that would not match, the only one with mgsync on.
+    o.call(SEQ_TEMPO, seq, tempo)
     o.call(MIX_DISPATCH, mixer)
     o.uc.mem_write(mixer + 0x08, b"\0")
+    for v in range(2):
+        o.call(EVENT_DISPATCH, syn[v])
 
     # The patches the pattern carries, pushed knob by knob exactly as
     # 0x0206DFCC does on a pattern change.

@@ -38,6 +38,18 @@ def song_chain(payload):
     return chain
 
 
+def our_drumbufs(song):
+    """The four drum buffers songplay renders, for the ROM side to use as well.
+    Their content is checked against a running DS by `make test-drumbuf`; holding
+    them constant here keeps this test on the wiring, and stops it comparing
+    against the oracle's own weaker inference of them."""
+    prefix = os.path.join(OUT, os.path.splitext(os.path.basename(song))[0])
+    subprocess.run(["./out/songplay", "-b", "1", "-D", prefix,
+                    "-o", prefix + ".probe.wav", song],
+                   check=True, stdout=subprocess.DEVNULL)
+    return [open("%s.drum%d.raw" % (prefix, d), "rb").read() for d in range(4)]
+
+
 def capture(song, bars):
     """The ROM's mix bus for `bars` bars, cached because it takes a few seconds."""
     import oracle
@@ -54,7 +66,8 @@ def capture(song, bars):
         return path, chain, tempo, bars
     print("capturing %d frames (%d bars of %s) from the ROM..."
           % (frames, bars, os.path.basename(song)))
-    r = oracle.capture_songrender(blob, chain[0], frames, chain=chain)
+    r = oracle.capture_songrender(blob, chain[0], frames, chain=chain,
+                                  drumbufs=our_drumbufs(song))
     out = r[-1]
     with open(path, "wb") as f:
         # All eight buffers: the six machine outputs the ROM's own voices wrote,

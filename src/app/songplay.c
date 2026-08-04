@@ -277,6 +277,28 @@ static void open_chdump(const char *prefix)
     }
 }
 
+/* The four one-second drum buffers, for tools/songwalk.py. Their content is
+ * checked against a running DS by make test-drumbuf; dumping them lets the
+ * whole-song comparison hold them constant and test the wiring instead. */
+static void dump_drums(const char *prefix, int16_t (*buf)[DRUM_LEN])
+{
+    char path[512];
+    int i;
+
+    for (i = 0; i < NDRUM; i++) {
+        FILE *f;
+
+        snprintf(path, sizeof path, "%s.drum%d.raw", prefix, i);
+        f = fopen(path, "wb");
+        if (!f) {
+            fprintf(stderr, "cannot write %s\n", path);
+            exit(2);
+        }
+        fwrite(buf[i], 2, DRUM_LEN, f);
+        fclose(f);
+    }
+}
+
 static void usage(void)
 {
     fprintf(stderr,
@@ -295,6 +317,7 @@ int main(int argc, char **argv)
 {
     const char *out = "song.wav", *in = NULL;
     int bars = 0, only = -1, i, chmask = 0x3F, automin = 0;
+    const char *drumdump = 0;
     static uint16_t fill[2 * DS10_SONG_PATTERNS];
     static ds10_song song;
     static ds10_rt_pattern rt[DS10_SONG_PATTERNS];
@@ -331,6 +354,8 @@ int main(int argc, char **argv)
             only = atoi(argv[++i]);
         else if (strcmp(argv[i], "-C") == 0 && i + 1 < argc)
             open_chdump(argv[++i]);
+        else if (strcmp(argv[i], "-D") == 0 && i + 1 < argc)
+            drumdump = argv[++i];
         else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc)
             chmask = (int)strtol(argv[++i], 0, 0);
         else if (strcmp(argv[i], "-a") == 0 && i + 1 < argc)
@@ -480,6 +505,17 @@ int main(int argc, char **argv)
     ctx.user = &sp;
     for (i = 0; i < NSYN; i++)
         ctx.machine[i] = &voice[i];
+
+    if (drumdump)
+        dump_drums(drumdump, drumbuf);
+
+    /* Loading a song pushes the first pattern's patches and mixer knobs before
+     * anything plays - 0x0206DFCC and 0x0206EC10 run at load, not at the first
+     * tick. Waiting for the tick left our first two frames holding the INIT patch
+     * against a zeroed mixer, which is where songwalk found us silent while the
+     * original was already sounding. */
+    if (only < 0 && sp.nbars > 0 && sp.chain[0] < DS10_SONG_PATTERNS)
+        install_pattern(&ctx, &rt[sp.chain[0]]);
 
     /* Now that the router sink exists, set the tempo the way the sequencer does:
      * it broadcasts opcode 4 to every machine and the mixer, which is the only
