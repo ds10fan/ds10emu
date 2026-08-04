@@ -571,6 +571,75 @@ def capture_seq_auto():
     return cases
 
 
+def capture_seq_smooth():
+    """The same processor on its other path: enable 2, the pad's SMT.
+
+    It latches this step's value like HLD does but also maps the *next* step's
+    and stores a per-sub-tick delta, then walks the lane by that delta on every
+    later sub-tick. Two calls per case - the first is the latch, the second the
+    first walk, since the processor advances the sub-step counter itself.
+    """
+    o = Oracle()
+    seq = _new_seq(o)
+    vt = o.call(NEW_THUNK, 0x20)
+    o.w32(vt + 0x18, BX_LR)
+    mach = o.call(NEW_THUNK, 0x10)
+    o.w32(mach, vt)
+    arr = o.call(NEW_THUNK, 8)
+    o.w32(arr, mach)
+    o.w32(arr + 4, mach)
+    router = o.call(NEW_THUNK, 0x20)
+    o.w32(router, arr)
+    o.w32(seq + 0x34, router)
+    pat = o.call(NEW_THUNK, 0x2A4)
+    defaults = o.call(NEW_THUNK, 0x80)
+    o.w32(pat + 0x14, defaults)
+    o.w32(pat + 0x18, defaults)
+    o.w32(seq + 0x40, pat)
+    o.w32(seq + 0x4C, 1)
+    o.uc.mem_write(seq + 0x2C, bytes([16]))
+
+    cases = []
+    for step in (3, 15):                       # 15 is the last, where it flattens
+        for raw in (-1, 0, 7, 63, 127):
+            for nxt in (-1, 0, 7, 63, 127):
+                for offset in (-64, 0, 63):
+                    for scale in (0, 64, 255):
+                        for sub in (12, 13):
+                            o.uc.mem_write(seq + 0x2D, bytes([step]))
+                            o.uc.mem_write(seq + 0x32, bytes([sub]))
+                            o.uc.mem_write(seq + 0x33, bytes([0]))
+                            trk = seq + 0x64
+                            o.uc.mem_write(trk + 0x20, bytes([2, 0, 0]))
+                            for lane in range(2):
+                                lb = trk + 0x10 + lane * 8
+                                o.uc.mem_write(lb, bytes([5 + lane, 0,
+                                                          offset & 0xFF, scale]))
+                                o.w32(lb + 4, 0)
+                            a = pat + 0x24 + step * 2
+                            o.uc.mem_write(a + 0x40, bytes([raw & 0xFF,
+                                                            raw & 0xFF]))
+                            b = pat + 0x24 + ((step + 1) & 0xFF) * 2
+                            o.uc.mem_write(b + 0x40, bytes([nxt & 0xFF,
+                                                            nxt & 0xFF]))
+                            o.call(SEQ_AUTO, seq)
+                            latched = []
+                            for lane in range(2):
+                                lb = trk + 0x10 + lane * 8
+                                raw8 = bytes(o.uc.mem_read(lb, 8))
+                                latched.append(struct.unpack_from("<hh", raw8, 4))
+                            o.call(SEQ_AUTO, seq)
+                            walked = []
+                            for lane in range(2):
+                                lb = trk + 0x10 + lane * 8
+                                raw8 = bytes(o.uc.mem_read(lb, 8))
+                                walked.append(struct.unpack_from("<h", raw8, 4)[0])
+                            cases.append((step, raw, nxt, offset, scale, sub,
+                                          latched[0][0], latched[0][1], walked[0],
+                                          latched[1][0], latched[1][1], walked[1]))
+    return cases
+
+
 SEQ_EMIT = 0x0206E8C8         # (seq) -> gate countdown + note event emission
 ROUTER_ENABLE = 0x02160A90    # the router bails out if this word is zero
 NMACH = 6
@@ -802,7 +871,10 @@ def _rt_pattern(o, song_pat, ntracks, steps, nsyn=2, defaults=None):
                 o.uc.mem_write(blk + 0x40 + st * 2, song_pat[a:a + 2])
             k = 0x1C2 + t * 64
             o.uc.mem_write(blk + 0x64, song_pat[k + 2:k + 4])
-            o.uc.mem_write(blk + 0x66, bytes([1]))
+            # The automation path this pattern asks for, byte 6 of that track's
+            # editor record: 1 = HLD, 2 = SMT. This used to be hardcoded to 1,
+            # which quietly kept every captured run on the HLD path.
+            o.uc.mem_write(blk + 0x66, bytes([song_pat[0x25C + t * 12 + 6]]))
     if defaults is not None:
         for t in range(nsyn):
             o.w32(pat + 0x14 + t * 4, defaults[t])
@@ -1719,13 +1791,17 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
     notes = capture_seq_notes()
     emits = capture_seq_emit()
     autos = capture_seq_auto()
+    smooths = capture_seq_smooth()
     nf = len(SEQ_FIELDS)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "wb") as f:
-        f.write(b"SEQ4" + struct.pack("<IIIIII", len(tempo), len(swing), nf,
-                                       len(notes), len(emits), len(autos)))
+        f.write(b"SEQ5" + struct.pack("<IIIIIII", len(tempo), len(swing), nf,
+                                      len(notes), len(emits), len(autos),
+                                      len(smooths)))
         for r_, of, sc, l0, l1 in autos:
             f.write(struct.pack("<5i", r_, of, sc, l0, l1))
+        for case in smooths:
+            f.write(struct.pack("<12i", *case))
         for trk_state, posted, after in emits:
             for st in trk_state:
                 f.write(struct.pack("<5i", *st))
@@ -1752,7 +1828,8 @@ def cmd_seq_vectors(path="tests/vectors/seq.bin"):
                 f.write(struct.pack(f"<{nf}i", *after))
     print(f"{path}: {len(tempo)} tempos, {len(swing)} swings, "
           f"{len(runs)} runs x {len(runs[0][2])} ticks, {len(notes)} note cases, "
-          f"{len(emits)} emit cases, {len(autos)} lane cases")
+          f"{len(emits)} emit cases, {len(autos)} lane cases, "
+          f"{len(smooths)} smooth-lane cases")
 
 
 # --- synth event handling capture -------------------------------------------

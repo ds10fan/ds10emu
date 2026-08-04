@@ -111,11 +111,10 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
 
     for (t = 0; t < NSYN; t++) {
         memset(&c->autom[t], 0, sizeof c->autom[t]);
-        /* The song's own value is q->params[1 + t*12 + 6] - 1 for HLD, 2 for SMT.
-         * Installing it would make seq.c skip an SMT lane rather than ramp it,
-         * which is further from the hardware than latching is, so this stays 1
-         * until that path is implemented. TODO.md 5d. */
-        c->autom[t].enable = 1;
+        /* The pattern's own automation path: byte 6 of that track's editor
+         * record, 1 for HLD and 2 for SMT, which is what 0x0206DEE4 copies out
+         * of the runtime pattern. */
+        c->autom[t].enable = q->params[1 + t * 12 + 6];
         sp->dflt[t] = q->knobs[t];
         for (st = 0; st < DS10_SONG_STEPS; st++)
             for (l = 0; l < DS10_SEQ_LANES; l++)

@@ -223,7 +223,9 @@ int main(int argc, char **argv)
         for (t = 0; t < NSYN; t++) {
             const unsigned char *ab = song_pat + 0x1C2 + t * 64;
 
-            autom[t].enable = 1;
+            /* The pattern's own path, HLD or SMT, from byte 6 of that track's
+             * editor record - the byte 0x0206DEE4 copies into the track block. */
+            autom[t].enable = song_pat[0x25C + t * 12 + 6];
             autom[t].mode = 0;
             dflt[t] = (const int8_t *)song_pat + 4 + t * 31;
             for (s = 0; s < DS10_SEQ_STEPS; s++) {

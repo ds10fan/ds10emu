@@ -154,8 +154,16 @@ typedef struct {
  * means "no automation on this step": the per-track default from the pattern
  * header is used directly, bypassing offset and scale entirely. */
 int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults);
-/* Hold mode: latch the step's value for the whole step. */
+/* Hold mode - the pad's HLD, enable 1: latch the step's value for the whole
+ * step. */
 void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults);
+
+/* Smooth mode - the pad's SMT, enable 2: latch this step's value and set the
+ * per-sub-tick delta that walks it to `next` over `subticks` of them. `next` is
+ * the following step's raw byte, or this step's own on the last step of a
+ * pattern, which is what makes the ramp flatten there. */
+void ds10_lane_smooth(ds10_lane *l, int raw, int next, int subticks,
+                      const int8_t *defaults);
 
 /* --- the pattern-driven tick (the rest of 0x0206E5AC) --------------------- */
 
@@ -239,8 +247,9 @@ struct ds10_seq_ctx {
 
 /* One tick call, the whole of 0x0206E5AC: accumulator, step advance, the song
  * player messages, the pattern read, per-track play modes, the velocity and pan
- * posts, then note emission. Automation is not run - set a track's mode so the
- * original skips it too. Returns the events appended to c->out. */
+ * posts, note emission, then the automation processor - which runs whenever there
+ * is a pattern, on whichever of its paths each track's `enable` selects. Returns
+ * the events appended to c->out. */
 int ds10_seq_run(ds10_seq_ctx *c);
 
 /* The sequencer's own tempo setter, 0x0206DA90: clamp to 10..250 and, if it

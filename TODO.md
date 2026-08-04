@@ -33,6 +33,14 @@ A second, cheaper guard worth having: assert in the test that every routed event
 was consumed by something. Three of the four bugs would have shown up as an
 opcode nobody handled.
 
+A fifth of the same family, found by reading rather than by ear: the oracle's
+runtime-pattern builder hardcoded the automation `enable` byte to 1, so every
+captured run stayed on the `HLD` path and the `SMT` one was never compared - 9.3M
+samples of agreement that could not have caught it. It now copies the song's own
+byte, and the fix it was hiding is in `ds10_lane_smooth`. Worth auditing the rest
+of `_rt_pattern` and the capture setups for other constants standing in for song
+data, since each one is a path the suite cannot see.
+
 ## 2. Verify against real hardware
 
 `tools/mksong.py` writes valid song files, so a targeted probe is easy and much
@@ -126,19 +134,6 @@ Inaudible, but it is a real difference and no test can see it: the mixer vectors
 are eight frames, and the oracle does not run the handler either. Whoever wires
 the sequencer's message path next should push that message and let the gain be
 set the way the machine does it, rather than special-casing a constant.
-
-## 5d. SMT automation is rendered as HLD
-
-The editor record's byte 6 (recon.md §14, `view` position 6) is the automation
-object's `enable`: 1 is the `HLD` path, 2 is `SMT`, and 3158 of the 10464 records
-here are `SMT`. `ds10_seq_run` runs a lane only when `enable == 1`, and
-`songplay.c` installs 1 for every pattern rather than the song's own value, so an
-`SMT` pattern's automation jumps between recorded values where the hardware ramps
-into them. `0x0206E1EC`'s second path is now read - recon.md §13 has the recipe,
-and it is one extra field per lane - so this is wiring, not reversing: carry byte 6
-into `ds10_song_pattern`, install it as `enable`, and give `automation()` the
-`delta` branch. Worth a vector against the original before it goes in, since
-nothing in the suite covers a lane in `SMT` today.
 
 ## 5b. Unnamed bytes
 

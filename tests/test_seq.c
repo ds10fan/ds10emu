@@ -18,7 +18,7 @@
 
 #include "../src/core/seq.h"
 
-#define MAGIC "SEQ4"
+#define MAGIC "SEQ5"
 #define NMACH 6
 #define NF 19
 
@@ -91,7 +91,7 @@ int main(int argc, char **argv)
 {
     const char *path = argc > 1 ? argv[1] : "tests/vectors/seq.bin";
     char magic[4];
-    uint32_t ntempo, nswing, nf, nnotes, nemits, nautos, i, k;
+    uint32_t ntempo, nswing, nf, nnotes, nemits, nautos, nsmooth, i, k;
     unsigned long bad = 0, total = 0;
     int32_t nruns;
 
@@ -111,6 +111,7 @@ int main(int argc, char **argv)
     nnotes = rd32();
     nemits = rd32();
     nautos = rd32();
+    nsmooth = rd32();
     if (nf != NF) {
         fprintf(stderr, "vector file has %u fields, expected %d\n", nf, NF);
         return 2;
@@ -148,6 +149,56 @@ int main(int argc, char **argv)
                             "scale=%d): got %d want %d\n", i, lane, raw,
                             offset, scale, l.cur, w[lane]);
                 bad++;
+            }
+        }
+    }
+
+    /* The same processor on enable 2, the pad's SMT: the latched value, the
+     * per-sub-tick delta it derives from the next step's, and where one sub-tick
+     * of walking lands. On the last step of a pattern the next step is the step
+     * itself, so the delta has to come out zero. */
+    for (i = 0; i < nsmooth; i++) {
+        static const int8_t defaults[256] = {0};
+        int32_t step = (int32_t)rd32();
+        int32_t raw = (int32_t)rd32();
+        int32_t next = (int32_t)rd32();
+        int32_t offset = (int32_t)rd32();
+        int32_t scale = (int32_t)rd32();
+        int32_t sub = (int32_t)rd32();
+        int32_t want[2][3];
+        int lane;
+
+        for (lane = 0; lane < 2; lane++) {
+            want[lane][0] = (int32_t)rd32();
+            want[lane][1] = (int32_t)rd32();
+            want[lane][2] = (int32_t)rd32();
+        }
+        for (lane = 0; lane < 2; lane++) {
+            ds10_lane l;
+            int32_t got[3];
+
+            l.knob = (uint8_t)(5 + lane);
+            l.value = 0;
+            l.offset = (int8_t)offset;
+            l.scale = (uint8_t)scale;
+            l.cur = 0;
+            l.delta = 0;
+            ds10_lane_smooth(&l, raw, step == 15 ? raw : next, sub, defaults);
+            got[0] = l.cur;
+            got[1] = l.delta;
+            l.cur = (int16_t)(l.cur + l.delta);
+            got[2] = l.cur;
+            for (k = 0; k < 3; k++) {
+                total++;
+                if (got[k] != want[lane][k]) {
+                    if (bad < 10)
+                        fprintf(stderr, "smooth case %u lane %d field %u "
+                                "(step=%d raw=%d next=%d off=%d scale=%d "
+                                "sub=%d): got %d want %d\n", i, lane, k, step,
+                                raw, next, offset, scale, sub, got[k],
+                                want[lane][k]);
+                    bad++;
+                }
             }
         }
     }

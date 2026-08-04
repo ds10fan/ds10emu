@@ -226,6 +226,19 @@ void ds10_lane_hold(ds10_lane *l, int raw, const int8_t *defaults)
     l->cur = (int16_t)(ds10_lane_map(l, raw, defaults) << 8);
 }
 
+void ds10_lane_smooth(ds10_lane *l, int raw, int next, int subticks,
+                      const int8_t *defaults)
+{
+    int32_t from = ds10_lane_map(l, raw, defaults);
+    int32_t to = ds10_lane_map(l, next, defaults);
+
+    l->cur = (int16_t)(from << 8);
+    /* 0x0200C158 is a truncating signed divide, which is C's, and the original
+     * asks it for ((to - from) << 8) / subticks. A step with no sub-ticks cannot
+     * happen on a running sequencer; hold rather than divide by zero. */
+    l->delta = (int16_t)(subticks ? ((to - from) * 256) / subticks : 0);
+}
+
 /* --- the pattern-driven tick (0x0206E5AC in full) ------------------------- */
 
 static void say(ds10_seq_ctx *c, uint32_t msg, int32_t arg)
@@ -312,19 +325,17 @@ static void run_step(ds10_seq_ctx *c)
     s->auto_sub = 0;
 }
 
-/* The automation processor, 0x0206E1EC, for one of its paths: enable 1 with mode
- * 0, the per-step latch the pad calls HLD. A track on another path is left alone
- * here. Modes 1..3 consume a pending value from live knob input and are not
- * decompiled; enable 2, the pad's SMT, is - it maps the next step's value too and
- * adds (next - cur) / subticks every sub-tick, so a lane ramps into the next
- * recorded value instead of stepping to it (recon.md section 13).
+/* The automation processor, 0x0206E1EC, for the two paths a recorded song plays
+ * back through - the pad's HLD (enable 1) and SMT (enable 2), both with mode 0.
+ * Modes 1..3 consume a pending value from live knob input, are not decompiled,
+ * and a track set to one is left alone here.
  *
- * Nothing here reaches that path, because nothing installs the song's own value:
- * songplay.c sets enable to 1 for every pattern, so an SMT pattern - 30% of the
- * records in data/saves - plays as HLD. TODO.md 5d.
+ * Which one a pattern uses is byte 6 of its per-track editor record; nearly a
+ * third of the records in data/saves ask for SMT, most of them on cutoff or peak.
  *
- * Runs on every sub-tick but latches only on a step's first one, then always
- * pushes both lanes' held values into the machine. */
+ * Runs on every sub-tick. It latches on a step's first one - HLD to the step's
+ * own value, SMT to that plus a delta - then walks an SMT lane one delta per
+ * sub-tick, and always pushes both lanes' current values into the machine. */
 static void automation(ds10_seq_ctx *c)
 {
     int track, l;
@@ -334,14 +345,24 @@ static void automation(ds10_seq_ctx *c)
     for (track = 0; track < c->nauto; track++) {
         ds10_seq_auto *a = &c->autom[track];
 
-        if (a->enable != 1 || a->mode != 0)
+        if ((a->enable != 1 && a->enable != 2) || a->mode != 0)
             continue;
         if (c->s->auto_sub == 0) {
             const int8_t *raw = c->lane_raw + track * 2 * DS10_SEQ_STEPS +
                                 c->s->step * 2;
 
             for (l = 0; l < DS10_SEQ_LANES; l++)
-                ds10_lane_hold(&a->lane[l], raw[l], c->defaults[track]);
+                if (a->enable == 1)
+                    ds10_lane_hold(&a->lane[l], raw[l], c->defaults[track]);
+                else
+                    ds10_lane_smooth(&a->lane[l], raw[l],
+                                     c->s->step == (int8_t)(c->s->steps - 1)
+                                         ? raw[l] : raw[2 + l],
+                                     c->s->sub_cur, c->defaults[track]);
+        } else if (a->enable == 2) {
+            /* Every sub-tick after the latch walks the lane one delta on. */
+            for (l = 0; l < DS10_SEQ_LANES; l++)
+                a->lane[l].cur = (int16_t)(a->lane[l].cur + a->lane[l].delta);
         }
         if (c->knob == 0 || c->machine[track] == 0)
             continue;

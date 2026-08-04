@@ -163,8 +163,9 @@ records here.
 
 Position 6 is the one the sequencer reads: it lands in the automation object's
 `enable` (`0x0206DD4C`, live `+0x8A`), and `ds10_seq_run` only runs a lane whose
-enable is 1 — so `SMT` selects a second interpolation path that is not decompiled.
-`songplay` installs 1 for every pattern; TODO.md §6.
+enable selects which of its two paths runs: 1 latches a step's value, 2 ramps into
+the next step's. Both are implemented, `songplay` installs the pattern's own value,
+and `make test-seq` holds the ramp to the original's own processor over 900 cases.
 
 Pad scales, `0x02084E54`, 16 bytes each:
 

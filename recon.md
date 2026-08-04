@@ -1156,6 +1156,18 @@ unless `+0x21` is 0:
 
 Both then push `cur >> 8` to every lane whose knob id is not `-1`.
 
+Both are implemented - `ds10_lane_hold` and `ds10_lane_smooth` - and both are held
+to this processor's own output: `capture_seq_smooth` in the oracle drives
+`0x0206E1EC` on enable 2 and reads back the latched value, the delta and where one
+sub-tick of walking lands, over 900 cases of step, raw, next, offset, scale and
+sub-tick count. `0x0200C158` turns out to be a truncating signed divide, so C's.
+
+The whole-song differential covers it too, now that the runtime pattern the oracle
+builds carries the song's own enable byte rather than a hardcoded 1: the first
+`test-songrender` case, `ds10demo00` pattern 0, has synth 2 on `SMT` with lanes on
+cutoff and peak. Forcing our side back to `HLD` puts 29164 samples out across 17 of
+the 19 cases, which is what that vector was blind to before.
+
 ### Note and gate logic, `0x0206E9D8` and `0x0206EABC`
 
 The step trigger and the per-sub-tick countdown, both verified bit-exact.
@@ -1588,9 +1600,8 @@ twice and diff the framebuffers:
 Byte 6 is the only one of these the sequencer reads: `0x02052864` compares it
 against the automation object's `enable` (`0x0206DD7C`, live `+0x8A` in the
 104-byte array and `+0x84` in the 36-byte one) and writes it through `0x0206DD4C`.
-`ds10_seq_run` runs a lane only when `enable == 1`, so `SMT` is a second
-interpolation path that is not decompiled; `songplay` installs 1 for every
-pattern. Byte 9 is written by `0x020312B0` and `0x02031418`, which scan the two
+`ds10_seq_run` implements both of its paths (§13), and `songplay` installs the
+pattern's own value. Byte 9 is written by `0x020312B0` and `0x02031418`, which scan the two
 widgets of the pattern page - `COPY` and `LOCK` - and store the pressed one's
 index, or -1 for neither; only `1` is restored when the page is built
 (`0x0202E01C`).
