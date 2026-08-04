@@ -45,8 +45,12 @@ static inline int32_t wave_triangle(int32_t phase)
     return OSC_LO + ds10_shl(a, 1) + (ds10_mul32(p, TRI_TILT) >> 15);
 }
 
-/* Sawtooth: p minus a shaped copy of itself. Clamp order here is upper bound
- * first, which differs from the square case below - both are preserved. */
+/* Sawtooth: p minus a shaped copy of itself. The shaped term saturates
+ * everywhere except within one sample step either side of the zero crossing, so
+ * the output is a descending ramp whose jump is replaced by a rising edge two
+ * samples wide at any pitch - the only band-limiting the oscillator has.
+ * Clamp order here is upper bound first, which differs from the square case
+ * below - both are preserved. */
 static inline int32_t wave_saw(int32_t phase, int32_t shape)
 {
     int32_t p = phase >> 16;
@@ -172,10 +176,17 @@ int32_t ds10_vco_step(ds10_vco *o)
 /* --- per-frame preparation (render preamble, 0x02074AD8..0x02074B98) ---
  *
  * The shaping value handed to the saw and square generators is a reciprocal of
- * the phase increment, so waveform amplitude stays constant across pitch. The
- * original computes it on the DS hardware divider; the guard below is why the
- * divider is only engaged for increments at or above 0x01000000 - the quotient
- * would otherwise exceed 32 bits.
+ * the phase increment, hence proportional to the period in samples, and that is
+ * what fixes the steep edge at two samples wide whatever the pitch. It is not
+ * amplitude that it holds constant: a raw ramp is already +-32767 at every
+ * pitch, and the shaping term is what makes the peak fall once the edge takes up
+ * a real share of the cycle, down to +-16319 at a four-sample period.
+ *
+ * The original computes it on the DS hardware divider; the guard below is why
+ * the divider is only engaged for increments at or above 0x01000000 - the
+ * quotient would otherwise exceed 32 bits. Below that the value saturates
+ * instead of growing, so the edge widens as pitch drops: four samples at a
+ * 512-sample period, thirty-two at 4096.
  */
 #define VCO_RECIP_NUM 0x007FFFFFFF000000ULL
 #define VCO_RECIP_MIN 0x01000000
