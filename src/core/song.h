@@ -92,9 +92,12 @@ typedef struct {
      *   9 the pattern page's LOCK
      *
      * Byte 6 is the only one playback wants: it is ds10_seq_auto.enable, and
-     * `automation()` in seq.c runs a lane only when it is 1. Nothing installs it
-     * from here yet - TODO.md 5d. Bytes 8, 10 and 11 have no caller and are zero
-     * in every pattern in data/saves; docs/songtext.md has the measurements. */
+     * `automation()` in seq.c runs a lane on either of its two paths, so both
+     * values are live. src/app/songplay.c installs it from here. SMT is much the
+     * commoner ask - 2942 of the 3104 pattern-track pairs in data/saves against
+     * 162 for HLD, and no pair asks for neither. Bytes 8, 10 and 11 have no caller
+     * and are zero in every pattern in data/saves; docs/songtext.md has the
+     * measurements. */
     uint8_t params[0x62 - DS10_SONG_MIX_KNOBS];
 } ds10_song_pattern;
 

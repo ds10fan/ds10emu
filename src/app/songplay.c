@@ -26,10 +26,13 @@
  *     bit-exact against a running DS for a dry drum. A fully wet one still
  *     differs in about 4% of its samples, all of them the delay's echo, which
  *     arrives 64 samples early there - TODO.md section 5.
- *   - Automation paths other than the per-step latch. A track whose pattern asks
- *     for one of the others is left un-automated; none of the ROM's demos does.
- *   - The 73 bytes of a pattern after its 25 mixer knobs, at payload +0x25B.
- *     Nothing here reads them.
+ *   - Automation modes other than playback. Both of the paths a recorded song
+ *     uses are here - track state +0x20 of 1 (HLD) or 2 (SMT), with +0x21 of 0.
+ *     A track asking for +0x21 of 1..3, which is live knob input, is left
+ *     un-automated; none of the ROM's demos does.
+ *   - The 73 bytes of a pattern after its 25 mixer knobs, at payload +0x25B,
+ *     apart from byte 6 of each per-track record: install_pattern takes the
+ *     automation path from there.
  *
  * Tick rate. The sequencer's accumulator advances 240000 per call against a
  * period of 60000000/BPM, and 24 sub-ticks make a step pair, which works out at

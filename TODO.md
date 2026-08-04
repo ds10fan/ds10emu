@@ -64,10 +64,11 @@ Record from the device, compare against the same file rendered here.
 
 ## 4. Not implemented
 
-- **Automation modes 1..3.** The processor branches on track state `+0x20` (the
-  pad's HLD and SMT, both done) and `+0x21` (0..3, only `0` done). The other three
-  consume a pending value from live knob input, which is editing rather than
-  playback, and no song here asks for one.
+- **Automation modes other than playback.** The processor branches on track state
+  `+0x20` (1 = HLD, 2 = SMT) and `+0x21` (0..3). Both `+0x20` paths are done with
+  `+0x21` of 0, which is what a recorded song plays back; `+0x21` of 1..3 consume a
+  pending value from live knob input, which is editing rather than playback, and no
+  ROM demo asks for one.
 - **The transport start sequence.** `0x0206EC88` posts `24` PLAY to target `0x60`
   and `5` STOP to `0x70`. PLAY resets a voice's LFO phase and zeroes its envelope;
   starting from the constructor state happens to be equivalent, but it is not the
