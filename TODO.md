@@ -1,10 +1,11 @@
 # TODO
 
-## 1. Close the differential suite's blind spot
+## 1. The differential suite's blind spot - closed
 
-**This is the top item.** Four bugs have been found by listening, not by the
-tests, and all four sat in the same place: the wiring between components that are
-individually verified, on the pattern-change and transport path.
+For a long time the top item here, because four bugs had been found by listening
+rather than by the tests, and all four sat in the same place: the wiring between
+components that are individually verified, on the pattern-change and transport
+path.
 
 | found by ear | what was wrong |
 |---|---|
@@ -13,33 +14,61 @@ individually verified, on the pattern-change and transport path.
 | "LFO phase isn't reset on pattern start" | never broadcast `0x1D` PATTERN_CHANGE |
 | "wrong pitch when the LFO modulates it" | tempo went to the mixer only, so voices kept 120 BPM |
 
-`make test-songrender` cannot catch any of them: it installs **one pattern up
+`make test-songrender` could not catch any of them: it installs **one pattern up
 front and loops it**, so a chain walk never happens, `set_pattern` never runs, and
-the tempo broadcast is never compared. The suite is strong on DSP and blind on
-everything around it.
+the tempo broadcast is never compared.
 
-The fix is to make the harness walk patterns:
+`make test-songwalk` (`tools/songwalk.py`) is the answer. The ROM's side is the
+oracle, walking the arrangement the way the transport does - the sequencer asks its
+player for a pattern once a bar, answered from a hook on the player's own handler,
+and the original's `set_pattern` takes it from there. Our side is `out/songplay`
+itself, run as it ships and its WAV read back, because a test that rebuilds the
+engine inside itself cannot fail on how `songplay` wires things up. `songplay -C`
+dumps its six machine buffers, so a divergence lands on a track rather than in the
+mix. A capture is two to four seconds, so whole songs are affordable.
 
-- alternate two patterns on the reinstall, going through the original's own
-  `set_pattern` (`0x0206DBE4`) rather than poking `seq[0x40]` — that puts the
-  `0x1D` broadcast, the patch reload, the mixer knob push and the lane init under
-  comparison;
-- drive the tempo through `0x0206DA80` instead of writing `seq +0x10` and
-  `seq +0x14` directly, so the opcode-4 broadcast is compared;
-- give the C side the same player and install hook `songplay` already uses, so
-  what is tested is what actually renders.
+Where it stands:
 
-A second, cheaper guard worth having: assert in the test that every routed event
-was consumed by something. Three of the four bugs would have shown up as an
-opcode nobody handled.
+| song | what it exercises | result |
+|---|---|---|
+| `new_00` (`5LTDN1`) | 8 patterns, no repeats, all six tracks, a cutoff lane in every pattern, `SMT` | 381248 samples, 6/6 channels and the mix identical |
+| `fresh10_02` | a mute lane that silences both synths and three drums, changing every bar or two | 393216 samples, identical |
 
-A fifth of the same family, found by reading rather than by ear: the oracle's
-runtime-pattern builder hardcoded the automation `enable` byte to 1, so every
-captured run stayed on the `HLD` path and the `SMT` one was never compared - 9.3M
-samples of agreement that could not have caught it. It now copies the song's own
-byte, and the fix it was hiding is in `ds10_lane_smooth`. Worth auditing the rest
-of `_rt_pattern` and the capture setups for other constants standing in for song
-data, since each one is a path the suite cannot see.
+Five bugs came out of building it, and three were in the *reference*, which is
+worth remembering next time a comparison passes:
+
+- the oracle's drum buffers came from an inference predating `src/core/drumbuf.c`
+  and are about half the amplitude of the real thing, so our correct drums looked
+  2x loud;
+- the tempo was written into `seq+0x10`/`+0x14` by hand with one mixer event queued,
+  so no voice ever heard opcode 4 and every synced LFO stayed at the constructor's
+  120 BPM - which is the same bug as the fourth row of that table, in the harness
+  this time;
+- the per-bar mixer-knob push was placed after the tick, where it overwrote the new
+  step's own volume and pan posts.
+
+And two were ours: `songplay` installed the first pattern at its first tick instead
+of at load, leaving two frames of INIT patch against a zeroed mixer; and it applied
+the per-bar mute inside the tick, scaled by the previous step's velocity latch,
+where the transport applies it after.
+
+Still not covered, and worth doing:
+
+- **The transport itself.** `songwalk` drives the chain and reads the mute masks
+  from Python; the original does both from its transport object via `0x020330AC`.
+  So the mask *reading* and the bar counter are uncompared, and modelling that
+  object is what stage 3 of the plan called a possible swamp.
+- **Every routed event consumed.** Assert in the test that nothing was posted that
+  no machine handled. Three of the four bugs above would have shown up that way.
+- `tests/test_songrender.c` still rebuilds the engine inside the test. It is
+  superseded by `songwalk` for wiring and still useful for its per-field state
+  comparison, but the duplication is a trap and should go.
+- A fifth harness constant of the same family was found by reading rather than by
+  ear: `_rt_pattern` hardcoded the automation `enable` byte to 1, so every captured
+  run stayed on the `HLD` path and `SMT` was never compared - 9.3M samples of
+  agreement that could not have caught it. It now copies the song's own byte. The
+  rest of `_rt_pattern` and the capture setups deserve the same audit: each constant
+  standing in for song data is a path the suite cannot see.
 
 ## 2. Verify against real hardware
 
@@ -144,14 +173,23 @@ Everything round-trips, so nothing is lost - these are just not understood:
 - the second 25-knob mixer space the ROM's own id table implies - volume
   `42 + channel`, pan `34 + channel` - which nothing here models.
 
-## 5e. The song page's two per-bar lanes are stored, not played
+## 5e. `trs`, the per-bar transpose, is stored and not played
 
-`mute a` / `mute b` / `trs` are named and round-trip (recon.md §14), but nothing
-here acts on them: `songplay` chains patterns without a per-bar track mask or a
-per-bar transpose. The original's own engine only latches the deck-A mask into the
-player and never reads it back, so matching it means deciding what the hardware
-actually does with a muted bar - which needs a listening test on a song that has
-one, e.g. `xfer2_10`, whose first 32 bars mute drums.
+The song page's mute lane is played now - `ds10_song_mute` reads it, `songplay`
+applies it the way `0x020330AC` and `0x02079D58` do, and `make test-songwalk` holds
+that to the original sample for sample on `fresh10_02`. (The claim that used to be
+here, that nothing reads the masks, was wrong: the read is in the transport, not in
+the song player whose copy at `+0x8C` really is a dead store.)
+
+What is still stored and not played is `trs`, the signed per-bar transpose at
+payload `+0x2FA8`. Nothing here reads it, and the original's own path for it is not
+traced - `0x0203C6FC` draws it and `0x0203C038` edits it, but what applies it to a
+playing note has not been found. Worth doing with a song that transposes, and none
+in `data/saves` does: their only non-zero `trs` bytes are the two the record buffer
+leaves behind, which the original does not load either (docs/songtext.md).
+
+Deck B's mask is also unplayed, and cannot be otherwise: its knobs are 42..47, a
+second 25-knob mixer space this build has no mixer for (recon.md §12).
 
 ## 6. GUI
 
