@@ -209,6 +209,7 @@ static void snapshot(NDS &nds, RefRenderer &rend, const std::string &dir,
 int main(int argc, char **argv)
 {
     const char *rom = nullptr, *script = nullptr, *save = nullptr;
+    const char *audio = nullptr;
     std::string dir = "out/ref";
     int frames = 600, every = 0, begin = 0;
 
@@ -219,13 +220,14 @@ int main(int argc, char **argv)
         else if (!strcmp(argv[i], "-e") && i + 1 < argc) every = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-b") && i + 1 < argc) begin = atoi(argv[++i]);
         else if (!strcmp(argv[i], "-w") && i + 1 < argc) save = argv[++i];
+        else if (!strcmp(argv[i], "-a") && i + 1 < argc) audio = argv[++i];
         else if (!strcmp(argv[i], "-m")) dump_ram = true;
         else if (argv[i][0] != '-') rom = argv[i];
     }
     if (!rom) {
         fprintf(stderr, "usage: ndsref <rom> [-f frames] [-o dir] "
                         "[-s script] [-e every] [-b begin] [-w save] "
-                        "[-m]\n");
+                        "[-m] [-a audio.raw]\n");
         return 2;
     }
 
@@ -294,6 +296,21 @@ int main(int argc, char **argv)
     /* No BIOS or firmware images here, so the ROM is direct-booted: the
      * loader's job is done for it and execution starts at the ARM9 entry. */
     nds.SetupDirectBoot(rom);
+    FILE *af = nullptr;
+    long asamples = 0;
+
+    if (audio) {
+        af = fopen(audio, "wb");
+        if (!af) {
+            fprintf(stderr, "cannot write %s\n", audio);
+            return 2;
+        }
+        /* Our own renders are 32768 Hz, so ask melonDS for that rather than its
+         * 48000 default. It still resamples from the DS's own 32823.6 Hz through
+         * blip_buf, so this is not sample-identical to the buffers the ARM9
+         * writes - it is the speaker, not the mix bus. */
+        nds.SPU.SetOutputSampleRate(32768.0);
+    }
     nds.Start();
 
     char mk[600];
@@ -321,10 +338,25 @@ int main(int argc, char **argv)
         nds.SetKeyMask(~keys & 0xFFFF);
         nds.RunFrame();
 
+        /* The SPU's own output, at the DS's sample rate, interleaved stereo s16.
+         * melonDS fills this ring as the frame runs; drain it every frame so
+         * nothing is dropped. */
+        if (af) {
+            s16 buf[2048 * 2];
+            int got = nds.SPU.ReadOutput(buf, 2048);
+
+            if (got > 0) fwrite(buf, 4, (size_t)got, af);
+            asamples += got;
+        }
+
         if (forced || (every && frame >= begin && (frame - begin) % every == 0)) {
             snapshot(nds, *rend, dir, frame);
             shots++;
         }
+    }
+    if (af) {
+        fclose(af);
+        printf("%ld audio samples to %s\n", asamples, audio);
     }
     printf("%d frames, %d snapshots in %s\n", frames, shots, dir.c_str());
     return 0;
