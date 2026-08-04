@@ -95,8 +95,8 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `swing N` | `+0x0A` percent |
 | `name "…"` | `+0x14`, 16 bytes |
 | `chain A B C …` | `+0x24`, one u16 per bar |
-| `mute a bar=mask …` | `+0x2EFC`, six bits of track per bar, five bars to a word |
-| `mute b bar=mask …` | `+0x2F50`, the same for the second deck |
+| `mute a bar=tracks …` | `+0x2EFC`, six bits of track per bar, five bars to a word |
+| `mute b bar=tracks …` | `+0x2F50`, the same for the second deck |
 | `trs bar=semitones …` | `+0x2FA8`, one signed byte per bar |
 | `drumN patch …` | `+0x2B2C + (N-1)*31`, knobs 0..30 |
 | `drumN mod …` | the same knobs, modulation slots only |
@@ -394,14 +394,17 @@ the `31_SONG` page, which has three modes — `PATTERN`, `MUTE` and `TRS`.
 
 | line | at | shape |
 |---|---|---|
-| `mute a` | `+0x2EFC`, 84 bytes | 6 bits of track per bar, 5 bars to a word, 105 slots. `DECK-A` |
+| `mute a` | `+0x2EFC`, 84 bytes | which tracks that bar mutes, 6 bits per bar, 5 bars to a word, 105 slots. `DECK-A` |
 | `mute b` | `+0x2F50`, 84 bytes | the same, `DECK-B` |
 | — | `+0x2FA4`, 4 bytes | five more 6-bit slots; only the page's "clear song" ever writes them, nothing reads them, zero in the whole corpus |
 | `trs` | `+0x2FA8`, 52 bytes | one signed byte of semitones per bar |
 
-- Bit 0 is `syn1` and bit 5 is `drum4`, the order of the twelve row labels at
-  `0x0207E668` — `SYN1 SYN2 DRUM1..DRUM4`, once per deck. So `31=60` is the four
-  drums muted in bar 31 and `20` is `drum1` and `drum3`.
+- A bar names the tracks it mutes: `s1 s2` for the synths and `d1`..`d4` for the
+  drums, concatenated. `0=d1d2d3d4` is all four drums muted in bar 0, `2=d1d3` is
+  the first and third. Bit 0 is `s1` and bit 5 is `d4`, the order of the twelve row
+  labels at `0x0207E668` — `SYN1 SYN2 DRUM1..DRUM4`, once per deck — so all six bits
+  have a name and nothing about the byte goes unwritten. A plain number is accepted
+  on the way in, for hand-editing.
 - A `mute` bit set is a track muted in that bar: 78 of the 97 saved songs have both
   masks all-zero, and the page draws a marker where a bit is set. `mute b` is
   all-zero in every one of them — deck B is the DSi build's second instance, which

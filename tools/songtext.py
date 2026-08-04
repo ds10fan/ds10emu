@@ -54,6 +54,9 @@ patterns, 165888 steps) - a field is written only when it differs:
   patch knobs         the ROM's own INIT patch, ds10synth00.dat (mean 10 of 31
                       knobs differ, so a patch line is short)
   lanes               75% of the 6912 lane slots have no automation at all
+  mute                a bar names the tracks it mutes - s1 s2 for the synths,
+                      d1..d4 for the drums - and a bar that mutes nothing is
+                      left out
   interp smt / hld    the automation path: smt on a synth track (3158 of its 3488
                       records), hld on a drum one, which has no lanes at all
   modulation          82% of the 5 mod slots per patch are source `none`
@@ -492,11 +495,33 @@ def mute_set(payload, base, bar, value):
     struct.pack_into("<I", payload, o, word)
 
 
+# A mute mask names its tracks rather than counting in binary: bit 0 is the first
+# synth and bit 5 the last drum, the order of the row labels at 0x0207E668, so 0x3C
+# is `d1d2d3d4`. All six bits have a name, so nothing about the byte is lost.
+MUTE_TAG = ["s1", "s2", "d1", "d2", "d3", "d4"]
+
+
+def mute_mask_text(mask):
+    return "".join(MUTE_TAG[i] for i in range(TRACKS) if mask & (1 << i))
+
+
+def mute_mask_value(text):
+    """The tracks named in `s2d3d4`, or a plain number if that is what is there."""
+    if text.isdigit():
+        return int(text)
+    mask = 0
+    for i in range(0, len(text) - 1, 2):
+        tag = text[i:i + 2]
+        if tag in MUTE_TAG:
+            mask |= 1 << MUTE_TAG.index(tag)
+    return mask
+
+
 def mute_text(payload, base):
     """`mute a` / `mute b` - only the bars that mute something."""
     if base + MUTE_SLOTS // 5 * 4 > len(payload):
         return None
-    out = ["%d=%d" % (b, mute_get(payload, base, b))
+    out = ["%d=%s" % (b, mute_mask_text(mute_get(payload, base, b)))
            for b in range(MUTE_SLOTS) if mute_get(payload, base, b)]
     return " ".join(out) if out else None
 
@@ -856,8 +881,9 @@ def loads(text, _raw=True):
                 struct.pack_into("<H", p, 0x24 + i * 2, int(v))
         elif key == "mute":
             base = MUTE_A if rest[0] == "a" else MUTE_B
-            for bar, value in parse_bar_pairs(rest[1:]):
-                mute_set(p, base, bar, value)
+            for t in rest[1:]:
+                bar, _, val = t.partition("=")
+                mute_set(p, base, int(bar), mute_mask_value(val))
         elif key == "trs":
             for bar, value in parse_bar_pairs(rest):
                 p[TRS + bar] = value & 0xFF
