@@ -64,7 +64,6 @@ Every claim above is a test, not an impression.
 | `make test-editor` | an edited song round-tripped through the file format | hash and all |
 | `make test-drumbuf` | a drum buffer against one a running DS rendered | 3 drums, 9216 samples |
 | `make test-songtext` | every song through the text format and back | 109 songs |
-| `make test-songtext-py` | the C encoder against `tools/songtext.py`, byte for byte | 218 dumps |
 | `make test-webedit` | a song entered in the browser build, then rendered by `songplay` | sample-exact |
 
 Read `TODO.md` §1 before trusting the audio number — those suites are strong on
@@ -101,7 +100,7 @@ make serve                  # build for the browser and serve it on :8537
 make test                   # the audio engine, against the original
 make test-2d                # the 2D hardware, against melonDS
 make songplay               # out/songplay song.dat -o out.wav
-make songtext               # out/songtext dump|load|check, the text format
+python3 tools/songtext.py   # dump|load|check, the text format
 
 make recon                  # extract everything from the ROM into out/
 make sweep                  # walk the whole interface, snapshotting each screen
@@ -120,7 +119,7 @@ make sweep                  # walk the whole interface, snapshotting each screen
 | `tools/snap.py` | reads those dumps; `tools/sweep.py` drives the interface to produce them |
 | `tools/nitro.py` | the NITRO asset containers, and a background composed the way the hardware would |
 | `tools/sav.py` | a `.ds10save`: list, extract or pack a song slot, unpack the whole thing to text and back |
-| `tools/songtext.py` | a song as editable text and back, byte for byte — [`docs/songtext.md`](docs/songtext.md). The reference the C in `src/extras/` is tested against |
+| `tools/songtext.py` | a song as editable text and back, byte for byte — [`docs/songtext.md`](docs/songtext.md) |
 | `tools/widgets.py` | recovers sprite widgets from a captured frame by rebuilding their OAM |
 | `tools/probe.py` | branch-target validation, lookup-table detection, xrefs, multiply density |
 
@@ -130,7 +129,6 @@ make sweep                  # walk the whole interface, snapshotting each screen
 src/core/  the audio engine
 src/gfx/   the DS 2D hardware, and the asset containers
 src/app/   the interface, and the native tools built on it
-src/extras/ formats that are ours rather than the ROM's - the song text format
 src/web/   the browser build's entry points
 web/       the page that hosts it
 data/      ROM-derived inputs, committed
