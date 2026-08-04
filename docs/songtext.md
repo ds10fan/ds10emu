@@ -34,7 +34,8 @@ syn1  note D5   D6   C3   -    | -    .    .    .    | .    .    .    .
 drum1 note x    .    x    .    | x    .    x    .    | x    .    x    .
 syn1  lane1 knob=cutoff 0=69 1=62
 mix route=drums vol=105,105,104,105,66,105
-view 46,3,11,12,1,0,2,0,0 31,3,11,12,1,0,2,0,0 36,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1,0,0 57,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1,0,0
+syn1  view scroll=46 oct=3 lane1=cutoff lane2=peak scale=IONIAN interp=smt
+drum1 view scroll=36
 ```
 
 ## What it compiles to
@@ -53,7 +54,7 @@ view 46,3,11,12,1,0,2,0,0 31,3,11,12,1,0,2,0,0 36,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1
 | `syn1 name "XLEAD"` | payload `+0x2BFC` + pattern*48 | `58 4c 45 41 44 00` |
 | `syn1 lane1 knob=cutoff 0=69 1=62` | pattern `+0x1C2` | raw 69, 62, then -1 for the rest; knob 11 on every step |
 | `mix route=drums vol=…` | pattern `+0x242`, 25 knobs | knob 0=3 (drums), 17..22=105,105,104,105,66,105 |
-| `view 46,3,11,12,…` | pattern `+0x25C`, six 12-byte editor records | track 0: scroll 46, octave 3, lane knobs 11 and 12, pad scale IONIAN key C, `SMT`, pad slot 0, no `LOCK` |
+| `syn1 view scroll=46 …` | pattern `+0x25C + track*12`, 12 bytes | `2e 03 0b 0c 01 00 02 00 00 00 00 00` |
 
 The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + step*4`:
 
@@ -113,7 +114,7 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `<track> note/gate/vel/pan …` | `+0x042 + track*64 + step*4` |
 | `<track> laneL knob=K S=V …` | `+0x1C2 + track*64 + step*4`; `S=V` per step that has a value |
 | `mix …` / `fx …` | `+0x242`, 25 knobs |
-| `view <t0> … <t5>` | `+0x25C + track*12`, nine bytes per track, comma-separated |
+| `<track> view k=v …` | `+0x25C + track*12`, one 12-byte editor record |
 
 Tracks are `syn1`, `syn2`, `drum1`..`drum4`. Lanes are `lane1`, `lane2`, on synth
 tracks only.
@@ -147,31 +148,42 @@ hits, `x - -` would be one held sample.
 
 ## `view` — the editor records
 
-One line per pattern, one comma-separated group per track, nine bytes each. Mostly
-editor state, and it repeats from pattern to pattern, which is why it is one line
-rather than six.
+One line per track per pattern, only when something on it is off default. The
+record is 12 bytes at `+0x25C + track*12`, and the game reads nine of them through
+one accessor (`0x0206B0C0`, `cmp field,#9` then a ten-case jump table where case
+*i* is `ldrb [record + i]`, so a field index is a byte index).
 
-| position | byte | what | seen |
-|---|---|---|---|
-| 0 | 0 | piano-roll scroll, counting upward | 0..84 |
-| 1 | 1 | keyboard octave — the row of six dots over the keys | 0..5 |
-| 2, 3 | 2, 3 | a copy of the two lanes' knob ids — agrees with the lane array in 94% of cases and is *not* what playback reads | |
-| 4 | 4 | KAOSS pad scale, index into the table below | 0..29 |
-| 5 | 5 | KAOSS pad key, 0 = C .. 11 = B | 0..11 |
-| 6 | 6 | automation path: 1 = `HLD`, 2 = `SMT`, 0 = off | 0..2 |
-| 7 | 7 | KAOSS pad slot the `1`/`2`/`3` buttons select | 0..2 |
-| 8 | 9 | pattern page `LOCK`: 1 = engaged, 0xFF = neither it nor `COPY` | 0, 1, 0xFF |
+| field | byte | default | value | seen |
+|---|---|---|---|---|
+| `scroll` | 0 | 0 | piano-roll scroll, counting upward | 0..84 |
+| `oct` | 1 | 0 | keyboard octave — the row of six dots over the keys | 0..5 |
+| `lane1` | 2 | 0 | knob name, or a number | |
+| `lane2` | 3 | 0 | the same for lane 2 | |
+| `scale` | 4 | 0 = `CHROMA` | KAOSS pad scale, a name from the table below | 0..29 |
+| `key` | 5 | 0 = `C` | KAOSS pad key, `C`..`B` | 0..11 |
+| `interp` | 6 | 1 = `hld` | automation path: `hld`, `smt`, `off` | 0..2 |
+| `slot` | 7 | 0 | KAOSS pad slot the `1`/`2`/`3` buttons select | 0..2 |
+| `lock` | 9 | 0 | pattern page `LOCK`: `1` engaged, `-1` neither it nor `COPY` | 0, 1, -1 |
 
-Bytes 8, 10 and 11 of the record are not in the line. The accessor at `0x0206B0C0`
-takes a field 0..9 and reads record byte *field*, so byte 8 has one; nothing calls
-it with 8, and 10 and 11 have no accessor at all. All three are zero in all 10464
-records here.
+```
+syn1  view scroll=54 oct=3 lane1=cutoff lane2=peak scale=IONIAN interp=smt lock=1
+drum1 view scroll=43 lock=-1
+```
 
-Position 6 is the one the sequencer reads: it lands in the automation object's
-`enable` (`0x0206DD4C`, live `+0x8A`), which picks which of the processor's two
-paths runs — 1 latches a step's value for the whole step, 2 ramps into the next
-step's. Both are implemented, `songplay` installs the pattern's own value, and
-`make test-seq` holds the ramp to the original's own processor over 900 cases.
+- `lane1` and `lane2` are a *copy* of the two lanes' knob ids. They agree with the
+  lane array in 94% of cases and are not what playback reads, so a `lane1` line and
+  a `view lane1=` can disagree; both are written as they are.
+- `interp` is the one field the sequencer reads — it is the automation object's
+  `enable` (`0x0206DD4C`, live `+0x8A`), and it picks which of the processor's two
+  paths runs: `hld` latches a step's value for the whole step, `smt` ramps into the
+  next step's. Both are implemented, `songplay` installs the pattern's own value,
+  and `make test-seq` holds the ramp to the original's own processor over 900 cases.
+- Bytes 8, 10 and 11 are not in the line. Byte 8 has a jump-table case that nothing
+  calls, 10 and 11 have none at all, and all three are zero in all 10464 records
+  here — so they come back through `[raw]` if a song ever sets one.
+- Naming these costs about 80 lines a song over the positional form this replaced,
+  all of it editor state. `--clean` does not drop them: they are live bytes, and
+  dropping them would change the song's MD5 for no musical difference.
 
 Pad scales, `0x02084E54`, 16 bytes each:
 

@@ -454,8 +454,27 @@ def parse_grid(kind, tokens, pat, track):
 #   7  KAOSS pad slot, the 1/2/3 buttons
 #   9  the pattern page's LOCK: 1 = engaged, 0xFF = neither LOCK nor COPY
 #
-# docs/songtext.md has the scale table and how each of these was measured.
-VIEW_BYTES = (0, 1, 2, 3, 4, 5, 6, 7, 9)
+# docs/songtext.md has how each of these was measured. Each is written only when
+# it differs from the default below, which is the value a fresh pattern carries.
+VIEW_FIELDS = (("scroll", 0, 0), ("oct", 1, 0), ("lane1", 2, 0), ("lane2", 3, 0),
+               ("scale", 4, 0), ("key", 5, 0), ("interp", 6, 1), ("slot", 7, 0),
+               ("lock", 9, 0))
+
+# The pad's scales, the 31 names of 16 bytes at 0x02084E54, and its keys, the
+# twelve of 8 bytes at 0x02084B70. Spelled as the screen spells them, because
+# lowercasing would collide: MBLUES and mBLUES are the major and minor blues
+# scales, and so are MPENTA/mPENTA and M3RD/m3RD.
+SCALE = ("CHROMA", "IONIAN", "DORIAN", "PHRYGI", "LYDIAN", "MIXLYD", "AEOLIA",
+         "LOCRIA", "MBLUES", "mBLUES", "DIM", "COMDIM", "MPENTA", "mPENTA",
+         "RAGA1", "RAGA2", "RAGA3", "SPANISH", "GYPSY", "ARABIA", "EGYPT",
+         "HAWAII", "PELOG", "JAPAN", "RYUKYU", "WHOLE", "m3RD", "M3RD", "4TH",
+         "5TH", "OCTAVE")
+KEY = ("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+# The two automation paths the pad's own buttons are labelled with, plus the 0
+# that only ds10demo00 carries.
+INTERP = {0: "off", 1: "hld", 2: "smt"}
+INTERP_VAL = {v: k for k, v in INTERP.items()}
 
 
 def mute_get(payload, base, bar):
@@ -496,17 +515,52 @@ def parse_bar_pairs(tokens):
         yield int(bar), int(value)
 
 
-def view_text(pat):
-    """`view` - one comma-separated group of nine bytes per track, or None when
-    the whole thing is zero. One line rather than six: it is editor state, and it
-    repeats across patterns."""
-    groups = []
-    for track in range(TRACKS):
-        rec = [pat[P_PARAMS + 1 + track * 12 + i] for i in VIEW_BYTES]
-        groups.append(",".join(str(v) for v in rec))
-    if not any(any(int(v) for v in g.split(",")) for g in groups):
+def view_text(pat, track):
+    """`<track> view …` - one track's editor record as named fields, or None when
+    every one of them is at its default."""
+    base = P_PARAMS + 1 + track * 12
+    out = []
+    for name, byte, dflt in VIEW_FIELDS:
+        v = pat[base + byte]
+        if v == dflt:
+            continue
+        if name in ("lane1", "lane2"):
+            out.append("%s=%s" % (name, KNOB[v][0] if v < KNOBS else v))
+        elif name == "scale":
+            out.append("scale=%s" % (SCALE[v] if v < len(SCALE) else v))
+        elif name == "key":
+            out.append("key=%s" % (KEY[v] if v < len(KEY) else v))
+        elif name == "interp":
+            out.append("interp=%s" % INTERP.get(v, v))
+        elif name == "lock":
+            out.append("lock=%d" % (v - 256 if v > 127 else v))
+        else:
+            out.append("%s=%d" % (name, v))
+    if not out:
         return None
-    return "view " + " ".join(groups)
+    return "%s view %s" % (TRACK_NAME[track], " ".join(out))
+
+
+def parse_view(tokens, pat, track):
+    base = P_PARAMS + 1 + track * 12
+    byte = {name: b for name, b, _ in VIEW_FIELDS}
+    for name, b, dflt in VIEW_FIELDS:
+        pat[base + b] = dflt
+    for t in tokens:
+        name, _, val = t.partition("=")
+        if name not in byte:
+            continue
+        if name in ("lane1", "lane2"):
+            v = KNOB_BY_NAME[val] if val in KNOB_BY_NAME else int(val)
+        elif name == "scale":
+            v = SCALE.index(val) if val in SCALE else int(val)
+        elif name == "key":
+            v = KEY.index(val) if val in KEY else int(val)
+        elif name == "interp":
+            v = INTERP_VAL[val] if val in INTERP_VAL else int(val)
+        else:
+            v = int(val)
+        pat[base + byte[name]] = v & 0xFF
 
 
 def lane_text(pat, track, lane):
@@ -720,9 +774,10 @@ def dumps(payload, clean=False, source=None):
         mix = pat[P_MIX:P_MIX + MIX_KNOBS]
         if bytes(mix) != INIT_MIX:
             body += mix_text(mix)
-        rec = view_text(pat)
-        if rec:
-            body.append(rec)
+        for t in range(TRACKS):
+            rec = view_text(pat, t)
+            if rec:
+                body.append(rec)
         if body:
             out.append("")
             out.append("[pattern %d]" % i)
@@ -843,11 +898,6 @@ def apply_pattern_line(p, i, key, rest, line, track):
     if key == "steps":
         struct.pack_into("<I", p, o + P_STEPS, int(rest[0]))
         return track
-    if key == "view":
-        for t, group in enumerate(rest[:TRACKS]):
-            for i, v in zip(VIEW_BYTES, group.split(",")):
-                p[o + P_PARAMS + 1 + t * 12 + i] = int(v) & 0xFF
-        return track
     if key == "mix":
         mix = bytearray(p[o + P_MIX:o + P_MIX + MIX_KNOBS])
         parse_mix(rest, mix)
@@ -880,8 +930,10 @@ def apply_pattern_line(p, i, key, rest, line, track):
                             o + P_KNOBS + (t + 1) * KNOBS])
         parse_mods(rest[1:], knobs)
         p[o + P_KNOBS + t * KNOBS:o + P_KNOBS + (t + 1) * KNOBS] = knobs
-    elif what == "scroll":
-        p[o + P_PARAMS + 1 + t * 12] = int(rest[1]) & 0xFF
+    elif what == "view":
+        pat = bytearray(p[o:o + PAT_SIZE])
+        parse_view(rest[1:], pat, t)
+        p[o:o + PAT_SIZE] = pat
     elif what.startswith("lane"):
         pat = bytearray(p[o:o + PAT_SIZE])
         parse_lane(rest[1:], pat, t, int(what[4:]) - 1)
