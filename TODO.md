@@ -1,79 +1,41 @@
 # TODO
 
-## 1. The differential suite's blind spot - closed
+## 1. What the whole-song differential does not cover yet
 
-For a long time the top item here, because four bugs had been found by listening
-rather than by the tests, and all four sat in the same place: the wiring between
-components that are individually verified, on the pattern-change and transport
-path.
+`make test-songwalk` walks an arrangement and compares the ROM's own mix bus with
+`out/songplay`, sample for sample: `new_00` (eight patterns, no repeats, a cutoff
+lane in every one) and `fresh10_02` (a per-bar mute lane over both synths and three
+drums) are bit-identical, 381248 and 393216 samples. That closes what this section
+used to be: four bugs found by ear that no test could fail, because the harness
+installed one pattern and looped it.
 
-| found by ear | what was wrong |
-|---|---|
-| "garbled noise" | step record is `gate, note, vel, pan`; I had note and gate swapped |
-| "doesn't start on the first beat" | pattern install ran after the tick returned instead of inside it |
-| "LFO phase isn't reset on pattern start" | never broadcast `0x1D` PATTERN_CHANGE |
-| "wrong pitch when the LFO modulates it" | tempo went to the mixer only, so voices kept 120 BPM |
+What it still does not reach:
 
-`make test-songrender` could not catch any of them: it installs **one pattern up
-front and loops it**, so a chain walk never happens, `set_pattern` never runs, and
-the tempo broadcast is never compared.
-
-`make test-songwalk` (`tools/songwalk.py`) is the answer. The ROM's side is the
-oracle, walking the arrangement the way the transport does - the sequencer asks its
-player for a pattern once a bar, answered from a hook on the player's own handler,
-and the original's `set_pattern` takes it from there. Our side is `out/songplay`
-itself, run as it ships and its WAV read back, because a test that rebuilds the
-engine inside itself cannot fail on how `songplay` wires things up. `songplay -C`
-dumps its six machine buffers, so a divergence lands on a track rather than in the
-mix. A capture is two to four seconds, so whole songs are affordable.
-
-Where it stands:
-
-| song | what it exercises | result |
-|---|---|---|
-| `new_00` (`5LTDN1`) | 8 patterns, no repeats, all six tracks, a cutoff lane in every pattern, `SMT` | 381248 samples, 6/6 channels and the mix identical |
-| `fresh10_02` | a mute lane that silences both synths and three drums, changing every bar or two | 393216 samples, identical |
-
-Five bugs came out of building it, and three were in the *reference*, which is
-worth remembering next time a comparison passes:
-
-- the oracle's drum buffers came from an inference predating `src/core/drumbuf.c`
-  and are about half the amplitude of the real thing, so our correct drums looked
-  2x loud;
-- the tempo was written into `seq+0x10`/`+0x14` by hand with one mixer event queued,
-  so no voice ever heard opcode 4 and every synced LFO stayed at the constructor's
-  120 BPM - which is the same bug as the fourth row of that table, in the harness
-  this time;
-- the per-bar mixer-knob push was placed after the tick, where it overwrote the new
-  step's own volume and pan posts.
-
-And two were ours: `songplay` installed the first pattern at its first tick instead
-of at load, leaving two frames of INIT patch against a zeroed mixer; and it applied
-the per-bar mute inside the tick, scaled by the previous step's velocity latch,
-where the transport applies it after.
-
-Still not covered, and worth doing:
-
-- **The transport itself.** `songwalk` drives the chain and reads the mute masks
-  from Python; the original does both from its transport object via `0x020330AC`.
-  So the mask *reading* and the bar counter are uncompared, and modelling that
-  object is what stage 3 of the plan called a possible swamp.
-- **Every routed event consumed.** Assert in the test that nothing was posted that
-  no machine handled. Three of the four bugs above would have shown up that way.
-- `tests/test_songrender.c` still rebuilds the engine inside the test. It is
-  superseded by `songwalk` for wiring and still useful for its per-field state
-  comparison, but the duplication is a trap and should go.
-- A fifth harness constant of the same family was found by reading rather than by
-  ear: `_rt_pattern` hardcoded the automation `enable` byte to 1, so every captured
-  run stayed on the `HLD` path and `SMT` was never compared - 9.3M samples of
-  agreement that could not have caught it. It now copies the song's own byte. The
-  rest of `_rt_pattern` and the capture setups deserve the same audit: each constant
-  standing in for song data is a path the suite cannot see.
+- **The transport object.** `songwalk` walks the chain and reads the mute masks from
+  Python; the original does both from its transport, via `0x020330AC`, so the mask
+  reading and the bar counter are ours rather than its. Modelling that object needs a
+  document object too.
+- **Every routed event consumed.** Assert that nothing is posted which no machine
+  handles. Three of the four bugs found by ear would have shown up that way.
+- **`tests/test_songrender.c` rebuilds the engine inside the test**, so a bug in how
+  `songplay` wires things up cannot fail it. `songwalk` supersedes it for wiring, and
+  the duplication is a trap worth removing.
+- **Harness constants standing in for song data.** Three of the five bugs found while
+  building `songwalk` were in the *reference*: drum buffers from an inference at half
+  amplitude, a tempo written by hand that no voice ever heard, and the mixer-knob push
+  placed after the tick instead of inside the install. `_rt_pattern` and the capture
+  setups deserve the same audit - each constant standing in for song data is a path
+  nothing can see.
 
 ## 2. Verify against real hardware
 
-`tools/mksong.py` writes valid song files, so a targeted probe is easy and much
-easier to judge than a busy track:
+`tools/songhw.py` plays a song on the ROM under melonDS and captures the SPU, which
+is enough to listen to and settled that the per-bar mute really is applied there. It
+cannot be sample-exact - melonDS resamples through blip_buf and the ROM's playback
+channel runs at a different rate - so it is an ear, not a test.
+
+For the things an ear cannot judge, `tools/mksong.py` writes valid song files, so a
+targeted probe is easy and much easier to judge than a busy track:
 
 - one pattern, one held note, a BPM-synced triangle LFO at known depth on pitch,
   at a deliberately non-120 tempo — settles the LFO rate at a glance;
@@ -94,15 +56,18 @@ Record from the device, compare against the same file rendered here.
   accumulator arithmetic, not observed; the tick runs on a thread woken by an OS
   event that has not been traced. `ds10demo01` predicts 164.29 s and the renderer
   produces 164.30 s, which is consistent but not proof.
-- **The song player.** The chain walk is mine. The original's is at `0x20331E0`,
-  reached through the `"stpt"` message, and is not decompiled.
+- **The transport.** The chain walk is mine. The original's bar advance
+  (`0x0206D1E4`, reached through the `"stpt"` message) and its per-bar mute update
+  (`0x020330AC`) are read, but the transport object that drives them - and the
+  document object it reads through - are not modelled, so `songwalk` supplies both
+  from Python.
 
 ## 4. Not implemented
 
-- **Automation paths other than the per-step latch.** The processor branches on
-  track state `+0x20` (1 or 2) and `+0x21` (0..3); only `1` with `0` is done. The
-  others consume a pending value from live knob input, which is editing rather
-  than playback, and no ROM demo asks for one.
+- **Automation modes 1..3.** The processor branches on track state `+0x20` (the
+  pad's HLD and SMT, both done) and `+0x21` (0..3, only `0` done). The other three
+  consume a pending value from live knob input, which is editing rather than
+  playback, and no song here asks for one.
 - **The transport start sequence.** `0x0206EC88` posts `24` PLAY to target `0x60`
   and `5` STOP to `0x70`. PLAY resets a voice's LFO phase and zeroes its envelope;
   starting from the constructor state happens to be equivalent, but it is not the
@@ -193,30 +158,10 @@ second 25-knob mixer space this build has no mixer for (recon.md §12).
 
 ## 6. GUI
 
-Done:
-
-- the 2D hardware model, pixel-exact against melonDS over 29 screens
-  (`make test-2d`);
-- the sprite widget's OAM builder, bit-exact against the game's own setter
-  under Unicorn (`make test-obj`);
-- the asset containers, and the pages drawing natively and in the browser, six
-  of them pixel-exact against the real thing (`make test-page`);
-- the browser build plays: the keyboard drives the decompiled synth engine at
-  the right pitch, and the synth edit page's knobs turn, through the engine's
-  own dispatch and the ROM's own knob ranges;
-- **the browser build is an editor.** It works on a `ds10_song` - the same
-  record the ROM's files are a byte image of - starting from the ROM's own
-  blank template `ds10init.dat`. Notes go in on the piano roll and the drum
-  grid through the decompiled hit tests, appear on the screen where the
-  hardware puts them, sound as they are entered, and save as a `.dat` the
-  hardware would load.
-
-  `make test-webedit` is the end-to-end check: it enters a song through the
-  grid's own hit tests, checks exactly the right cell lights, watches the play
-  cursor walk, hears the pattern and hears silence after clearing it, exports,
-  loads the file back through the game's parser, and renders the same file with
-  `songplay` - which shares none of the browser plumbing and is itself
-  bit-exact against the original. They agree sample for sample.
+What works is in README's test table and `recon.md` §16: the 2D hardware model
+pixel-exact against melonDS, the sprite widget's OAM against the game's own setter,
+the asset containers and pages, the browser build playing and editing a real
+`ds10_song`, and `make test-webedit` end to end from grid taps to a rendered file.
 
 Remaining, roughly in order:
 
@@ -226,25 +171,20 @@ Remaining, roughly in order:
   come out pixel-exact that way, and the synth edit knobs turn because their
   cell's matrix is ours to set.
 
-  What is still missing is the code that *produces* those lists: each screen's
-  constructor and its per-frame update. The lists here were recovered from one
+  What is missing is the code that *produces* those lists: each screen's
+  constructor and, more importantly, its per-frame update - what a screen
+  redraws when its state changes. The lists here were recovered from one
   captured frame per page (`tools/pages.py` inverts the expansion), so a page
-  shows the state it was captured in until something is wired to change it.
-  All twelve are now read and listed in `recon.md` §16 with their geometry
-  tables. A constructor is a walk over a table, one widget per entry. Nine of
-  the screens have their controls wired.
-
-  What that does *not* give is the per-frame update: what each screen redraws
-  when its state changes. The display lists still come from a captured frame,
-  so a page shows the state it was captured in except where something is wired
-  to move it.
+  shows the state it was captured in except where something is wired to move
+  it. All twelve constructors are read and listed in `recon.md` §16 with their
+  geometry tables, a constructor being a walk over a table with one widget per
+  entry, and nine screens have their controls wired.
 
 - **Text.** `90_MAP`'s unattributed sprites are text - the session name, the
   tempo, the step count. Their tiles are past the end of CHARACTER_S and match
   no asset, and the top screen's OBJ VRAM holds 125 KB of data only 13 KB of
   which is a file: the glyphs are rasterised into VRAM at runtime from the
   NFTR fonts. That means an NFTR renderer and a glyph cache, not a lookup.
-
 
 - **The 3D text layer.** Captions are textured quads through the geometry
   engine, orthographic and axis-aligned, from `3D_TEX` and `3D_MESS_TEX`. A
