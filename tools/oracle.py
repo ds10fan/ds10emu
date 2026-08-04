@@ -457,6 +457,7 @@ SEQ_CTOR = 0x0206D79C
 SEQ_CONFIG = 0x0206D830    # (seq, nsynths, ndrums)
 SEQ_SET_SWING = 0x0206DB14 # (seq, swing_percent)
 SEQ_TICK = 0x0206E5AC
+MSG_BAR = 0x73747074           # "stpt", the ask-for-a-pattern message
 DIVIDE = 0x0200C158        # (a, b) -> a/b in r0
 SEQ_SIZE = 0x214
 
@@ -1145,20 +1146,32 @@ def _post_note(o, syn, opcode, note):
     o.uc.mem_write(syn + 0x08, bytes([n + 1]))
 
 
-def capture_songrender(blob, pattern_idx, frames):
+def _song_pattern(o, payload, idx):
+    """One runtime pattern, with its own per-track knob defaults - what a lane
+    falls back to on a step with no automation."""
+    song_pat = payload[0xEC + idx * 676:0xEC + (idx + 1) * 676]
+    steps = struct.unpack_from("<I", song_pat, 0)[0]
+    dflt = [o.call(NEW_THUNK, 0x80) for _ in range(2)]
+    for v in range(2):
+        o.uc.mem_write(dflt[v], bytes(song_pat[4 + v * 31:4 + (v + 1) * 31]))
+    return _rt_pattern(o, song_pat, NMACH, steps, 2, dflt), song_pat, steps
+
+
+def capture_songrender(blob, pattern_idx, frames, chain=None):
+    """One pattern looped, or - with `chain` - the arrangement walked the way the
+    transport walks it: the sequencer asks its player for a pattern once a bar and
+    the original's own installer takes it from there."""
     o = Oracle()
     seq = _new_seq(o, 2, 4)
     o.w32(ROUTER_ENABLE, 1)
 
     payload = blob[16:]
-    off = 0xEC + pattern_idx * 676
-    song_pat = payload[off:off + 676]
-    steps = struct.unpack_from("<I", song_pat, 0)[0]
-    dflt = [o.call(NEW_THUNK, 0x80) for _ in range(2)]
-    for v in range(2):
-        o.uc.mem_write(dflt[v],
-                       bytes(song_pat[4 + v * 31:4 + (v + 1) * 31]))
-    pat = _rt_pattern(o, song_pat, NMACH, steps, 2, dflt)
+    pat, song_pat, steps = _song_pattern(o, payload, pattern_idx)
+    rt = {pattern_idx: pat}
+    if chain:
+        for idx in chain:
+            if idx not in rt:
+                rt[idx], _, _ = _song_pattern(o, payload, idx)
 
     # Two real voices as machines 0 and 1; the drum tracks and the two buses get
     # queue-only stand-ins, since a drum voice needs a rendered sample buffer.
@@ -1225,10 +1238,29 @@ def capture_songrender(blob, pattern_idx, frames):
     o.w32(router + 0x08, stub[0])
     o.w32(router + 0x14, NMACH)
 
+    # The player. Its handler is a `bx lr` of its own rather than the shared one,
+    # so a hook on that address fires for this call and nothing else.
+    handler = o.call(NEW_THUNK, 4)
+    o.uc.mem_write(handler, struct.pack("<I", 0xE12FFF1E))     # bx lr
     pvt = o.call(NEW_THUNK, 0x10)
-    o.w32(pvt + 0x04, BX_LR)
+    o.w32(pvt + 0x04, handler)
     player = o.call(NEW_THUNK, 0x10)
     o.w32(player + 0x00, pvt)
+    asked = []
+
+    def answer(uc, address, size, data):
+        """What the transport does: on the bar message, hand back the pattern the
+        chain names for the next bar, or NULL to stop."""
+        msg = o.u32(player + 0x04)
+        if msg != MSG_BAR:
+            return
+        bar = len(asked)
+        idx = chain[bar] if chain and bar < len(chain) else None
+        asked.append(idx)
+        o.w32(player + 0x08, rt[idx] if idx is not None and idx in rt else 0)
+
+    if chain:
+        o.uc.hook_add(UC_HOOK_CODE, answer, begin=handler, end=handler)
 
     # The sequencer reads per-channel volume and pan out of the mixer's own knob
     # array, so it is the pattern's 25 bytes.
@@ -1294,7 +1326,7 @@ def capture_songrender(blob, pattern_idx, frames):
         while acc >= TICK_DEN:
             acc -= TICK_DEN
             o.call(SEQ_TICK, seq)
-            if o.u32(seq + 0x40) == 0:
+            if not chain and o.u32(seq + 0x40) == 0:
                 o.w32(seq + 0x40, pat)
                 o.uc.mem_write(seq + 0x2C, bytes([steps]))
         # The drum and bus stand-ins have no render to drain their queues, so
@@ -1327,6 +1359,8 @@ def capture_songrender(blob, pattern_idx, frames):
             raw = bytes(o.uc.mem_read(p, FRAME * 2))
             frame.append(list(struct.unpack(f"<{FRAME}h", raw)))
         out.append(frame)
+    if chain:
+        print("    bars asked for: %s" % " ".join(str(b) for b in asked))
     return (knobs, tempo, swing, steps, song_pat, vstate, sstate, drumbufs,
             mix_knobs, mstate, fstate, out)
 
