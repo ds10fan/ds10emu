@@ -184,10 +184,23 @@ static void install_pattern(ds10_seq_ctx *c, ds10_rt_pattern *pat)
             for (l = 0; l < DS10_SEQ_LANES; l++)
                 sp->lane_raw[t * 2 * DS10_SONG_STEPS + st * 2 + l] =
                     q->lane[t][st].raw[l];
+        /* A lane's target. The runtime pattern holds one id per lane per track,
+         * which 0x0206DEE4 reads from its track block; a song file instead repeats
+         * the pair in all sixteen step records, so step 0 stands in for the single
+         * slot. The copies disagree in 22 of the 3104 pattern-track pairs in
+         * data/saves, and which one the original's builder takes is not known -
+         * that builder is not decompiled. */
         for (l = 0; l < DS10_SEQ_LANES; l++) {
             int kn = (uint8_t)q->lane[t][0].knob[l];
 
             c->autom[t].lane[l].knob = (uint8_t)kn;
+            /* 0x0206DEE4 guards this on `kn == 0xFF` alone and not on the knob
+             * count, so for a target that is out of range but not 0xFF it reads
+             * one entry past both tables. The range test here leaves offset and
+             * scale at 0 from the memset instead - a deliberate divergence, and an
+             * unobservable one, because such a lane's pushes land on a knob
+             * ds10_patch_set_knob does not dispatch and are dropped. data/saves
+             * has exactly one: target 31 in xfer2_05 pattern 8, track 1, lane 1. */
             if (kn < DS10_SONG_KNOBS) {
                 c->autom[t].lane[l].offset = (int8_t)ds10_tbl_knob_min[kn];
                 c->autom[t].lane[l].scale = (uint8_t)ds10_tbl_knob_range[kn];

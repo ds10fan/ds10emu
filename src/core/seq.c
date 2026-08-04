@@ -209,7 +209,20 @@ int ds10_seq_emit(ds10_seq *s, ds10_seq_track *tracks, ds10_seq_posted *out)
 
 /* offset + raw*scale/128, truncated to a signed byte. The original spells the
  * divide as an explicit round-toward-zero correction, which is what C's / does
- * for negatives too. */
+ * for negatives too.
+ *
+ * A raw of -1 is what makes a step with no automation restore the knob rather
+ * than leave it: `defaults` is that track's 31-byte patch array, the same one the
+ * pattern change pushed into the machine, so the lane keeps writing and what it
+ * writes is the un-automated value. The processor pushes on every sub-tick, so
+ * there is no gap to detect - see automation() below.
+ *
+ * `l->knob` is not bounded against `defaults`, which is 0x0206E1EC exactly: it
+ * indexes with the knob byte read unsigned, while the lane-off test at the push
+ * site reads that same byte signed and only skips on -1. A target out of range but
+ * not 0xFF therefore reads past the array here. One lane in data/saves does it,
+ * with target 31, and the read is harmless because the value is then pushed to a
+ * knob ds10_patch_set_knob does not dispatch. */
 int32_t ds10_lane_map(const ds10_lane *l, int raw, const int8_t *defaults)
 {
     int32_t p;
