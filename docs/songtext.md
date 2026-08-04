@@ -7,7 +7,7 @@ two in step cost more than it caught. Nothing about the format below depends on
 that — exactness is checked the same way either way.)
 
 ```sh
-python3 tools/songtext.py dump [--clean] [--view] x.ds10song [out.txt]  # load, check
+python3 tools/songtext.py dump [--clean] x.ds10song [out.txt]   # load, check
 python3 tools/sav.py unpack x.ds10save dir/   # slotNN.ds10song.txt + bank.ds10patch.txt
 ```
 
@@ -113,7 +113,6 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 | `<track> auto interp=…` | `+0x25C + track*12 + 6`, the automation path |
 | `<track> laneL knob=K [shown=K] S=V …` | `+0x1C2 + track*64 + step*4`, and the record's copy of the target at `+0x25C + track*12 + 2`; `S=V` per step that has a value |
 | `mix …` / `fx …` | `+0x242`, 25 knobs |
-| `<track> view k=v …` | `+0x25C + track*12`, one 12-byte editor record |
 
 Tracks are `syn1`, `syn2`, `drum1`..`drum4`. Lanes are `lane1`, `lane2`, on synth
 tracks only.
@@ -159,9 +158,8 @@ A lane's target is stored more than once, and the copies can disagree:
 | `+0x1C2 + track*64 + step*4 + 2 + lane` | a knob id on **every one of the 16 steps** | the lane initialiser `0x0206DEE4` reads step 0 and nothing else |
 | `+0x25C + track*12 + 2 + lane` | one more copy per track | the KAOSS page: `0x0203CD5C` loads it into the page's own slots, `0x020445D0` writes it back |
 
-`knob=` is the first one, the one that plays. The second is a KAOSS-page echo, so it
-stays with the rest of the editor record under `view` — where it is `lane1=` /
-`lane2=` — rather than cluttering the lane line.
+`knob=` is the first one, the one that plays. The second is a KAOSS-page echo with no
+line of its own; it rides in `[raw]` with the rest of the editor record.
 
 - The disagreements are real, not a decoding error: they differ in 443 of 7176 lane
   slots, 103 of them on lanes that have recorded values. `new_16` pattern 2 has the
@@ -181,56 +179,40 @@ stays with the rest of the editor record under `view` — where it is `lane1=` /
   records here are `smt`, and every drum record is `hld`, drums having no lanes at
   all. That leaves 394 `auto` lines in the whole corpus.
 
-## `view` — the editor records, off by default
+## The editor records — no syntax, on purpose
 
-**A dump does not write these unless you ask for them** (`dump --view`). They are
-editor state, nothing playback reads, and they are the noisiest thing in the file —
-one line per track per pattern. Without `--view` they come back through `[raw]`, so
-a plain dump still reloads byte for byte; `--clean` drops them outright, the way it
-drops the dead bytes of a step with no note.
+Pattern `+0x25C` holds six 12-byte records, one per track, and the format has no
+line for them. They are editor state: where that track's piano roll is scrolled,
+what the KAOSS page has selected, which of `COPY`/`LOCK` the pattern page last had
+down. A plain dump carries them in `[raw]`, which is what keeps it byte-exact;
+`--clean` drops them, the way it drops the dead bytes of a step with no note.
 
-The record is 12 bytes at `+0x25C + track*12`, and the game reads nine of them
-through one accessor (`0x0206B0C0`, `cmp field,#9` then a ten-case jump table where
-case *i* is `ldrb [record + i]`, so a field index is a byte index).
+They had named `view` lines for a while. One line per track per pattern, ~96 a song,
+for state nothing plays — not worth it. The one byte of a record that *is* played is
+the automation path, and it has its own line (`<track> auto interp=`).
 
-| field | byte | default | value | seen |
-|---|---|---|---|---|
-| `scroll` | 0 | 0 | piano-roll scroll, counting upward | 0..84 |
-| `oct` | 1 | 0 | keyboard octave — the row of six dots over the keys | 0..5 |
-| `lane1` | 2 | 0 | the KAOSS page's copy of lane 1's target, a knob name | |
-| `lane2` | 3 | 0 | the same for lane 2 | |
-| `scale` | 4 | 0 = `CHROMA` | KAOSS pad scale, a name from the table below | 0..29 |
-| `key` | 5 | 0 = `C` | KAOSS pad key, `C`..`B` | 0..11 |
-| `slot` | 7 | 0 | KAOSS pad slot the `1`/`2`/`3` buttons select | 0..2 |
-| `lock` | 9 | 0 | pattern page `LOCK`: `1` engaged, `-1` neither it nor `COPY` | 0, 1, -1 |
+What the twelve bytes are, since the accessor `0x0206B0C0` names nine of them (`cmp
+field,#9`, then a ten-case jump table where case *i* is `ldrb [record + i]`, so a
+field index is a byte index):
 
-```
-syn1  view scroll=54 oct=3 lane1=cutoff lane2=peak scale=IONIAN lock=1
-drum1 view scroll=43 lock=-1
-```
+| byte | what | read by | seen |
+|---|---|---|---|
+| 0 | piano-roll scroll, counting upward | `0x02050108`, the sequencer page | 0..84 |
+| 1 | keyboard octave — the six dots over the keys | `0x0204BFF8`, the keyboard | 0..5 |
+| 2, 3 | the KAOSS page's copy of the two lanes' targets, which is *not* what plays | `0x02049150` | |
+| 4 | KAOSS pad scale, an index into the table below | `0x0204AB00` | 0..29 |
+| 5 | KAOSS pad key, 0 = C .. 11 = B | `0x0204AB00` | 0..11 |
+| 6 | **the automation path** — 1 `HLD`, 2 `SMT`, 0 off | `0x02052864` → `0x0206DD4C`, into the sequencer | 0..2 |
+| 7 | KAOSS pad slot, the `1`/`2`/`3` buttons | `0x02049150` | 0..2 |
+| 8, 10, 11 | nothing calls the accessor with 8, and 10 and 11 have no case at all; zero in all 10464 records here | — | 0 |
+| 9 | pattern page `LOCK`: 1 engaged, 0xFF neither it nor `COPY` | `0x0202E01C` | 0, 1, 0xFF |
 
-- Byte 6, the automation path, is the one byte of the record playback reads, so it
-  is not here — it is `<track> auto interp=` above, and it is written whether or not
-  `--view` is on. `lane1` and `lane2` are the KAOSS page's copy of the lanes'
-  targets, not what plays; the automation section has how far they drift.
-- **Nothing here reaches playback.** Every call site of the accessor for these eight
-  fields is in a screen: `0x02050108` (the sequencer page) for `scroll`, `0x0204BFF8`
-  (the keyboard) for `oct`, `0x02049150`/`0x0204AB00` (the KAOSS page) for `scale`,
-  `key` and `slot`, `0x0202E01C` (the pattern page) for `lock`. On this side, core
-  reads exactly one byte of the record — `params[1 + track*12 + 6]`, the automation
-  path — and carries the rest for exactness. What `oct`, `scale` and `key` do affect
-  is what the keyboard and the pad *produce when touched*: `0x0204AB00` loads fields
-  4 and 5 into the page's own state and the touch handler makes notes with them. So
-  they matter to an interactive build, and to what a player records, not to
-  rendering a song that is already recorded.
-- Bytes 2, 3 and 6 of the record are automation rather than viewport, so they are
-  written with the lanes instead — see above.
-- Bytes 8, 10 and 11 are not in the line. Byte 8 has a jump-table case that nothing
-  calls, 10 and 11 have none at all, and all three are zero in all 10464 records
-  here — so they come back through `[raw]` if a song ever sets one.
-- Cost of the four modes on one 32-bar song (`xfer2_10`): plain 539 lines of which
-  272 are `raw`; `--view` 586 with 223 `raw`; `--clean` 268 with one; `--clean
-  --view` 364. `make test-songtext` round-trips all three that claim to be exact.
+Byte 6 is the only one that leaves the interface. Bytes 1, 4, 5 and 7 shape what the
+keyboard and the pad *produce when touched* — `0x0204AB00` loads 4 and 5 into the
+page's own state and the touch handler makes notes with them — so they matter to an
+interactive build and to what a player records, not to rendering a song that is
+already recorded. On this side, core reads `params[1 + track*12 + 6]` and nothing
+else out of the record.
 
 Pad scales, `0x02084E54`, 16 bytes each:
 
@@ -382,18 +364,15 @@ mod vco2p=saw:+16 cutoff=sine:+8
 
 - The dumper parses its own output back and appends a `raw` line for every byte
   that did not survive, so unnamed fields round-trip too.
-- All **109** songs in `data/saves` and the ROM round-trip byte for byte, in C
-  (`make test-songtext`) and in Python.
-- The C and the Python produce identical text for every song in both modes -
-  218 dumps, `make test-songtext-py`. This is what caught the two bugs the round
-  trip could not see, both quoted names holding a space.
+- All **109** songs in `data/saves` and the ROM round-trip byte for byte:
+  `make test-songtext`.
 - All **six** saves in `songs/` unpack to text and repack to a byte-identical
   512 KiB save, from the text alone.
-- `--clean` drops one thing: the gate, velocity and pan of a step with no note —
-  dead bytes, 129 distinct combinations across the corpus. A song's text goes from
-  491 lines to 270. On `DS10PLUS.ds10save` that changes 54090 of 524288 bytes, all of
-  them dead bytes or recomputed MD5s; all 18 slots still hash and 90720 live
-  fields compare equal.
+- `--clean` drops the bytes nothing plays: every pattern's six editor records, and
+  the gate, velocity and pan of a step with no note — 129 distinct combinations of
+  those three across the corpus. `xfer2_10` goes from 538 lines to 267, `fresh10_01`
+  from 266 to 174. On `DS10PLUS.ds10save` it changes 58962 of 524288 bytes, all of
+  them editor state, dead step bytes or recomputed MD5s.
 
 ## `mute` and `trs` — the PLUS tail
 
