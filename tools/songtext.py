@@ -54,9 +54,10 @@ patterns, 165888 steps) - a field is written only when it differs:
   patch knobs         the ROM's own INIT patch, ds10synth00.dat (mean 10 of 31
                       knobs differ, so a patch line is short)
   lanes               75% of the 6912 lane slots have no automation at all
-  mute                a bar names the tracks it mutes - s1 s2 for the synths,
-                      d1..d4 for the drums - and a bar that mutes nothing is
-                      left out
+  mute, trs           a bar names the tracks it mutes - s1 s2 for the synths,
+                      d1..d4 for the drums - a bar that mutes nothing is left
+                      out, and a run of bars holding the same value collapses to
+                      `first-last=value`
   interp smt / hld    the automation path: smt on a synth track (3158 of its 3488
                       records), hld on a drum one, which has no lanes at all
   modulation          82% of the 5 mod slots per patch are source `none`
@@ -521,24 +522,43 @@ def mute_text(payload, base):
     """`mute a` / `mute b` - only the bars that mute something."""
     if base + MUTE_SLOTS // 5 * 4 > len(payload):
         return None
-    out = ["%d=%s" % (b, mute_mask_text(mute_get(payload, base, b)))
-           for b in range(MUTE_SLOTS) if mute_get(payload, base, b)]
-    return " ".join(out) if out else None
+    pairs = [(b, mute_mask_text(mute_get(payload, base, b)))
+             for b in range(MUTE_SLOTS) if mute_get(payload, base, b)]
+    return " ".join(bar_pairs_text(pairs)) if pairs else None
 
 
 def trs_text(payload):
     """`trs` - only the bars that transpose."""
     if TRS + TRS_N > len(payload):
         return None
-    out = ["%d=%d" % (b, v - 256 if v > 127 else v)
-           for b, v in enumerate(payload[TRS:TRS + TRS_N]) if v]
-    return " ".join(out) if out else None
+    pairs = [(b, str(v - 256 if v > 127 else v))
+             for b, v in enumerate(payload[TRS:TRS + TRS_N]) if v]
+    return " ".join(bar_pairs_text(pairs)) if pairs else None
+
+
+def bar_pairs_text(pairs):
+    """`0=x 1=x 2=y` written as `0-1=x 2=y`: a run of bars holding the same value
+    collapses to one token, since these lanes hold long stretches of one value."""
+    out, i = [], 0
+    while i < len(pairs):
+        j = i
+        while (j + 1 < len(pairs) and pairs[j + 1][1] == pairs[i][1]
+               and pairs[j + 1][0] == pairs[j][0] + 1):
+            j += 1
+        out.append("%d=%s" % (pairs[i][0], pairs[i][1]) if j == i else
+                   "%d-%d=%s" % (pairs[i][0], pairs[j][0], pairs[i][1]))
+        i = j + 1
+    return out
 
 
 def parse_bar_pairs(tokens):
+    """`3=v` and `2-31=v` alike, one (bar, value) at a time. The value stays text;
+    the caller knows whether it is a number or a list of tracks."""
     for t in tokens:
-        bar, _, value = t.partition("=")
-        yield int(bar), int(value)
+        where, _, value = t.partition("=")
+        lo, _, hi = where.partition("-")
+        for bar in range(int(lo), int(hi or lo) + 1):
+            yield bar, value
 
 
 def auto_text(pat, track):
@@ -881,12 +901,11 @@ def loads(text, _raw=True):
                 struct.pack_into("<H", p, 0x24 + i * 2, int(v))
         elif key == "mute":
             base = MUTE_A if rest[0] == "a" else MUTE_B
-            for t in rest[1:]:
-                bar, _, val = t.partition("=")
-                mute_set(p, base, int(bar), mute_mask_value(val))
+            for bar, val in parse_bar_pairs(rest[1:]):
+                mute_set(p, base, bar, mute_mask_value(val))
         elif key == "trs":
             for bar, value in parse_bar_pairs(rest):
-                p[TRS + bar] = value & 0xFF
+                p[TRS + bar] = int(value) & 0xFF
         elif key == "raw":
             if _raw:
                 off = int(rest[0], 16)
