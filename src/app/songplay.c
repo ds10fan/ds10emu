@@ -125,6 +125,13 @@ static void apply_mute(song_player *sp, int bar)
 
     if (sp->last < 0)
         return;
+    /* Nothing muted now and nothing muted before means there is nothing to push:
+     * the transport's applier only touches a channel whose state it is changing,
+     * and a song with no mute lane at all must leave the mixer alone. Pushing
+     * anyway re-posts a volume scaled by whatever velocity latch happens to be
+     * there, which songwalk caught on two songs. */
+    if (mask == 0 && sp->muted == 0)
+        return;
     sp->muted = mask;
     q = &sp->song->pattern[sp->last];
     for (t = 0; t < NTRK; t++) {
@@ -283,6 +290,31 @@ static void wav_header(FILE *f, unsigned long frames)
     put16(f, 16);
     fwrite("data", 1, 4, f);
     put32(f, data);
+}
+
+/* The mixer's and effect's state, in the field order tools/oracle.py captures it
+ * in, so a start-state difference can be diffed against the original's. */
+static void dump_state(const ds10_mixer *m)
+{
+    const ds10_fx *fx = &m->fx;
+    int i;
+
+    printf("mix route=%d drywet=%d", m->route, m->drywet);
+    for (i = 0; i < DS10_MIX_CHANNELS; i++)
+        printf(" v%d=%ld", i, (long)m->vol[i]);
+    for (i = 0; i < DS10_MIX_CHANNELS; i++)
+        printf(" p%d=%ld", i, (long)m->pan[i]);
+    printf("\nfx type=%d sync=%d time=%d ratio=%d lfo=%d depth=%d fb=%d"
+           " drywet=%d fben=%d\n", fx->type, fx->sync, fx->k_time, fx->k_ratio,
+           fx->k_lfo, fx->k_depth, fx->k_fb, fx->k_drywet, fx->fb_enable);
+    printf("fx tempo=%ld\n", (long)fx->tempo);
+    printf("fx phase=%ld inc=%ld depth=%ld feedback=%ld time=%ld\n",
+           (long)fx->lfo_phase, (long)fx->lfo_inc, (long)fx->depth,
+           (long)fx->feedback, (long)fx->time);
+    printf("fx smooth=%ld,%ld read_l=%ld/%ld/%ld read_r=%ld/%ld/%ld\n",
+           (long)fx->smooth_l, (long)fx->smooth_r, (long)fx->read_l,
+           (long)fx->read_l_target, (long)fx->read_l_delta, (long)fx->read_r,
+           (long)fx->read_r_target, (long)fx->read_r_delta);
 }
 
 /* Per-channel raw output, for tools/songwalk.py: the six machine buffers before
@@ -478,6 +510,12 @@ int main(int argc, char **argv)
     seq.accum = DS10_SEQ_TEMPO_NUM / 120 - DS10_SEQ_INCR + 1;
     seq.playing = 1;
     seq.starting = 1;
+    /* The constructor's own tempo, 120. It matters: ds10_seq_tempo broadcasts
+     * opcode 4 only when the tempo *changes*, exactly as 0x0206DA80 does, so a
+     * 120 BPM song must not broadcast at all - and starting from 0 here made
+     * every one of them retune a synced delay the original leaves free-running.
+     * tools/songwalk.py found it on thirteen songs. */
+    seq.tempo = 120;
     for (i = 0; i < NTRK; i++)
         trk[i].live_note = -1;
 
@@ -565,6 +603,9 @@ int main(int argc, char **argv)
     memset(silence, 0, sizeof silence);
     for (i = 0; i < DS10_MIX_CHANNELS; i++)
         chp[i] = i < NTRK ? buf[i] : silence;
+
+    if (getenv("DS10_STATE"))
+        dump_state(&mix);
 
     f = fopen(out, "wb");
     if (!f) {

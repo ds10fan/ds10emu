@@ -2,6 +2,7 @@
 """songwalk - a whole arrangement, the ROM's own render against ours, sample exact.
 
     python3 tools/songwalk.py check data/saves/new_00.ds10song [bars]
+    python3 tools/songwalk.py sweep [bars]        # every song in the corpus
 
 The ROM's side is `tools/oracle.py`, which runs the original's sequencer, voices,
 mixer and router out of the extracted image and reads the mixer's own stereo pair -
@@ -25,6 +26,7 @@ import sys
 import wave
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import songtext as st                                          # noqa: E402
 
 RATE = 32768
 FRAME = 64
@@ -66,7 +68,6 @@ def capture(song, bars):
         return path, chain, tempo, bars
     print("capturing %d frames (%d bars of %s) from the ROM..."
           % (frames, bars, os.path.basename(song)))
-    import songtext as st
     masks = [st.mute_get(payload, st.MUTE_A - 0, b) if len(payload) > st.MUTE_A + 84
              else 0 for b in range(len(chain))]
     r = oracle.capture_songrender(blob, chain[0], frames, chain=chain,
@@ -127,6 +128,25 @@ def ours(song, bars):
 TRACK = ("syn1", "syn2", "drum1", "drum2", "drum3", "drum4", "mixL", "mixR")
 
 
+def first_diff(a, b):
+    """Index of the first difference, or -1. Bulk-compares as bytes and only
+    walks the chunk that disagrees - a sweep over the corpus is otherwise all
+    Python loop."""
+    n = min(len(a), len(b))
+    if n == 0:
+        return -1
+    STEP = 4096
+    for base in range(0, n, STEP):
+        end = min(base + STEP, n)
+        if (struct.pack("<%dh" % (end - base), *a[base:end]) ==
+                struct.pack("<%dh" % (end - base), *b[base:end])):
+            continue
+        for i in range(base, end):
+            if a[i] != b[i]:
+                return i
+    return -1
+
+
 def check(song, bars=8):
     path, chain, tempo, bars = capture(song, bars)
     rom = read_vector(path)
@@ -138,16 +158,16 @@ def check(song, bars=8):
                                     " ".join(str(c) for c in chain[:bars])))
     print("  ROM %d samples, ours %d, comparing %d (%.2f s)"
           % (len(hl), len(ol), n, n / float(RATE)))
-    bad = first = 0
-    worst = 0
-    for i in range(n):
-        d = abs(hl[i] - ol[i]) + abs(hr[i] - orr[i])
-        if d:
-            bad += 1
-            if not first:
-                first = i
-            if d > worst:
-                worst = d
+    dl, dr = first_diff(hl[:n], ol[:n]), first_diff(hr[:n], orr[:n])
+    first = min(x for x in (dl, dr) if x >= 0) if (dl >= 0 or dr >= 0) else -1
+    bad = worst = 0
+    if first >= 0:
+        for i in range(first, n):
+            d = abs(hl[i] - ol[i]) + abs(hr[i] - orr[i])
+            if d:
+                bad += 1
+                if d > worst:
+                    worst = d
     # Per channel, so a divergence lands on a track rather than in the mix.
     print("\n  channel   ROM rms   ours rms   first differing sample")
     for ch in range(6):
@@ -171,8 +191,73 @@ def check(song, bars=8):
     return 1
 
 
+def corpus():
+    """Everything committed that is a song and has an arrangement to walk."""
+    import glob
+    out = []
+    for f in (sorted(glob.glob("data/saves/*.ds10song")) +
+              [x for x in sorted(glob.glob("data/nitrofs/demo/*.dat"))
+               if "synth" not in x]):
+        payload = st.read_song(f)
+        if song_chain(payload):
+            out.append(f)
+    return out
+
+
+def one(args):
+    """One song, in a worker: returns a line and whether it matched."""
+    song, bars = args
+    try:
+        path, chain, tempo, bars = capture(song, bars)
+        rom = read_vector(path)
+        ours_ch = ours_channels(song, bars)
+        ol, orr = ours(song, bars)
+        n = min(len(rom[6]), len(ol))
+        at = min(x for x in (first_diff(rom[6][:n], ol[:n]),
+                             first_diff(rom[7][:n], orr[:n]), 1 << 60)
+                 if x >= 0)
+        if at == 1 << 60:
+            return song, tempo, bars, n, None, ""
+        # Which channel went first says where to look.
+        who = [TRACK[c] for c in range(6)
+               if first_diff(rom[c], ours_ch[c]) >= 0]
+        return (song, tempo, bars, n, at, ",".join(who) or "mix only")
+    except Exception as exc:                                  # noqa: BLE001
+        return song, 0, bars, 0, -1, "error: %s" % exc
+
+
+def sweep(bars=6, jobs=None):
+    """Every song in the corpus, in parallel. Prints a line each and a summary."""
+    import multiprocessing
+    songs = corpus()
+    jobs = jobs or max(1, (os.cpu_count() or 2) - 2)
+    print("sweeping %d songs, %d bars each, %d at a time\n" % (len(songs), bars,
+                                                               jobs))
+    bad = []
+    with multiprocessing.Pool(jobs) as pool:
+        for song, tempo, nbars, n, at, who in pool.imap(
+                one, [(s, bars) for s in songs]):
+            name = os.path.basename(song)
+            if at is None:
+                print("  %-26s %3d BPM %2d bars %8d samples  identical"
+                      % (name, tempo, nbars, n))
+            else:
+                bad.append((name, at, who))
+                print("  %-26s %3d BPM %2d bars %8d samples  DIFFERS at %d (%s)"
+                      % (name, tempo, nbars, n, at, who))
+    print("\n%d of %d identical" % (len(songs) - len(bad), len(songs)))
+    for name, at, who in bad:
+        print("  %-26s first difference at sample %s in %s" % (name, at, who))
+    return 1 if bad else 0
+
+
 def main():
-    if len(sys.argv) < 3 or sys.argv[1] != "check":
+    if len(sys.argv) < 2:
+        print(__doc__)
+        return 1
+    if sys.argv[1] == "sweep":
+        return sweep(int(sys.argv[2]) if len(sys.argv) > 2 else 6)
+    if sys.argv[1] != "check" or len(sys.argv) < 3:
         print(__doc__)
         return 1
     bars = int(sys.argv[3]) if len(sys.argv) > 3 else 8
