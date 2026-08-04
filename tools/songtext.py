@@ -36,8 +36,11 @@ patterns, 165888 steps) - a field is written only when it differs:
   steps 16            1738 of 1744 patterns
   velocity 127        96% of sounding steps
   pan 63              70% of sounding steps
-  gate 25% / retrig   the interface's neutral setting, not the majority: 79%
-                      of synth steps are a tie, so they say so
+  gate tie / retrig   what songs contain, not what the interface starts at: 79%
+                      of sounding synth steps are ties, so a synth line with no
+                      gate row is legato and a staccato step is the one that
+                      says so. `-` takes the default too, so `C3 - -` is one
+                      note held across three steps
   patch knobs         the ROM's own INIT patch, ds10synth00.dat (mean 10 of 31
                       knobs differ, so a patch line is short)
   lanes               75% of the 6912 lane slots have no automation at all
@@ -137,7 +140,12 @@ INIT_MIX = bytes([0, 0, 62, 0, 0, 0, 1, 0, 0, 65, 62, 61, 63, 65, 73, 0, 0,
 GATE_NAME = {0xFF: "hold", 6: "retrig", 5: "tie", 4: "100%",
              3: "75%", 2: "50%", 1: "25%", 0: "off"}
 GATE_VAL = {v: k for k, v in GATE_NAME.items()}
-GATE_DEFAULT = (1, 6)        # 25% on a synth track, retrig on a drum track
+# What a `.` in a gate row means, and what a note cell with no gate cell compiles
+# to: `tie` on a synth track and `retrig` on a drum one. Neither is the interface's
+# neutral setting - both are what songs actually contain. 79% of the sounding synth
+# steps here are ties, and making that the default drops 7525 of the corpus's 17546
+# explicit gate cells and 1760 of its 3477 gate rows.
+GATE_DEFAULT = (5, 6)        # tie on a synth track, retrig on a drum track
 DS10_TIE = 5                 # what a `-` in the note row implies on the step
                              # before it, and the only gate that holds a note
 VEL_DEFAULT, PAN_DEFAULT = 127, 63

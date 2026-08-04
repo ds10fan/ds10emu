@@ -1,23 +1,16 @@
 # songtext — a DS-10 song as text
 
-Two implementations: `src/extras/songtext.c` for anything that links the engine,
-and `tools/songtext.py`, which is where the format is worked out. `make
-test-songtext` is the round trip, in C alone; `make test-songtext-py` holds the two
-to the same output byte for byte and is kept out of `make test` because it needs
-python3.
+`tools/songtext.py` is the format: one implementation, in Python, while the format
+is still moving. `make test-songtext` is the round trip over every song here. (A C
+encoder existed alongside it and was byte-identical; it was removed because keeping
+two in step cost more than it caught. Nothing about the format below depends on
+that — exactness is checked the same way either way.)
 
 ```sh
-make songtext && out/songtext dump [--clean] x.ds10song [x.ds10song.txt]  # load, check
-python3 tools/songtext.py dump x.ds10song [x.ds10song.txt]             # the reference
+python3 tools/songtext.py dump [--clean] x.ds10song [x.ds10song.txt]   # load, check
 python3 tools/sav.py unpack x.ds10save dir/   # slotNN.ds10song.txt + bank.ds10patch.txt
 ```
 
-```c
-#include "extras/songtext.h"
-size_t n = ds10_songtext_write(payload, len, NULL, clean, buf, sizeof buf);
-int    e = ds10_songtext_read(buf, payload, sizeof payload, &len, &errline);
-/* or ds10_songtext_dump / _parse, which take a parsed ds10_song */
-```
 
 ## Example
 
@@ -35,10 +28,10 @@ steps 12
 syn1  name "XLEAD"
 syn1  patch cutoff=57 peak=51 filter=bp wave1=square
 syn1  mod cutoff=sine:+7
-syn1  note D5 D6 C3 -    | -    .  .  .  | .  .  .  .
-      gate .  .  .  .    | 100% .  .  .  | .  .  .  .
-      vel  .  .  92 .    | .    .  .  .  | .  .  .  .
-drum1 note x  .  x  .    | x    .  x  .  | x  .  x  .
+syn1  note D5   D6   C3   -    | -    .    .    .    | .    .    .    .
+      gate 25%  25%  .    .    | 100% .    .    .    | .    .    .    .
+      vel  .    .    92   .    | .    .    .    .    | .    .    .    .
+drum1 note x    .    x    .    | x    .    x    .    | x    .    x    .
 syn1  lane1 knob=cutoff 0=69 1=62
 mix route=drums vol=105,105,104,105,66,105
 view 46,3,11,12,1,0,2,0,0 31,3,11,12,1,0,2,0,0 36,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1,0,0 57,0,0,0,0,0,1,0,0 36,0,0,0,0,0,1,0,0
@@ -66,9 +59,9 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 
 | step | `note` | `gate` | `vel` | gate byte | note byte | vel | pan |
 |---|---|---|---|---|---|---|---|
-| 0 | `D5` | `.` | `.` | 1 = 25% | 74 = D5 | 127 | 63 |
-| 1 | `D6` | `.` | `.` | 1 = 25% | 86 = D6 | 127 | 63 |
-| 2 | `C3` | `.` | `92` | **5 = tie** | 48 = C3 | 92 | 63 |
+| 0 | `D5` | `25%` | `.` | 1 = 25% | 74 = D5 | 127 | 63 |
+| 1 | `D6` | `25%` | `.` | 1 = 25% | 86 = D6 | 127 | 63 |
+| 2 | `C3` | `.` | `92` | **5 = tie**, the default | 48 = C3 | 92 | 63 |
 | 3 | `-` | `.` | `.` | **5 = tie** | 48 = C3 | 127 | 63 |
 | 4 | `-` | `100%` | `.` | 4 = 100% | 48 = C3 | 127 | 63 |
 | 5 | `.` | `.` | `.` | 3 | 255 = no note | 127 | 64 |
@@ -76,7 +69,11 @@ The step rows of `syn1`, four bytes per step at pattern `+0x042 + track*64 + ste
 - Steps 2–4 are **one** C3 lasting three steps: each `-` ties the step before it,
   and `tie` is the only gate that holds a note.
 - A run's last gate ends it — `100%` here, so C3 releases a sub-tick before step 4
-  finishes.
+  finishes. Left at the default it would tie instead, holding through step 4 and
+  releasing at step 5.
+- `tie` is the synth default, so the two staccato notes are the ones that need a
+  cell. That is the way round the songs here are: 79% of their sounding synth steps
+  are ties.
 - Step 5's three non-note bytes are filler the sequencer never reads.
 
 ## Sections
@@ -135,9 +132,18 @@ tracks only.
 | `.` | no note |
 | `-` | carry the previous note on, and tie the step before it |
 
-`.` in `gate`, `vel` or `pan` means that step is at the default. A repeat that is
-not a tie keeps its note name: `x x x` under `retrig` is three hits, `x - -` would
-be one held sample.
+`.` in `gate`, `vel` or `pan` means that step is at the default: `tie` on a synth
+track, `retrig` on a drum one. So a synth line with no `gate` row at all is legato
+throughout, which is what most of the songs here are, and a staccato step is the one
+that says so.
+
+`-` sets the step it is on to that default too, so `C3 - -` is three tied steps —
+one note that holds through the run and releases on the step after it. Write the
+last cell if you want it to stop sooner: `gate . . 25%` releases a quarter into the
+third step.
+
+A repeat that is not a tie keeps its note name: `x x x` under `retrig` is three
+hits, `x - -` would be one held sample.
 
 ## `view` — the editor records
 
@@ -162,10 +168,10 @@ it with 8, and 10 and 11 have no accessor at all. All three are zero in all 1046
 records here.
 
 Position 6 is the one the sequencer reads: it lands in the automation object's
-`enable` (`0x0206DD4C`, live `+0x8A`), and `ds10_seq_run` only runs a lane whose
-enable selects which of its two paths runs: 1 latches a step's value, 2 ramps into
-the next step's. Both are implemented, `songplay` installs the pattern's own value,
-and `make test-seq` holds the ramp to the original's own processor over 900 cases.
+`enable` (`0x0206DD4C`, live `+0x8A`), which picks which of the processor's two
+paths runs — 1 latches a step's value for the whole step, 2 ramps into the next
+step's. Both are implemented, `songplay` installs the pattern's own value, and
+`make test-seq` holds the ramp to the original's own processor over 900 cases.
 
 Pad scales, `0x02084E54`, 16 bytes each:
 
@@ -286,7 +292,7 @@ demos: 109 songs, 1744 patterns, 165888 steps.
 | `steps` | 16 | 1738 of 1744 patterns |
 | `vel` | 127 | 96% of sounding steps |
 | `pan` | 63 | 70% of sounding steps |
-| `gate` | `25%` synth, `retrig` drum | the interface's neutral setting, not the majority — 79% of synth steps are ties, so they say so. `tie` as the synth default would cut 13710 explicit gate cells in 3029 rows to 6393 in 1294 |
+| `gate` | `tie` synth, `retrig` drum | what songs contain rather than what the interface starts at: 79% of sounding synth steps are ties. Against a `25%` default this drops 7525 of the corpus's 17546 explicit gate cells, and 1760 of its 3477 gate rows |
 | patch knob | the ROM's INIT patch, `ds10synth00.dat` | a patch differs in 10 of 31 knobs on average |
 | `mix` | the INIT template's mix | |
 | lane | absent | 75% of the 6912 lane slots hold no automation |
