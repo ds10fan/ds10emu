@@ -1,6 +1,7 @@
 /* songplay - render a DS-10 song file to a WAV, using only the decompiled core.
  *
- *   songplay [-b bars] [-o out.wav] [-p patternlist] [--song-min n] song.dat
+ *   songplay [-b bars] [-o out.wav] [-p patternlist] [--song-min n] [-t sec]
+ *            song.dat
  *
  * The chain is what the song file says: for each bar, look up the pattern index
  * and hand that pattern to the sequencer when it asks. Everything downstream is
@@ -431,6 +432,9 @@ static void usage(void)
             "  --song-min  if the song's arrangement is shorter than n bars,\n"
             "              ignore it and sweep all 16 patterns in order, twice\n"
             "              (default 1, so only an empty song sweeps)\n"
+            "  -t          seconds of silent tail after the last bar, so"
+            " releases\n"
+            "              and the delay ring out (default 8; 0 to disable)\n"
             "  -c          channel bitmask, bit 0..5 = syn1 syn2 drum1..4"
             " (default 0x3f)\n");
     exit(2);
@@ -439,7 +443,7 @@ static void usage(void)
 int main(int argc, char **argv)
 {
     const char *out = "song.wav", *in = NULL;
-    int bars = 0, i, chmask = 0x3F, song_min = 1;
+    int bars = 0, i, chmask = 0x3F, song_min = 1, tail_sec = 8;
     const char *drumdump = 0, *plist = NULL;
     uint16_t *patchain = NULL;
     long state_at = -1;
@@ -485,6 +489,8 @@ int main(int argc, char **argv)
             chmask = (int)strtol(argv[++i], 0, 0);
         else if (strcmp(argv[i], "--song-min") == 0 && i + 1 < argc)
             song_min = atoi(argv[++i]);
+        else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc)
+            tail_sec = atoi(argv[++i]);
         else if (argv[i][0] == '-')
             usage();
         else
@@ -780,6 +786,47 @@ int main(int argc, char **argv)
             put16(f, (unsigned)(uint16_t)r[k]);
         }
         nframes += FRAME;
+    }
+
+    /* A silent tail with the sequencer stopped: no ticks, so no more steps or
+     * automation, and the voices, drums and delay ring out into silence instead
+     * of being cut off at the last bar. songwalk and songhw both compare only up
+     * to the ROM's own (shorter) length, so this does not disturb them. */
+    if (tail_sec > 0) {
+        unsigned long tail = (unsigned long)tail_sec * RATE, t;
+
+        /* Release every voice the way stopping the transport does, so a note
+         * still gated at the last step decays into its release instead of
+         * droning at sustain for the whole tail. This is the only thing the tail
+         * sends - nothing new starts. */
+        for (i = 0; i < NSYN; i++)
+            ds10_voice_event(&voice[i], DS10_EV_NOTE_OFF, 0, 0);
+        for (i = 0; i < NDRUM; i++)
+            ds10_drum_note_off(&drum[i]);
+
+        for (t = 0; t < tail; t += FRAME) {
+            int16_t l[FRAME], r[FRAME];
+            int j;
+
+            for (i = 0; i < NSYN; i++)
+                ds10_voice_render(&voice[i], buf[i], FRAME);
+            for (i = 0; i < NDRUM; i++) {
+                memset(buf[NSYN + i], 0, sizeof buf[NSYN + i]);
+                ds10_drum_render(&drum[i], buf[NSYN + i], FRAME);
+            }
+            for (i = 0; i < NTRK; i++)
+                if (!(chmask & (1 << i)))
+                    memset(buf[i], 0, sizeof buf[i]);
+            for (i = 0; i < NTRK; i++)
+                if (chdump[i])
+                    fwrite(buf[i], 2, FRAME, chdump[i]);
+            ds10_mixer_render(&mix, chp, l, r, FRAME);
+            for (j = 0; j < FRAME; j++) {
+                put16(f, (unsigned)(uint16_t)l[j]);
+                put16(f, (unsigned)(uint16_t)r[j]);
+            }
+            nframes += FRAME;
+        }
     }
 
     fseek(f, 0, SEEK_SET);
