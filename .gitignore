@@ -20,4 +20,7 @@ web/build/
 *.o
 *.a
 
+# ctags output
+tags
+
 __pycache__/
