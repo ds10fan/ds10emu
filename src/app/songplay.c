@@ -1,6 +1,6 @@
 /* songplay - render a DS-10 song file to a WAV, using only the decompiled core.
  *
- *   songplay [-b bars] [-o out.wav] [-p pattern] song.dat
+ *   songplay [-b bars] [-o out.wav] [-p patternlist] [--song-min n] song.dat
  *
  * The chain is what the song file says: for each bar, look up the pattern index
  * and hand that pattern to the sequencer when it asks. Everything downstream is
@@ -362,25 +362,86 @@ static void dump_drums(const char *prefix, int16_t (*buf)[DRUM_LEN])
     }
 }
 
+/* Parse a 1-based pattern list like "1,2,3,4-5,1-16,1-16" into a 0-based bar
+ * chain, kept in the order written and with repeats. A token is a single number
+ * or an inclusive ascending range A-B; anything outside 1..16, a descending
+ * range, or stray text is rejected. Returns a malloc'd chain and sets *n_out, or
+ * NULL on any error. */
+static uint16_t *parse_patlist(const char *s, int *n_out)
+{
+    uint16_t *chain = NULL;
+    int cap = 0, n = 0;
+    const char *p = s;
+
+    while (*p) {
+        char *end;
+        long a, b, v;
+
+        a = strtol(p, &end, 10);
+        if (end == p)
+            goto bad;
+        p = end;
+        b = a;
+        if (*p == '-') {
+            p++;
+            b = strtol(p, &end, 10);
+            if (end == p)
+                goto bad;
+            p = end;
+        }
+        if (a < 1 || a > DS10_SONG_PATTERNS ||
+            b < 1 || b > DS10_SONG_PATTERNS || b < a)
+            goto bad;
+        for (v = a; v <= b; v++) {
+            if (n == cap) {
+                uint16_t *grown;
+
+                cap = cap ? cap * 2 : 16;
+                grown = realloc(chain, (size_t)cap * sizeof *chain);
+                if (!grown)
+                    goto bad;
+                chain = grown;
+            }
+            chain[n++] = (uint16_t)(v - 1);
+        }
+        if (*p == ',')
+            p++;
+        else if (*p)
+            goto bad;
+    }
+    if (n == 0)
+        goto bad;
+    *n_out = n;
+    return chain;
+
+bad:
+    free(chain);
+    return NULL;
+}
+
 static void usage(void)
 {
     fprintf(stderr,
-            "usage: songplay [-b bars] [-o out.wav] [-p pattern]"
-            " song.dat\n"
-            "  -b  bars to render (default: the whole chain)\n"
-            "  -p  loop one pattern instead of following the chain\n"
-            "  -c  channel bitmask, bit 0..5 = syn1 syn2 drum1..4"
-            " (default 0x3f)\n"
-            "  -a  if the arrangement is shorter than N bars, ignore it and\n"
-            "      sweep all 16 patterns in order, twice\n");
+            "usage: songplay [-b bars] [-o out.wav] [-p patternlist]"
+            " [--song-min n] [-c mask] song.dat\n"
+            "  -b          bars to render (default: the whole arrangement)\n"
+            "  -p          play this 1-based pattern list once instead of the\n"
+            "              song's chain, e.g. 1,2,3,4-5,1-16,1-16; ranges are\n"
+            "              inclusive and ascending, numbers 1..16\n"
+            "  --song-min  if the song's arrangement is shorter than n bars,\n"
+            "              ignore it and sweep all 16 patterns in order, twice\n"
+            "              (default 1, so only an empty song sweeps)\n"
+            "  -c          channel bitmask, bit 0..5 = syn1 syn2 drum1..4"
+            " (default 0x3f)\n");
     exit(2);
 }
 
 int main(int argc, char **argv)
 {
     const char *out = "song.wav", *in = NULL;
-    int bars = 0, only = -1, i, chmask = 0x3F, automin = 0;
-    const char *drumdump = 0;
+    int bars = 0, i, chmask = 0x3F, song_min = 1;
+    const char *drumdump = 0, *plist = NULL;
+    uint16_t *patchain = NULL;
     long state_at = -1;
     static uint16_t fill[2 * DS10_SONG_PATTERNS];
     static ds10_song song;
@@ -415,15 +476,15 @@ int main(int argc, char **argv)
         else if (strcmp(argv[i], "-b") == 0 && i + 1 < argc)
             bars = atoi(argv[++i]);
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc)
-            only = atoi(argv[++i]);
+            plist = argv[++i];
         else if (strcmp(argv[i], "-C") == 0 && i + 1 < argc)
             open_chdump(argv[++i]);
         else if (strcmp(argv[i], "-D") == 0 && i + 1 < argc)
             drumdump = argv[++i];
         else if (strcmp(argv[i], "-c") == 0 && i + 1 < argc)
             chmask = (int)strtol(argv[++i], 0, 0);
-        else if (strcmp(argv[i], "-a") == 0 && i + 1 < argc)
-            automin = atoi(argv[++i]);
+        else if (strcmp(argv[i], "--song-min") == 0 && i + 1 < argc)
+            song_min = atoi(argv[++i]);
         else if (argv[i][0] == '-')
             usage();
         else
@@ -479,27 +540,52 @@ int main(int argc, char **argv)
         ds10_drum_set_sample(&drum[i], drumbuf[i], DRUM_LEN, DRUM_ROOT);
     }
 
-    /* An unarranged song is a scratchpad of patterns with no chain worth
-     * playing, so walk all sixteen twice instead. */
-    sp.chain = song.chain;
-    sp.nbars = ds10_song_bars(&song);
-    if (automin > 0 && sp.nbars < automin) {
-        for (i = 0; i < 2 * DS10_SONG_PATTERNS; i++)
-            fill[i] = (uint16_t)(i % DS10_SONG_PATTERNS);
-        sp.chain = fill;
-        sp.nbars = 2 * DS10_SONG_PATTERNS;
-        printf("%s: %d-bar arrangement, sweeping all 16 patterns twice\n",
-               in, ds10_song_bars(&song));
+    /* Choosing the arrangement, in order of precedence:
+     *   -p       an explicit 1-based pattern list, played once
+     *   default  the song's own chain
+     *   sweep    if that chain is shorter than song_min bars - 1 by default, so
+     *            an empty song - walk all sixteen patterns twice instead. An
+     *            unarranged song is a scratchpad of patterns with no chain worth
+     *            playing, and the sweep gives it something to sound. */
+    if (plist) {
+        patchain = parse_patlist(plist, &sp.nbars);
+        if (!patchain) {
+            fprintf(stderr, "%s: bad pattern list '%s' (want 1-based numbers"
+                    " or ascending A-B ranges, 1..%d)\n",
+                    in, plist, DS10_SONG_PATTERNS);
+            return 2;
+        }
+        sp.chain = patchain;
+    } else {
+        sp.chain = song.chain;
+        sp.nbars = ds10_song_bars(&song);
+        if (sp.nbars < song_min) {
+            for (i = 0; i < 2 * DS10_SONG_PATTERNS; i++)
+                fill[i] = (uint16_t)(i % DS10_SONG_PATTERNS);
+            sp.chain = fill;
+            sp.nbars = 2 * DS10_SONG_PATTERNS;
+            fprintf(stderr, "%s: %d-bar arrangement, sweeping all 16 patterns"
+                    " twice\n", in, ds10_song_bars(&song));
+        }
     }
     if (bars <= 0)
-        bars = only >= 0 ? 8 : sp.nbars;
+        bars = sp.nbars;
     if (bars <= 0) {
         fprintf(stderr, "%s: empty chain, nothing to play\n", in);
+        free(patchain);
         return 2;
     }
 
-    printf("%s: \"%.6s\"  version %u  %u BPM  swing %u%%  %d bars\n",
-           in, song.name, song.version, song.tempo, song.swing, bars);
+    fprintf(stderr, "%s: \"%.6s\"  version %u  %u BPM  swing %u%%  %d bars\n",
+            in, song.name, song.version, song.tempo, song.swing, bars);
+    {
+        int show = bars < sp.nbars ? bars : sp.nbars, j;
+
+        fprintf(stderr, "%s: patterns", in);
+        for (j = 0; j < show; j++)
+            fprintf(stderr, "%s%d", j ? "," : " ", sp.chain[j] + 1);
+        fputc('\n', stderr);
+    }
 
     /* Sequencer. The transport's own start latch does the rest. */
     memset(&seq, 0, sizeof seq);
@@ -585,7 +671,7 @@ int main(int argc, char **argv)
      * tick. Waiting for the tick left our first two frames holding the INIT patch
      * against a zeroed mixer, which is where songwalk found us silent while the
      * original was already sounding. */
-    if (only < 0 && sp.nbars > 0 && sp.chain[0] < DS10_SONG_PATTERNS)
+    if (sp.nbars > 0 && sp.chain[0] < DS10_SONG_PATTERNS)
         install_pattern(&ctx, &rt[sp.chain[0]]);
 
     /* Now that the router sink exists, set the tempo the way the sequencer does:
@@ -694,17 +780,13 @@ int main(int argc, char **argv)
             put16(f, (unsigned)(uint16_t)r[k]);
         }
         nframes += FRAME;
-        if (only >= 0 && ctx.pat == 0 && only < DS10_SONG_PATTERNS) {
-            ctx.pat = &rt[only];
-            seq.pattern = 1;
-            seq.steps = rt[only].steps;
-        }
     }
 
     fseek(f, 0, SEEK_SET);
     wav_header(f, nframes);
     fclose(f);
-    printf("%s: %lu frames, %.2f s\n", out, nframes,
-           (double)nframes / RATE);
+    fprintf(stderr, "%s: %lu frames, %.2f s\n", out, nframes,
+            (double)nframes / RATE);
+    free(patchain);
     return 0;
 }
