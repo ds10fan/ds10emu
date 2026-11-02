@@ -9,10 +9,10 @@ CORE_HDRS = src/core/fixed.h src/core/tables_data.h
 # links any of the engine needs them.
 TBL_SRC = src/core/tables_data.c
 
-.PHONY: test-songwalk test-songhw test-songtext test-drumfx test-drumbuf fonttest test-uiknob test-uiaffine test-tables test-cell test-obj sweep test-2d ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean test-editor
+.PHONY: test-songwalk test-songhw test-songtext test-drumfx test-drumbuf test-tables ndsref recon extract oracle ghidra-image test test-vcf test-vco test-env test-lfo test-pitch test-amp test-vcfupd test-voice test-patch test-fx test-mixer test-drum test-event test-seq test-song test-replay test-songrender songplay tables clean
 
 # Differential tests: our C against the original ARM code, bit-exact.
-test: test-drumfx test-drumbuf test-obj test-cell test-uiknob test-uiaffine test-tables test-editor test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
+test: test-drumfx test-drumbuf test-tables test-voice test-patch test-event test-seq test-replay test-songrender test-song test-fx test-mixer test-drum test-vcf test-vcfupd test-vco test-env test-lfo test-pitch test-amp
 
 test-vcf: out/test_vcf tests/vectors/vcf.bin
 	@./out/test_vcf
@@ -201,33 +201,6 @@ out/test_song: tests/test_song.c src/core/song.c src/core/md5.c \
 	$(CC) $(CFLAGS) -o $@ tests/test_song.c src/core/song.c src/core/md5.c \
 	    $(TBL_SRC)
 
-# The knob widget's angle map, against the original's own setter. The first
-# UI function verified against the ARM rather than against a screenshot.
-test-uiknob: out/test_uiknob tests/vectors/uiknob.bin
-	@./out/test_uiknob
-
-out/test_uiknob: tests/test_uiknob.c src/app/widget.c src/app/widget.h $(TBL_SRC)
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_uiknob.c src/app/widget.c $(TBL_SRC)
-
-tests/vectors/uiknob.bin: extract tools/oracle.py tools/emu.py
-	@$(PY) tools/oracle.py ui-vectors
-
-# The same function against a running machine's own widgets, at their real
-# addresses, with Unicorn seeded from a melonDS RAM dump. Needs the ROM.
-
-# The sprite affine matrix, against the original's own builder.
-test-uiaffine: out/test_uiaffine tests/vectors/uiaffine.bin
-	@./out/test_uiaffine
-
-out/test_uiaffine: tests/test_uiaffine.c src/app/widget.c src/app/widget.h \
-                   $(TBL_SRC)
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_uiaffine.c src/app/widget.c $(TBL_SRC)
-
-tests/vectors/uiaffine.bin: extract tools/oracle.py tools/emu.py
-	@$(PY) tools/oracle.py ui-affine
-
 test-tables: out/test_tables
 	@./out/test_tables
 
@@ -235,16 +208,6 @@ out/test_tables: tests/test_tables.c src/core/tables.c src/core/tables_data.c \
                  src/core/tables.h $(TBL_SRC)
 	@mkdir -p out
 	$(CC) $(CFLAGS) -o $@ tests/test_tables.c src/core/tables.c  \
-	    $(TBL_SRC)
-
-test-editor: out/test_editor
-	@./out/test_editor
-
-out/test_editor: tests/test_editor.c src/app/editor.c src/core/song.c \
-                 src/core/md5.c src/app/editor.h src/core/song.h $(TBL_SRC)
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_editor.c src/app/editor.c \
-	    src/core/song.c src/core/md5.c \
 	    $(TBL_SRC)
 
 out/test_seq: tests/test_seq.c src/core/seq.c src/core/seq.h $(TBL_SRC)
@@ -359,12 +322,11 @@ clean:
 	rm -rf out
 
 # ---------------------------------------------------------------------------
-# GUI
+# melonDS
 # ---------------------------------------------------------------------------
 
-# ndsref runs the ROM in melonDS and dumps, per frame, the whole 2D state plus
-# the framebuffers melonDS composited from it. That is the pixel ground truth
-# for the renderer; Unicorn stops at the CPU and cannot provide it.
+# ndsref runs the ROM in melonDS: whole-machine state Unicorn cannot provide,
+# for the drum buffers (tools/drumref.py) and whole-song captures (songhw).
 MELONDS ?= $(HOME)/p/melonDS
 MELON_BUILD ?= $(MELONDS)/build-nojit
 # The core's class layout depends on these, so the driver must be compiled
@@ -385,22 +347,6 @@ out/ndsref: tools/ndsref/main.cpp tools/ndsref/platform.cpp
 	  echo "  cmake --build $(MELON_BUILD)"; exit 1; }
 	$(CXX) -std=c++17 -O2 $(MELON_DEFS) -o $@ $^ \
 	  -I$(MELONDS)/src -I$(MELON_BUILD) $(MELON_LIBS)
-
-# The 2D hardware model, against melonDS. `make sweep` walks the whole
-# interface and snapshots each screen; test-2d renders every snapshot and
-# compares pixel for pixel.
-sweep: out/ndsref
-	@rm -rf out/sweep
-	@$(PY) tools/sweep.py out/sweep
-
-test-2d: out/test_2d
-	@test -n "$$(ls out/sweep/*.snap 2>/dev/null)" || { \
-	  echo "no snapshots: run 'make sweep' first"; exit 1; }
-	@./out/test_2d out/sweep/*.snap
-
-out/test_2d: tests/test_2d.c src/gfx/nds2d.c src/gfx/nds2d.h src/gfx/color.h
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_2d.c src/gfx/nds2d.c
 
 # ---------------------------------------------------------------------------
 # songtext - the text format
@@ -444,35 +390,3 @@ data/saves: tools/sav.py $(wildcard songs/*.ds10save)
 # Both files come out of one run; the header is what the engine includes.
 src/core/tables_data.c src/core/tables_data.h: data/tables.bin tools/mktables.py
 	@$(PY) tools/mktables.py data/tables.bin src/core/tables_data.c
-
-# The sprite widget: our OAM builder against the game's own setter, run under
-# Unicorn. This is the seam between a widget's state and what the screen shows.
-test-obj: out/test_obj tests/vectors/obj.bin
-	@./out/test_obj
-
-out/test_obj: tests/test_obj.c src/app/obj.c src/app/obj.h
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_obj.c src/app/obj.c
-
-tests/vectors/obj.bin: extract tools/oracle.py
-	@$(PY) tools/oracle.py obj-vectors
-
-# The cell expander: the function the whole interface draws through, against
-# the original under Unicorn.
-test-cell: out/test_cell tests/vectors/cell.bin
-	@./out/test_cell
-
-out/test_cell: tests/test_cell.c src/app/cell.c src/app/cell.h
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tests/test_cell.c src/app/cell.c
-
-tests/vectors/cell.bin: extract tools/oracle.py
-	@$(PY) tools/oracle.py cell-vectors
-
-# The captured sprite layer per page, until the widget constructors are read.
-
-# Render a string with one of the ROM's fonts, as an eye check on the reader.
-fonttest: out/fonttest
-out/fonttest: tools/fonttest.c src/gfx/nftr.c src/gfx/nitro.c src/gfx/nftr.h
-	@mkdir -p out
-	$(CC) $(CFLAGS) -o $@ tools/fonttest.c src/gfx/nftr.c src/gfx/nitro.c

@@ -16,7 +16,6 @@ tests/vectors/
 
 # Build output
 build/
-web/build/
 *.o
 *.a
 

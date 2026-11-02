@@ -1,8 +1,8 @@
 # data/ — ROM-derived inputs
 
 `tables.bin` and `nitrofs/` come out of `ds10plus.nds`, `saves/` out of
-`songs/*.ds10save`. All of it is committed so the engine, its tests and the browser
-build work without anyone having a copy of the ROM.
+`songs/*.ds10save`. All of it is committed so the engine and its tests work
+without anyone having a copy of the ROM.
 
 ## tables.bin
 
@@ -20,27 +20,9 @@ That re-extracts into `out/tables.bin` and `cmp`s the two. Written by
 
 ## nitrofs/
 
-The GUI's assets, extracted from NitroFS by `python3 tools/ndsx.py extract`.
-Stock Nintendo containers:
+Songs and patches extracted from NitroFS by `python3 tools/ndsx.py extract`:
 
-| ext  | what |
-|------|------|
-| NCLR | palette |
-| NCGR | character/tile graphics |
-| NSCR | tilemap (screen) |
-| NCBR | bitmap graphics |
-| NCER | OAM cell definitions |
-| NANR | cell animation |
-| NFTR | font |
-
-- `mainbg/` — one NCGR+NSCR pair per screen; the names are the screen list.
-- `mainobj/` — the sprites: buttons, knobs, the fonts, the `3D_TEX` textures.
-- `data0/` — the shared backgrounds and the KORG logo.
-- `str/` — UI strings, one file per language.
 - `demo/`, `demoSP/` — the demo songs and the 24 factory patches.
-
-`dummy/` is not copied here: it is placeholder art left over from development,
-2.2 MB of it, and nothing loads it.
 
 ## saves/
 

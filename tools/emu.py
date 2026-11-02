@@ -201,8 +201,8 @@ def seed(uc, snap, cpu="arm9"):
 
     VRAM is deliberately not seeded. The nine banks are mapped by VRAMCNT into
     overlapping regions, so writing them somewhere flat would be a guess; no
-    function verified this way reads VRAM, and one that did would need the
-    bank mapper from src/gfx/nds2d.c rather than a memcpy.
+    function verified this way reads VRAM, and one that did would need
+    a model of the VRAM bank mapping rather than a memcpy.
 
     `snap` is a tools/snap.Snapshot. Returns what it wrote.
     """

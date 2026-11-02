@@ -134,7 +134,7 @@ recorded 0..127 lane sweeps exactly that knob's range."""),
 ]
 
 # The synth's 31 knobs, in order, so the two per-knob tables can say which
-# entry belongs to which control. Same list as KNOB_NAME in src/app/ui.c.
+# entry belongs to which control.
 # Every array gets this, so the engine's use of one is greppable.
 PREFIX = "ds10_tbl_"
 

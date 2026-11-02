@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
-"""snapui - capture a screen with its main RAM, for verifying UI functions.
+"""snapui - capture a page with the machine's main RAM.
 
-    python3 tools/snapui.py synedit [outdir]
+    python3 tools/snapui.py drums [outdir]
 
-`make sweep` captures the framebuffers and VRAM, which is what the renderer is
-checked against. Verifying a *function* needs the other half: the widget
-objects and the registry, which only exist in main RAM once the game has run.
-So this boots, opens one page through the navigation map, and snapshots with
-`ndsref -m`.
+Boots, opens one page through the navigation map, and snapshots with
+`ndsref -m`. tools/drumbuf.py reads the drum buffers out of such a snapshot.
 
 The result is what tools/emu.py's `seed` writes into the Unicorn image, so a
 screen's own function can be called against the machine as melonDS had it.
@@ -28,7 +25,7 @@ BOOT = """1180 touch 128 55
 2400 release
 """
 
-# The centre of the map box that opens each page, from MAP_BOX in src/app/ui.c.
+# The centre of the map box that opens each page.
 PAGES = {
     "seq":     (30, 33),      # SYN1 SEQ
     "synedit": (140, 33),     # SYN1 EDIT

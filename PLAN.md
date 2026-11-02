@@ -1,15 +1,13 @@
-# Plan: reimplement KORG DS-10 PLUS as a C / SDL 1.2 application
+# Plan: reimplement the KORG DS-10 PLUS synthesizer engine in C
 
 ## 1. Goal
 
-A native C application that reproduces the KORG DS-10 PLUS synthesizer —
-primarily its **sound engine**, secondarily its **UI** — with correctness
+A C reimplementation of the KORG DS-10 PLUS **sound engine**, with correctness
 established by differential testing against the original ARM code rather than by
 listening.
 
-- **Primary:** the synth engine, verified bit-exact against the original.
-- **Secondary:** the GUI, in SDL 1.2, faithful to the original layout.
-- **Out of scope:** multiplayer (DS Wireless Play / WiFi), DSi-exclusive
+- **Scope:** the synth engine, verified bit-exact against the original.
+- **Out of scope:** the interface, multiplayer (DS Wireless Play / WiFi), DSi-exclusive
   features. Roughly 171 of the ARM7's hardware-register touches are WiFi; all of
   that is ignored.
 - **Non-negotiable:** verification. Every phase below has a machine-checkable
@@ -60,14 +58,13 @@ mis-dumped (recon §6). Revisit only if a PLUS feature proves DSi-exclusive.
 
 ## 3. Verification strategy
 
-This is the spine of the project, so it comes before the phases. Four tiers, in
+This is the spine of the project, so it comes before the phases. Three tiers, in
 increasing scope and decreasing strictness.
 
 ### Tier 0 — format round-trip (exact)
 
 Parse, re-serialize, compare bytes. Applies to: the ROM container, the 24 factory
-patches, the 13 songs, the UI string tables, and every graphics container
-(NCGR/NCLR/NSCR/NCER/NANR/NCBR/NFTR).
+patches and the 13 songs.
 
 Pass: byte-identical, 100% of files. A round-trip failure means the format is
 misunderstood — no interpretation required.
@@ -126,20 +123,10 @@ Note the DS output stage (10-bit DAC, `SOUNDBIAS`, hardware mixing) sits between
 the engine and the speaker. Model it as a toggleable stage. Tier 1 compares the
 engine's buffer *before* this stage, so it is unaffected by that decision.
 
-### Tier 3 — GUI comparison (partial)
-
-Render each screen in the C app; compare against emulator screenshots at
-equivalent state.
-
-Pass: tile/BG layers pixel-exact. Screens composited with the DS 3D engine
-(recon §5 — parts of the UI are textured 3D quads) will not match pixel-for-pixel
-in SDL 1.2; those are compared visually and the deviation is documented. Being
-explicit about this beats a vague "looks close".
-
 ## 4. Deliverable architecture
 
 ```
-src/core/          pure C99, no SDL, no libc math, NO FLOATS
+src/core/          pure C99, no libc math, NO FLOATS
   fixed.h            Q-format helpers mirroring the original's arithmetic
   tables.c           generated from the ROM at build time (gitignored)
   vco.c vcf.c eg.c lfo.c voice.c drum.c
@@ -147,15 +134,6 @@ src/core/          pure C99, no SDL, no libc math, NO FLOATS
   mixer.c
   patch.c song.c seq.c
   synth.c            top level: ds10_synth_render()
-src/platform/
-  audio_sdl.c        SDL_OpenAudio + ring buffer
-  video_sdl.c        two 256x192 surfaces, integer scaler
-  input_sdl.c        mouse -> stylus, keyboard -> buttons
-  assets.c           NitroFS reader + Nintendo container decoders
-  main.c
-src/gui/
-  widget.c knob.c slider.c stepgrid.c keyboard.c kaoss.c
-  screen_*.c         one per original screen
 tests/
   test_synth.c       Tier 1 runner
   test_assets.c      Tier 0 round-trip
@@ -169,7 +147,7 @@ from another language later if a different front end is ever wanted.
 
 ## 5. Phases
 
-Each phase states its exit criterion. Phases 2 and 5 can run in parallel with 3.
+Each phase states its exit criterion. Phase 2 can run in parallel with 3.
 
 ### P0 — Foundation (largely done)
 
@@ -247,7 +225,6 @@ verified against all 24 factory patches (recon §4). Remaining:
   `0x38000` with the same `+0x20` parameter offset; the rest is unmapped, and
   their own open question was "what is stored in patch saves other than the synth
   configuration?"
-- UI string tables.
 
 Exit: Tier 0 green on all 24 patches and all 13 songs.
 
@@ -283,8 +260,8 @@ were: two harness sampling-order bugs, one selector array too small, one mapping
 applied to all three effect types instead of one, and one case of dividing by the
 sync flag instead of the tempo. None was a misread of the arithmetic.
 
-What is deliberately NOT covered: the sequencer that generates events, and the
-GUI. Both are outside "audio code".
+What is deliberately NOT covered: the sequencer that generates events. It is
+outside "audio code".
 
 Recon §4/§10 reshape this phase considerably:
 
@@ -318,25 +295,6 @@ lanes the ROM confirms exist (gate, pan, volume, piano-roll, KAOSS — the six
 
 Exit: Tier 2 null test passes on every demo song.
 
-### P5 — GUI (SDL 1.2)
-
-Asset pipeline first (NitroFS + container decoders, already needed by Tier 0),
-then screens in dependency order:
-
-`61_SYN_EDIT` → `60_SYN_SEQ_*` → `32_PATTERN` → `63_DRUM_EDIT_PATCH` →
-`30_MIXER` → `52_FX` → `71_KAOSS` → `31_SONG` → `81_KEY` → `01_MEIN_MENU` →
-`15_OPTION`.
-
-The full 65-layout inventory is in recon §3, so this scope is known up front
-rather than discovered.
-
-Note the installed SDL 1.2.68 is **sdl12-compat over SDL2**, not original SDL
-1.2. The 1.2 API is what we code against; it just happens to get modern
-backends, which is an advantage.
-
-Exit: all functional screens navigable and driving the engine; Tier 3 pixel-diff
-green on tile layers, 3D-composited screens documented.
-
 ### P6 — Integration
 
 Save/load in the original's format, WAV export, CLI (headless render for Tier 2).
@@ -353,14 +311,12 @@ audio back.
 | Harness produces garbage because the hardware divider is missing | Implement `DIVCNT` and the sqrt accelerator in P1, before trusting any output |
 | Original is C++ with virtual dispatch, hard to follow statically | Lean on the oracle: probe behaviour empirically instead of reading every branch |
 | The 16-byte patch header is a hash we cannot reproduce | Only blocks *writing* patches the original accepts; playback and Tier 1 unaffected |
-| 3D-composited UI cannot be pixel-matched in SDL 1.2 | Accept and document; do not pretend Tier 3 is exact everywhere |
 | Bit-exactness lost in the DS hardware output stage | Tier 1 compares pre-hardware buffers; model the output stage separately as a toggle |
 
 ## 7. Rough sizing
 
 P1 days · P2 days · **P3 weeks — the bulk, and now concentrated in the FX/mixer
-rather than the voice** · P4 about a week · P5 two to three weeks · P6 about a
-week.
+rather than the voice** · P4 about a week · P6 about a week.
 
 P1 is still the gate, but it is now a plumbing task rather than a research one:
 the render entry points are published, so the work is implementing the hardware

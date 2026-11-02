@@ -356,8 +356,8 @@ demos: 109 songs, 1744 patterns, 165888 steps.
 A name is six raw bytes, not a C string: padding is `0x08` as often as NUL, and one
 factory patch is `CPU\0 1`. `\b` is that `0x08`, and it is kept because dropping it
 changes the file. It is not a space: the interface's own font has no glyph mapped
-at `0x08`, so it advances nothing at all — `out/fonttest fonts.NFTR $'A\bA'`
-renders exactly what `AA` does, while `A A` leaves a gap.
+at `0x08`, so it advances nothing at all — `A\bA` renders
+exactly what `AA` does, while `A A` leaves a gap.
 
 ## The instrument bank
 
